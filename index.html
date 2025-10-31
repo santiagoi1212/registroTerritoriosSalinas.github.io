@@ -1,1346 +1,318 @@
 <!DOCTYPE html>
 <html lang="es">
-  <head>
-<script>
-// Early global helpers to ensure availability before any calls
-window.normalizarId = window.normalizarId || function normalizarId(x) {
-  let s = String(x ?? "")
-    .normalize("NFKC")
-    .replace(/[\u200B\u200C\u200D\u2060\uFEFF]/g, "")
-    .replace(/[\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Territorios</title>
 
-  if (!s) return "";
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-  const stripZeros = (v) => v.replace(/^0+/, "") || "0";
+  <!-- Leaflet Routing Machine -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+  <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
 
-  if (/^\d+$/.test(s)) return stripZeros(s);
+  <link rel="stylesheet" href="./app.css" />
 
-  let m = s.match(/(\d+)\s*$/);
-  if (m) return stripZeros(m[1]);
+  <script src="./app-config.js"></script>
+  <script src="./helpers.js"></script>
+  <script src="./app-map.js"></script>
+  <script src="./app-auth.js"></script>
+</head>
 
-  if (s.includes("|")) {
-    const right = s.split("|").pop();
-    m = right.match(/(\d+)(?!.*\d)/);
-    if (m) return stripZeros(m[1]);
-  }
-
-  const all = s.match(/\d+/g);
-  if (all && all.length) return stripZeros(all[all.length - 1]);
-
-  return s;
-};
-
-window.idKey = window.idKey || function idKey(x){ return window.normalizarId(x); };
-
-
-</script>
-<script src="helpers.js"></script>
-
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Territorios Salinas</title>
-
-    <!-- Leaflet -->
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <link
-      rel="stylesheet"
-      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-    />
-
-    <!-- (Opcional) Leaflet.Draw CSS -->
-    <link
-      rel="stylesheet"
-      href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"
-    />
-  <link rel="stylesheet" href="app.css">
-
-  </head>
-  <body>
-    <div id="map"></div>
-    <div id="far-banner">⚠️ Estás a más de <strong>8 km</strong> del territorio. Las acciones quedaron desactivadas.</div>
-<div id="info-panel">
-      <p><strong>Territorio:</strong> <span id="polygon-id"></span></p>
-      <p><strong>Última visita:</strong> <span id="polygon-fecha"></span></p>
+<body>
+  <!-- TOP BAR -->
+  <div id="topbar">
+    <div class="brand">Territorios</div>
+    <div id="topbar-actions">
+      <span id="auth-info" class="auth-hidden" style="margin-right:8px;"></span>
+      <button id="btnAuthOpen" class="btn primary">Acceder</button>
+      <button id="btnLogout" class="auth-hidden">Salir</button>
     </div>
+  </div>
 
-    <div id="referencias">
-      <h3 style="margin-top: 0">Referencias</h3>
-      <div class="referencias">
-        <div class="referencia">
-          <div class="color-box azul"></div>
-          <span>Se está trabajando</span>
+  <!-- SUB BAR -->
+  <div id="subbar">
+    <button id="btn-geo" class="btn">Mostrar Posición</button>
+    <button id="btn-weekly-panel" class="btn">Predicación Semanal</button>
+    <button id="btnToggleLabels" class="btn">Ocultar Números</button>
+  </div>
+
+  <!-- AVISO DISTANCIA -->
+  <div id="far-banner">⚠️ Estás a más de <strong>8 km</strong> del territorio. Las acciones quedaron desactivadas.</div>
+
+  <!-- MAPA -->
+  <div id="map"></div>
+
+  <!-- PANEL SEMANAL -->
+  <div id="weekly-panel" class="weekly-panel" hidden>
+    <div class="weekly-title">Predicación Semanal</div>
+    <div class="weekly-hint">Tocá un punto para ver dónde es y cómo llegar:</div>
+    <div id="weekly-list" class="weekly-list">
+      <!-- Se llena dinámicamente con .weekly-item -->
+    </div>
+  </div>
+
+  <!-- BOTÓN FLOANTE PARA REABRIR SEMANAL -->
+  <button id="btn-weekly-toggle-float">📅 Cambiar punto</button>
+
+  <!-- REFERENCIAS -->
+  <div id="referencias">
+    <h3 style="margin-top:0">Referencias</h3>
+    <div class="referencia"><span class="color-box azul"></span>Se está trabajando</div>
+    <div class="referencia"><span class="color-box verde"></span>Menos de 2 meses (finalizado)</div>
+    <div class="referencia"><span class="color-box amarillo"></span>Más de 2 y menos de 3 meses</div>
+    <div class="referencia"><span class="color-box rojo"></span>3 meses o más</div>
+  </div>
+  <button id="toggle-referencias">📋 Ver Información</button>
+
+  <!-- LOGIN MODAL -->
+  <div id="login-overlay" class="overlay">
+    <div id="login-modal" class="modal-card" role="dialog" aria-modal="true" aria-labelledby="login-title">
+      <header class="modal-header">
+        <h3 id="login-title" class="modal-title">Iniciar sesión</h3>
+        <button id="login-close" class="modal-close-btn" title="Cerrar">✕</button>
+      </header>
+
+      <div class="modal-body">
+        <div class="form-field">
+          <label for="inUser" class="form-label">Usuario</label>
+          <input id="inUser" class="form-input" autocomplete="username" />
         </div>
-        <div class="referencia">
-          <div class="color-box verde"></div>
-          <span>Menos de 2 meses (finalizado)</span>
+
+        <div class="form-field">
+          <label for="inPass" class="form-label">Contraseña</label>
+          <input id="inPass" class="form-input" type="password" autocomplete="current-password" />
         </div>
-        <div class="referencia">
-          <div class="color-box amarillo"></div>
-          <span>Más de 2 y menos de 3 meses</span>
-        </div>
-        <div class="referencia">
-          <div class="color-box rojo"></div>
-          <span>3 meses o más</span>
+
+        <div class="form-actions">
+          <button id="login-cancel" class="btn-cancel" type="button">Cancelar</button>
+          <button id="btnLogin" class="btn-primary" type="button">Ingresar</button>
         </div>
       </div>
     </div>
+  </div>
 
-    <div id="contador-poligonos">
-      <h3>Estado de territorios</h3>
-      <p>Trabajando: <span id="contador-azul">0</span></p>
-      <p>Realizados: <span id="contador-verde">0</span></p>
-      <p>Realizar: <span id="contador-amarillo">0</span></p>
-      <p>Urgentes: <span id="contador-rojo">0</span></p>
+  <!-- MODAL REGISTRAR TERRITORIO -->
+  <div id="territorio-overlay" class="overlay">
+    <div id="territorio-modal" class="modal-card" role="dialog" aria-modal="true" aria-labelledby="territorio-title">
+      <header class="modal-header">
+        <h3 id="territorio-title" class="modal-title">Registrar territorio</h3>
+        <button id="territorio-close" class="modal-close-btn" title="Cerrar">✕</button>
+      </header>
+      <div id="territorio-body" class="modal-body">
+        <!-- se rellena dinámicamente -->
+      </div>
     </div>
+  </div>
 
-    <div id="ranking-container"></div>
-    <button id="toggle-referencias">📋 Ver Información</button>
-    <script>
-      /*************** CONFIG ***************/
-    const SHEET_CSV =
-      'https://docs.google.com/spreadsheets/d/e/2PACX-1vS-TxyDU1xvaMwDjc5GQxjglSfBUYTUyu2_NDcAsJ_v0ngaD8g_-WcmxsUd9921RF2q5I4bcscjsf6N/pub?gid=1159469350&single=true&output=csv';
+  <!-- TOAST -->
+  <div id="territorio-toast" class="toast"></div>
 
-      const N_RANK = 20;
-      let contadores = { blue: 0, green: 0, yellow: 0, red: 0 };
+  <script>
+  // ========== Overlays close ==========
+  (function(){
+    const loginOverlay = document.getElementById('login-overlay');
+    const territorioOverlay = document.getElementById('territorio-overlay');
+    const territorioClose = document.getElementById('territorio-close');
 
-      /*************** MAPA ***************/
-      const map = L.map("map").setView([-34.77118, -55.856602], 18.5);
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution: "&copy; OpenStreetMap contributors",
-      }).addTo(map);
-
-
-      /*************** POLÍGONOS (tu dataset) ***************/
-       let poligonos = [];
-
-       // URL del JSON local con todos los polígonos
-        const POLIGONOS_JSON_URL = 'poligonos_salinas.json';
-
-        // URL del Apps Script que devuelve { ok:true, ids:[...]} según el día
-        // Ej: .../exec?op=weekly&day=mon|tue|wed|thu|fri|sat|sun
-        const WEEKLY_API_URL = 'https://script.google.com/macros/s/AKfycbweQitKPLrgsjIcZP5tUbZBeov6_KLMcF9_SN-zaxvbsJFe-ekFMzeNQcRu9qWpYh8/exec?op=weekly';
-
-        // Capa exclusiva para dibujar el resultado "semanal", independiente del login
-        const weeklyLayer = L.featureGroup().addTo(map);
-
-        // (Opcional) si tenés una capa “normal” de polígonos por login:
-        const territoriosLayer = window.territoriosLayer || L.featureGroup().addTo(map);
-
-  function clearWeeklyLayer(){
-  weeklyLayer.clearLayers();
-}
-
-async function loadWeeklyPolygons(dayCode){
-  clearWeeklyLayer();
-
-  // 1) pedir IDs al backend
-  const url = new URL(WEEKLY_API_URL);
-  url.searchParams.set('day', String(dayCode || '').toLowerCase());
-
-  let ids = [];
-  try {
-    const r = await fetch(url.toString(), { cache: 'no-store' });
-    const data = await r.json();
-    if (data && data.ok && Array.isArray(data.ids)) {
-      ids = data.ids.map(x => String(x));
-    }
-  } catch (e) {
-    console.error('weekly fetch error', e);
-  }
-
-  if (!ids.length) {
-    // (Opcional) algún aviso al usuario
-    if (typeof showToast === 'function') showToast('No hay territorios para ese día.');
-    return;
-  }
-
-  // 2) descargar el JSON con TODOS los polígonos
-  let allPolys = [];
-  try {
-    const r2 = await fetch(POLIGONOS_JSON_URL, { cache:'no-store' });
-    allPolys = await r2.json(); // array de polígonos
-  } catch (e) {
-    console.error('No se pudo leer poligonos_salinas.json', e);
-    if (typeof showToast === 'function') showToast('No se pudo cargar poligonos_salinas.json');
-    return;
-  }
-
-  // 3) filtrar por IDs
-  const norm = (window.Helpers?.normalizarId) || ((x)=>String(x).trim());
-  const want = new Set(ids.map(norm));
-  const matches = allPolys.filter(p => want.has(norm(p.id)));
-
-  if (!matches.length) {
-    if (typeof showToast === 'function') showToast('No se encontraron polígonos para esos IDs.');
-    return;
-  }
-
-  // 4) dibujar capa semanal (estilo propio para distinguirla)
-  matches.forEach(p => {
-    const layer = L.polygon(p.coords, {
-      color: '#f59e0b',
-      weight: 2,
-      fillColor: '#f59e0b',
-      fillOpacity: 0.25
-    }).addTo(weeklyLayer);
-
-    // pequeña etiqueta con el ID
-    try {
-      layer.bindTooltip(String(p.id), {
-        permanent: true,
-        direction: 'center',
-        className: 'label'
+    if (territorioClose){
+      territorioClose.addEventListener('click', ()=>{
+        territorioOverlay.style.display='none';
       });
-    } catch(_) {}
-  });
-
-  // 5) encuadre
-  try {
-    map.fitBounds(weeklyLayer.getBounds(), { padding: [20,20] });
-  } catch (_) {}
-}
-
-      
-
-
-// 🔁 Delegación a nivel documento
-document.addEventListener("click", (e) => {
-  const btn = e.target.closest && e.target.closest("#btn-geo");
-  if (!btn) return;
-  if (geoEnabled) stopGeo(); else startGeo();
-});
-
-
-// (Inicial) por si querés que empiece apagado (default):
-//stopGeo();
-      /*************** UTILIDADES ***************/
-      
-      /** Carga poligonos desde ./poligonos_salinas.json */
-      async function loadPoligonosFromFile(path = './poligonos_salinas.json') {
-        const res = await fetch(path, { cache: 'no-store' });
-        if (!res.ok) {
-          throw new Error(`No se pudo leer ${path} (HTTP ${res.status})`);
-        }
-        const data = await res.json();
-        if (!Array.isArray(data)) {
-          throw new Error('El JSON de polígonos debe ser un array');
-        }
-        // Normalización (por si id viene numérico, etc.)
-        poligonos = data.map(p => ({
-          id: p.id,
-          territorio: p.territorio ?? p.id,
-          coords: Array.isArray(p.coords) ? p.coords : [],
-          fecha: p.fecha ?? null,          // opcional en el JSON
-          finalizado: p.finalizado ?? ""   // opcional en el JSON
-        }));
-      }
-     
-      function actualizarContadores() {
-        document.getElementById("contador-azul").textContent = contadores.blue;
-        document.getElementById("contador-verde").textContent =
-          contadores.green;
-        document.getElementById("contador-amarillo").textContent =
-          contadores.yellow;
-        document.getElementById("contador-rojo").textContent = contadores.red;
-      }
-
-            // === AUTH CLIENT ===
-      const AUTH = {
-        get token() { return localStorage.getItem('auth_token') || ''; },
-        set token(v){ localStorage.setItem('auth_token', v || ''); },
-        get user()  { return localStorage.getItem('auth_user') || ''; },
-        set user(v) { localStorage.setItem('auth_user', v || ''); },
-        isLoggedIn(){ return !!this.token; },
-        logout(){ localStorage.removeItem('auth_token'); localStorage.removeItem('auth_user'); }
-      };
-
-      async function login(usuario, password){
-        const body = new URLSearchParams();
-        body.set('action','login');
-        body.set('usuario', usuario.trim().toLowerCase());
-        body.set('password', password);
-        const res = await fetch(WEBHOOK_URL, {
-          method: 'POST',
-          headers: { 'Content-Type':'application/x-www-form-urlencoded;charset=utf-8' },
-          body
-        });
-        const data = await res.json().catch(()=>({}));
-        if (!res.ok || !data.ok) throw new Error(data.error || 'Login falló');
-        AUTH.token = data.token;
-        AUTH.user  = data.usuario;
-        return data;
-      }
-
-      async function requireLoginThen(next){
-        if (AUTH.isLoggedIn()) { next(); return; }
-        openLoginModal(async ({usuario, password, close}) => {
-          try {
-            await login(usuario, password);
-            close();
-            showToast('Sesión iniciada');
-            next();
-          } catch(e){
-            alert('Error: ' + e.message);
-          }
-        });
-      }
-
-      async function cargarDatosDesdeSheets() {
-        try {
-          const csvData = await fetchTextWithFallback(SHEET_CSV); // 🔧 usa fallbacks CORS
-          console.log(csvData);
-          const filas = csvData.split(/\r?\n/).filter((l) => l.trim() !== "");
-          if (filas.length === 0) return [];
-          const headerCols = parseCSVLine(filas[0]);
-          let start = 0;
-          let idxId = 0,
-            idxFecha = 1,
-            idxFin = 2;
-
-          const joined = headerCols.join(",").toLowerCase();
-          const looksHeader = /id|fecha|finaliz/.test(joined);
-          if (looksHeader) {
-            const { id, fecha, finalizado } = indicesPorEncabezado(headerCols);
-            if (id !== -1) idxId = id;
-            if (fecha !== -1) idxFecha = fecha;
-            if (finalizado !== -1) idxFin = finalizado;
-            start = 1;
-          }
-
-          const datos = [];
-          for (let i = start; i < filas.length; i++) {
-            const cols = parseCSVLine(filas[i]);
-            const idStr = (cols[idxId] ?? "").trim();
-            const fechaStr = (cols[idxFecha] ?? "").trim();
-            const finStr = (cols[idxFin] ?? "").trim();
-
-            // 🔧 Guardamos id también como string para comparar con poligonos
-            const id = (/^\d+$/.test(idStr) ? parseInt(idStr, 10) : idStr); // conserva no numéricos
-            const fecha = parseFechaSeguro(fechaStr);
-            const finalizado = normalizarFinalizado(finStr);
-
-            if (idStr !== "" && fecha instanceof Date && !isNaN(fecha)) {
-              datos.push({ id, fecha, finalizado });
-            }
-          }
-          return datos;
-        } catch (error) {
-          console.error("Error cargando datos desde Google Sheets:", error);
-          return [];
-        }
-      }
-
-      /*************** UI: panel info ***************/
-      const infoPanel = document.getElementById("info-panel");
-      const polygonId = document.getElementById("polygon-id");
-      const polygonFecha = document.getElementById("polygon-fecha");
-      const layerById = new Map();
-      const dataById  = new Map();
-      const READ_CSV_URL = (typeof SHEET_CSV !== "undefined" && SHEET_CSV) ? SHEET_CSV : "";
-      const WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbz3t0e03wMw6uJ-IsIIHmnvizMBRxeBF2Y7Et2uiTL-5d8L7di8uFA3HWkdw0xMLj0/exec";
-  
-  
-      function parseFecha(s){
-        if(!s) return null;
-        const t = String(s).trim();
-        const d1 = new Date(t); if(!isNaN(d1)) return d1;
-        const m = t.match(/^([0-3]?\d)[\/\-]([0-1]?\d)[\/\-](\d{4})$/);
-        if(m){ const [_,dd,mm,yy]=m; return new Date(parseInt(yy), parseInt(mm)-1, parseInt(dd)); }
-        const m2 = t.match(/^(\d{4})[\/\-]([0-1]?\d)[\/\-]([0-3]?\d)$/);
-        if(m2){ const [_,yy,mm,dd]=m2; return new Date(parseInt(yy), parseInt(mm)-1, parseInt(dd)); }
-        return null;
-      }
-    function normalizarFinalizado(v){
-      const s = String(v ?? '').trim().toLowerCase();
-      if(!s) return '';
-      if(['si','sí','s','true','1','ok','finalizado','completo','terminado'].includes(s)) return 'Si';
-      if(['no','n','false','0','pendiente','incompleto','en curso','trabajando'].includes(s)) return 'No';
-      return s;
     }
 
-    function estiloPorKey(key){
-      const base = { color:'#333', weight:1, fillOpacity:0.35 };
-      if(key==='blue')   return { ...base, fillColor:'#3388ff' };
-      if(key==='green')  return { ...base, fillColor:'#2e7d32' };
-      if(key==='yellow') return { ...base, fillColor:'#ffd500' };
-      if(key==='red')    return { ...base, fillColor:'#b53a22' };
-      if(key==='gray')   return { ...base, fillColor:'#9e9e9e' }; // ← NUEVO
-      return { ...base, fillColor:'#90caf9' };
+    if (territorioOverlay){
+      territorioOverlay.addEventListener('click',(e)=>{
+        if (e.target===territorioOverlay) territorioOverlay.style.display='none';
+      });
     }
-      /*************** CARGA DEL MAPA ***************/
-      async function cargarMapa() {
-          // ⛔ No pintar si no tiene permisos
-          if (typeof canUseTerritorios === 'function' && !canUseTerritorios()) {
-            // limpiar por seguridad (por si algo alcanzó a dibujar)
-            try {
-              map.eachLayer(l => { if (l instanceof L.Polygon) map.removeLayer(l); });
-            } catch(_) {}
-            return;
-          }
-        const datosSheets = await cargarDatosDesdeSheets();
-
-        contadores = { blue: 0, green: 0, yellow: 0, red: 0 };
-
-        poligonos.forEach((p) => {
-          // 🔧 match por string para evitar "32" vs 32
-          const dato = datosSheets.find((d) => normalizarId(d.id) === normalizarId(p.id));
-          p.fecha = dato ? dato.fecha : null;
-          p.finalizado = dato ? dato.finalizado : "";
-
-          const colorInicial = obtenerColor(p.fecha, p.finalizado);
-          if (contadores[colorInicial] != null) contadores[colorInicial]++;
-
-          const poly = L.polygon(p.coords, {
-            color: "black",
-            fillColor: colorInicial,
-            fillOpacity: 0.5,
-          }).addTo(map);
-
-          const tooltipContent = `
-          <div class="tooltip-content">
-            <div><strong>${p.id}</strong></div>
-          </div>
-        `;
-          poly.bindTooltip(tooltipContent, {
-            permanent: true,
-            direction: "center",
-            className: "label",
-          });
-
-          poly.on("click", function () {
-            abrirForm(p);
-          });
-        });
-
-        actualizarContadores();
-      }
-
-      function repintarContadores(){
-        const ids = { blue:'contador-azul', green:'contador-verde', yellow:'contador-amarillo', red:'contador-rojo' };
-        for(const k of Object.keys(ids)){
-          const el = document.getElementById(ids[k]);
-          if(el) el.textContent = String(contadores[k]||0);
-        }
-      }
-
-      function abrirForm(p){
-       if (!canUseTerritorios()) { showToast?.("Necesitás permisos (admin o capitan)."); return; }
-
-        console.log("abrirForm");
-        const textContent =
-              (p.fecha instanceof Date && !isNaN(p.fecha))
-                ? p.fecha.toLocaleDateString()
-                : "No hay datos";
-        const titulo = `Registrar territorio ${p.territorio || p.id} - Última visita: ${textContent}`;
-        showModal(formHTML(p.id, { capitan:p.capitan||'', estado:p.finalizado||'Si', fechaValida:p.fecha||new Date(), comentario:p.comentario||'' }), titulo);
-        document.getElementById(`cancel-${p.id}`).onclick = hideModal;
-        document.getElementById(`save-${p.id}`).onclick = async () => {
-          const cap = (document.getElementById(`cap-${p.id}`)?.value || '').trim();
-          const est = (document.getElementById(`est-${p.id}`)?.value || 'Si');
-          const com = (document.getElementById(`com-${p.id}`)?.value || '').trim();
-          const dateStr = (document.getElementById(`fec-${p.id}`)?.value || '').trim();
-          const fechaISO = dateStr ? new Date(dateStr + 'T00:00:00').toISOString() : new Date().toISOString();
-          const rec = { id:p.id, territorio:String(p.territorio ?? p.id), capitan:cap, estado:est, finalizado:est, fecha:fechaISO, comentario:com };
-          const res = await enviarAlSheet(rec);
-          if(res.ok) showToast(`Guardado (ID ${p.id}) vía ${res.via}.`); else showToast(`Guardado local (sin enviar): ${res.reason || 'error'}`);
-          p.capitan = cap; p.finalizado = normalizarFinalizado(est); p.fecha = new Date(fechaISO); p.comentario = com;
-          
-          // 🔵🟢 Forzar feedback inmediato según “finalizado” (ignora fecha)
-          const lyr = layerById.get(String(p.id));
-          const keyInmediata = (p.finalizado === 'Si') ? 'green' : 'blue';
-          if (lyr) lyr.setStyle( estiloPorKey(keyInmediata) );
-
-          // Mantener contadores consistentes en pantalla
-          contadores = { blue:0, green:0, yellow:0, red:0 };
-          for (const pol of poligonos) {
-            const k = (String(pol.id) === String(p.id))
-              ? keyInmediata
-              : colorKeyPorFechaEstado(pol); // resto sigue con la lógica normal
-            contadores[k] = (contadores[k] || 0) + 1;
-          }
-          repintarContadores();
-          hideModal();
-          document.dispatchEvent(new CustomEvent('territorio:guardado', { detail:{ record: rec } }));
-          //setTimeout(actualizarDesdePlanilla, 600);
-        };
-      }
-
-  async function actualizarDesdePlanilla(){
-    const regs = await leerPlanilla();
-    if(!regs.length){ showToast('No se pudo leer la planilla'); return; }
-    dataById.clear();
-    for(const r of regs){
-      const fid = idKey(r.id);
-      if(!fid) continue;
-      const prev = dataById.get(fid);
-      const dt = parseFecha(r.fecha) || new Date(0);
-      const prevDt = prev ? (parseFecha(prev.fecha) || new Date(0)) : new Date(0);
-      if(!prev || dt >= prevDt) dataById.set(fid, r);
+    if (loginOverlay){
+      loginOverlay.addEventListener('click',(e)=>{
+        if (e.target===loginOverlay) loginOverlay.style.display='none';
+      });
     }
-    for(const p of poligonos){
-      const rec = dataById.get(idKey(p.id));
-      if(!rec) continue;
-      p.capitan = rec.capitan || p.capitan || '';
-      p.territorio = rec.territorio || p.territorio || p.id;
-      p.finalizado = normalizarFinalizado(rec.finalizado || rec.estado || p.finalizado);
-      const df = parseFecha(rec.fecha);
-      p.fecha = df || p.fecha;
-      p.comentario = rec.comentario || p.comentario || '';
-      repintarUno(p);
-    }
-    showToast('Planilla aplicada');
-  }
+  })();
 
-      // ====== Modal & Form ======
-  function ensureUI(){
-    const overlay = document.getElementById('territorio-overlay');
-    const _ov = document.getElementById('territorio-overlay');
-    _ov.style.display = 'flex';
-    _ov.style.zIndex = String(1e6);
-    if(!overlay) return;
-    const closeBtn = document.getElementById('territorio-close');
-    if(closeBtn) closeBtn.onclick = ()=> overlay.style.display='none';
-    overlay.addEventListener('click',(e)=>{ if(e.target===overlay) overlay.style.display='none'; });
-  }
-  function showModal(html, title){
-    ensureUI();
-    console.log("showModal");
-    document.getElementById('territorio-title').textContent = title || 'Registrar territorio';
-    document.getElementById('territorio-body').innerHTML = html;
-    document.getElementById('territorio-overlay').style.display='flex';
-  }
-  function hideModal(){ const o=document.getElementById('territorio-overlay'); if(o) o.style.display='none'; }
-
-  function formHTML(id, valores={}){
-    const { capitan='', estado='Si', fechaValida=new Date(), comentario='' } = valores;
-    const fechaInput = fmtDateInput(fechaValida);
-    return `
-      <form class="form-territorio" id="form-territorio-${id}" style="font-family:system-ui,Segoe UI,Roboto,Arial">
-        <div class="row" style="margin-bottom:10px">
-          <label for="cap-${id}" style="display:block;margin-bottom:4px;font-weight:600;color:#333">Capitán</label>
-          <input id="cap-${id}" value="${capitan || ''}" placeholder="Nombre del capitán"
-                 style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;box-sizing:border-box"/>
-        </div>
-        <div class="row" style="margin-bottom:10px">
-          <label for="fec-${id}" style="display:block;margin-bottom:4px;font-weight:600;color:#333">Fecha</label>
-          <input id="fec-${id}" type="date" value="${fechaInput}"
-                 style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;box-sizing:border-box"/>
-        </div>
-        <div class="row" style="margin-bottom:10px">
-          <label for="est-${id}" style="display:block;margin-bottom:4px;font-weight:600;color:#333">¿Finalizó?</label>
-          <select id="est-${id}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;box-sizing:border-box">
-            <option ${estado==='Si'?'selected':''} value="Si">Si</option>
-            <option ${estado==='No'?'selected':''} value="No">No</option>
-          </select>
-        </div>
-        <div class="row" style="margin-bottom:10px">
-          <label for="com-${id}" style="display:block;margin-bottom:4px;font-weight:600;color:#333">Comentario</label>
-          <textarea id="com-${id}" placeholder="Observaciones..." style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;min-height:68px;resize:vertical;box-sizing:border-box"></textarea>
-        </div>
-        <div class="actions" style="display:flex;gap:8px;justify-content:flex-end">
-          <button type="button" class="btn btn-cancelar" id="cancel-${id}" style="border:none;border-radius:8px;padding:8px 12px;font-weight:700;cursor:pointer;background:#e5e7eb;color:#111">Cancelar</button>
-          <button type="button" class="btn btn-guardar" id="save-${id}" style="border:none;border-radius:8px;padding:8px 12px;font-weight:700;cursor:pointer;background:#2e7d32;color:#fff">Guardar</button>
-        </div>
-      </form>
-    `;
-  }
-
-  function fmtDateInput(d){
-    if(!(d instanceof Date) || isNaN(d)) d = new Date();
-    const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), day=String(d.getDate()).padStart(2,'0');
-    return `${y}-${m}-${day}`;
-  }
-
+  // ========== Toast global ==========
   function showToast(msg){
     const t = document.getElementById("territorio-toast");
     t.textContent = msg || "";
     t.style.display = msg ? "block" : "none";
-    if(msg){ clearTimeout(showToast._t); showToast._t = setTimeout(()=>t.style.display="none", 4000); }
-  }
-
-  function repintarUno(p){
-    const key = colorKeyPorFechaEstado(p);
-    const lyr = layerById.get(String(p.id));
-    if(lyr) lyr.setStyle( estiloPorKey(key) );
-    contadores = { blue:0, green:0, yellow:0, red:0 };
-    for(const pol of poligonos){
-      const k = colorKeyPorFechaEstado(pol);
-      contadores[k] = (contadores[k]||0)+1;
-    }
-    repintarContadores();
-    // actualizar panel informativo si existe
-    const spanId = document.getElementById('polygon-id');
-    const spanFecha = document.getElementById('polygon-fecha');
-    if(spanId && spanFecha && p){
-      spanId.textContent = p.id;
-      spanFecha.textContent = p.fecha instanceof Date && !isNaN(p.fecha) ? fmtDateInput(p.fecha) : '—';
+    if(msg){
+      clearTimeout(showToast._t);
+      showToast._t = setTimeout(()=>t.style.display="none", 3000);
     }
   }
+  window.showToast = showToast;
 
-  async function leerPlanilla(){
-    if(READ_CSV_URL){
-      try{
-        const r = await fetch(READ_CSV_URL, { cache:'no-store' });
-        const txt = await r.text();
-        const lines = txt.split(/\r?\n/).filter(Boolean);
-        if(!lines.length) return [];
-        const header = lines[0].split(',').map(h=>h.trim().toLowerCase());
-        const out = [];
-        for(let i=1;i<lines.length;i++){
-          const cols = lines[i].split(',');
-          const o = {};
-          cols.forEach((v,idx)=> o[header[idx] || ('col'+idx)] = (v ?? '').trim());
-          out.push(o);
-        }
-        return out.map(o => ({
-          id: o.id ?? o['territorio'] ?? '',
-          fecha: o.fecha ?? o['date'] ?? '',
-          finalizado: o.finalizado ?? o['estado'] ?? '',
-          capitan: o.capitan ?? '',
-          comentario: o.comentario ?? o['obs'] ?? '',
-          territorio: o.territorio ?? ''
-        }));
-      }catch(e){ console.warn('Fallo CSV', e); }
-    }
-    try{
-      const r = await fetch(WEBHOOK_URL + '?list=1', { cache:'no-store' });
-      const data = await r.json();
-      if(Array.isArray(data)) return data;
-    }catch(e){ console.warn('Fallo ?list=1', e); }
-    return [];
+  // ========== DOM refs ==========
+  const btnAuthOpen      = document.getElementById('btnAuthOpen');
+  const btnLogout        = document.getElementById('btnLogout');
+  const overlayLogin     = document.getElementById('login-overlay');
+  const btnLogin         = document.getElementById('btnLogin');
+  const inUser           = document.getElementById('inUser');
+  const inPass           = document.getElementById('inPass');
+  const btnCloseLogin    = document.getElementById('login-close');
+  const btnCancelLogin   = document.getElementById('login-cancel');
+
+  const btnGeo           = document.getElementById('btn-geo');
+  const btnWeekly        = document.getElementById('btn-weekly-panel');
+  const btnWeeklyFloat   = document.getElementById('btn-weekly-toggle-float');
+  const panelW           = document.getElementById('weekly-panel');
+  const weeklyList       = document.getElementById('weekly-list');
+  const btnInfo          = document.getElementById('toggle-referencias');
+  const panelsInfo       = [document.getElementById('referencias')];
+  const btnToggleLabels  = document.getElementById('btnToggleLabels');
+
+  // ========== Login modal ==========
+  function openLogin(){
+    overlayLogin.style.display='flex';
+    inUser.focus();
+  }
+  function closeLogin(){
+    overlayLogin.style.display='none';
   }
 
-        async function enviarAlSheet(rec){
-          try{
-            const body = new URLSearchParams({ payload: JSON.stringify(rec) });
-            const r = await fetch(WEBHOOK_URL, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded;charset=utf-8'}, body });
-            const text = await r.text().catch(()=>'');
-            if(r.ok && /"ok"\s*:\s*true/.test(text)) return { ok:true, via:'POST' };
-            if(r.status===405) throw new Error('405');
-            throw new Error(text || ('HTTP '+r.status));
-          }catch(err){
-            try{
-              const url = WEBHOOK_URL + '?' + new URLSearchParams({ payload: JSON.stringify(rec) });
-              await fetch(url, { method:'GET', mode:'no-cors' });
-              return { ok:true, via:'GET-no-cors' };
-            }catch(e2){
-              return { ok:false, reason:String(e2) };
-            }
-          }
-        }
+  btnAuthOpen.addEventListener('click', openLogin);
+  btnCloseLogin.addEventListener('click', closeLogin);
+  btnCancelLogin.addEventListener('click', closeLogin);
 
-
-      /*************** RANKING (SIN HACER, MÁS ANTIGUOS) ***************/
-      async function mostrarRanking() {
-        try {
-          const datosSheets = await cargarDatosDesdeSheets();
-          if (!Array.isArray(datosSheets) || datosSheets.length === 0) {
-            document.getElementById("ranking-container").innerHTML =
-              "<h3>Territorios sin hacer</h3><p>No se pudieron cargar datos.</p>";
-            return;
-          }
-
-          // Finalizado != 'Si'
-          const sinHacer = datosSheets.filter(
-            (d) => String(d.finalizado).toLowerCase() !== "si"
-          );
-
-          // Ordenar por fecha (más antigua primero)
-          sinHacer.sort((a, b) => a.fecha - b.fecha);
-
-          const lista = sinHacer.slice(0, N_RANK);
-
-          let html = "<h3>Territorios sin hacer</h3><ul>";
-          const hoy = new Date();
-          for (const d of lista) {
-            const fechaTxt =
-              d.fecha instanceof Date && !isNaN(d.fecha)
-                ? d.fecha.toLocaleDateString()
-                : "-";
-            const meses =
-              d.fecha instanceof Date && !isNaN(d.fecha)
-                ? diferenciaEnMeses(d.fecha, hoy)
-                : "?";
-            html += `<li>${d.id} - ${fechaTxt} (${meses} mes${
-              meses === 1 ? "" : "es"
-            })</li>`;
-          }
-          html += "</ul>";
-
-          document.getElementById("ranking-container").innerHTML = html;
-        } catch (e) {
-          console.error(e);
-          document.getElementById("ranking-container").innerHTML =
-            "<h3>Territorios sin hacer</h3><p>Error al cargar datos.</p>";
-        }
-      }
-
-      /*************** INIT ***************/
-      (async function init() {
-        try {
-          await loadPoligonosFromFile('./poligonos_salinas.json'); // ← lee el archivo externo
-        } catch (e) {
-          console.error(e);
-          alert('No se pudo cargar poligonos_salinas.json. Revisá la consola y CORS / servidor local.');
-          poligonos = []; // fallback vacío
-        }
-
-        // Si también dependés de la planilla para fechas/estados:
-        try {
-          await mostrarRanking(); // opcional, si usa Sheets
-        } catch(_) {}
-
-        await cargarMapa(); // ← usa la variable global poligonos ya cargada
-      })();
-
-      // (Opcional) refrescar cada 5 minutos:
-      // setInterval(() => { mostrarRanking(); /* y si querés: recargar mapa */ }, 5 * 60 * 1000);
-
-         document.addEventListener("DOMContentLoaded", function () {
-        const btn = document.getElementById("toggle-referencias");
-        const paneles = [
-          document.getElementById("referencias"),
-          document.getElementById("ranking-container"),
-          document.getElementById("contador-poligonos"),
-          document.getElementById("info-panel"),
-        ];
-
-        let visible = false;
-
-        btn.addEventListener("click", function () {
-          // Animación de escala
-          btn.classList.add("animate");
-          setTimeout(() => btn.classList.remove("animate"), 200); // Dura lo mismo que el @keyframes
-
-          // Mostrar u ocultar paneles
-          visible = !visible;
-          paneles.forEach((panel) => {
-            if (panel) {
-              panel.style.display = visible ? "block" : "none";
-            }
-          });
-
-          // Cambiar texto del botón
-          btn.textContent = visible
-            ? "❌ Ocultar Información"
-            : "📋 Ver Información";
-        });
-      });
-    </script>
-  
-<!-- UI Modal para formulario de territorio + botón Actualizar -->
-<div id="territorio-overlay" style="display:none;align-items:center;justify-content:center;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10000">
-  <div id="territorio-modal" role="dialog" aria-modal="true" style="width:min(440px,92vw);background:#fff;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,.35);overflow:hidden;font-family:system-ui,Segoe UI,Roboto,Arial">
-    <header style="background:#111827;color:#fff;padding:10px 12px;display:flex;justify-content:space-between;align-items:center">
-      <h3 id="territorio-title" style="margin:0;font-size:14px">Registrar territorio</h3>
-      <!--button type="button" id="territorio-close" class="btn btn-cancelar" style="border:none;border-radius:8px;padding:6px 10px;font-weight:700;cursor:pointer;background:#e5e7eb;color:#111">Cerrar</button-->
-    </header>
-    <div id="territorio-body" class="content" style="padding:12px;font-size:14px"></div>
-  </div>
-</div>
-<div id="territorio-toast" style="position:fixed;left:12px;bottom:12px;background:rgba(255,255,255,.95);padding:6px 10px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,.15);font-size:12px;display:none;z-index:10001"></div>
-<button id="btn-actualizar-sheet" title="Leer planilla y repintar" style="position:fixed;right:12px;top:12px;z-index:1200;background:#2563eb;color:#fff;border:none;padding:8px 10px;border-radius:8px;font-weight:700;cursor:pointer;visibility:hidden;">Actualizar</button>
-
-
-<!-- FAB Login -->
-<button id="btn-login-fab" class="login-fab">Iniciar sesión</button>
-
-<!-- Menú de cuenta -->
-<div id="account-menu" class="account-menu" hidden>
-  <div class="account-menu__header">
-    <span id="account-name">—</span>
-    <span id="account-role" class="badge">—</span>
-  </div>
-  <button id="logout-btn" class="menu-item danger">Cerrar sesión</button>
-</div>
-
-<!-- Modal Login -->
-<div id="login-backdrop" class="modal-backdrop" hidden aria-hidden="true">
-  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="login-title">
-    <h3 id="login-title">Iniciar sesión</h3>
-    <form id="login-form" novalidate>
-      <label>Usuario
-        <input id="login-user" name="username" autocomplete="username" required />
-      </label>
-      <label>Contraseña
-        <input id="login-pass" name="password" type="password" autocomplete="current-password" required />
-      </label>
-      <div class="help" id="login-msg"></div>
-      <div class="row">
-        <button type="button" class="btn" id="login-cancel-btn">Cancelar</button>
-        <button type="submit" class="btn primary" id="login-submit">Entrar</button>
-      </div>
-    </form>
-  </div>
-</div>
-
-<script>
-
-(function(){
-  // ====== CONFIG ======
-  const WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbweVDu_2Vn0ygEMQdkgqbVprTKJ2kjAT--Wimo0cVTaASLK3-yJMkt175DJq-pky1Y/exec";
-  const READ_CSV_URL = (typeof SHEET_CSV !== "undefined" && SHEET_CSV) ? SHEET_CSV : "";
-  if (typeof map === 'undefined') { console.error('No existe el mapa Leaflet "map".'); return; }
-  if (typeof poligonos === 'undefined') { window.poligonos = []; }
-
-  // ====== Estado ======
-  const territoriosLayer = L.featureGroup().addTo(map);
-  const layerById = new Map();
-  const dataById  = new Map();
-  let contadores = { blue:0, green:0, yellow:0, red:0 };
-
-  // ====== Helpers ======
-
-window.wipePolygons = function(){
-  try { window.territoriosLayer?.clearLayers(); } catch(_) {}
-  try { window.layerById?.clear?.(); } catch(_) {}
-  // Si en algún momento añadiste polígonos directo a 'map', podés limpiar también:
-  // map.eachLayer(l => { if (l instanceof L.Polygon) map.removeLayer(l); });
-};
-
-
-
-
-
-  const $ = (sel)=> document.querySelector(sel);
-  function idKey(x){ return String(x ?? "").split("|")[0].trim(); }
-  function parseFecha(s){
-    if(!s) return null;
-    const t = String(s).trim();
-    const d1 = new Date(t); if(!isNaN(d1)) return d1;
-    const m = t.match(/^([0-3]?\d)[\/\-]([0-1]?\d)[\/\-](\d{4})$/);
-    if(m){ const [_,dd,mm,yy]=m; return new Date(parseInt(yy), parseInt(mm)-1, parseInt(dd)); }
-    const m2 = t.match(/^(\d{4})[\/\-]([0-1]?\d)[\/\-]([0-3]?\d)$/);
-    if(m2){ const [_,yy,mm,dd]=m2; return new Date(parseInt(yy), parseInt(mm)-1, parseInt(dd)); }
-    return null;
-  }
-  function normalizarFinalizado(v){
-    const s = String(v ?? '').trim().toLowerCase();
-    if(!s) return '';
-    if(['si','sí','s','true','1','ok','finalizado','completo','terminado'].includes(s)) return 'Si';
-    if(['no','n','false','0','pendiente','incompleto','en curso','trabajando'].includes(s)) return 'No';
-    return s;
-  }
-
-
-  // ====== Pintado ======
-function bindLayerEvents(layer, p){
-  // Solo click -> abrir formulario. NO tooltip aquí para evitar ID duplicado.
-  layer.on('click', (e) => {
-    try { if (e && e.originalEvent) L.DomEvent.stop(e.originalEvent); } catch (_) {}
-    abrirForm(p);
-  });
-}
-
-
-  function drawPoligonos(){
-    if (!canUseTerritorios()) {
-      try { territoriosLayer?.clearLayers(); } catch(_){}
+  btnLogin.addEventListener('click', () => {
+    const u = (inUser.value||'').trim();
+    const p = (inPass.value||'').trim();
+    if (!u || !p){
+      showToast('Ingresá usuario y contraseña');
       return;
     }
-    territoriosLayer.clearLayers();
-    layerById.clear();
-    contadores = { blue:0, green:0, yellow:0, red:0 };
+    window.AuthApp.doLogin(u,p);
+    closeLogin();
+  });
 
-    (poligonos||[]).forEach(p => {
-      p.finalizado = normalizarFinalizado(p.finalizado);
-      if(p.fecha && !(p.fecha instanceof Date)){ const df = parseFecha(p.fecha); p.fecha = df || null; }
-      const key = colorKeyPorFechaEstado(p);
-      const layer = L.polygon(p.coords, estiloPorKey(key));
-      bindLayerEvents(layer, p);
-      layer.addTo(territoriosLayer);
-      layerById.set(String(p.id), layer);
-      contadores[key] = (contadores[key]||0)+1;
-    });
-    try{ map.fitBounds(territoriosLayer.getBounds(), { padding:[20,20] }); }catch(_){}
-    repintarContadores();
-  }
+  btnLogout.addEventListener('click', () => {
+    window.AuthApp.logout();
+  });
 
-  // ====== Lectura planilla ======
-  
+  // ========== Geolocalización botón ==========
+  let weeklyActive = false;
 
-
-  // ====== Init ======
- 
-// después de crear el grupo y la función de pintado
-window.territoriosLayer = territoriosLayer;
-window.drawPoligonos    = drawPoligonos;
-window.layerById        = layerById;   // si usás este Map() para localizar capas por id
-
-// llamá solo si ya existe; si no, el bloque de login la va a invocar luego
-if (typeof window.refreshPolygonsByAuth === 'function') {
-  window.refreshPolygonsByAuth();
-}
-
-
-})();
-</script>
-<script>
-// Extiende tu AUTH existente (token, user) con role + clear, sin redefinirlo
-(function(){
-  if (!window.AUTH) return;          // ya lo tenés
-  const A = window.AUTH;
-
-  // añade role si no existe
-  if (!('role' in A)) {
-    Object.defineProperty(A, 'role', {
-      get(){ return localStorage.getItem('auth_role') || ''; },
-      set(v){ localStorage.setItem('auth_role', v || ''); }
-    });
-  }
-  // añade clear() para usarlo en logout
-  if (typeof A.clear !== 'function') {
-    A.clear = function(){
-      localStorage.removeItem('auth_user');
-      localStorage.removeItem('auth_token');
-      localStorage.removeItem('auth_role');
-    };
-  }
-})();
-</script>
-
-<script>
-// === CONFIG de endpoint (si usás Apps Script en otro origen; si es mismo origen, podés dejar la misma URL del deploy) ===
-const LOGIN_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbwXu2ue7iLYsFtOMm8rEj6wEgcwEBYYcoiqlb3qpcYGtq0uanj5F9BXEUSupB-RJVg/exec";
-// === Helpers de permisos ===
-function canUseTerritorios(){
-  const r = (AUTH.role || '').toLowerCase();
-  return r === 'admin' || r === 'capitan';
-}
-
-// Limpia capas/oculta UI cuando no hay permisos
-function hideTerritoriosUI(){
-  try { territoriosLayer?.clearLayers(); } catch(_) {}
-  // Si querés ocultar contadores/paneles:
-  document.getElementById("referencias")?.classList.add("auth-hidden");
-  document.getElementById("ranking-container")?.classList.add("auth-hidden");
-  document.getElementById("contador-poligonos")?.classList.add("auth-hidden");
-  document.getElementById("info-panel")?.classList.add("auth-hidden");
-}
-
-// Muestra y dibuja cuando hay permisos
-async function showTerritoriosUI(){
-  document.getElementById("referencias")?.classList.remove("auth-hidden");
-  document.getElementById("ranking-container")?.classList.remove("auth-hidden");
-  document.getElementById("contador-poligonos")?.classList.remove("auth-hidden");
-  document.getElementById("info-panel")?.classList.remove("auth-hidden");
-  // Redibujo
-  try { drawPoligonos?.(); } catch(e){ console.warn("drawPoligonos no disponible aún:", e); }
-}
-
-// Entra/sale según el rol actual
-window.refreshPolygonsByAuth = function(){
-  if (canUseTerritorios()) {
-    document.getElementById("referencias")?.classList.remove("auth-hidden");
-    document.getElementById("ranking-container")?.classList.remove("auth-hidden");
-    document.getElementById("contador-poligonos")?.classList.remove("auth-hidden");
-    document.getElementById("info-panel")?.classList.remove("auth-hidden");
-    drawPoligonos();             // ✅ pinta solo si hay permiso (por la guardia)
-  } else {
-    document.getElementById("referencias")?.classList.add("auth-hidden");
-    document.getElementById("ranking-container")?.classList.add("auth-hidden");
-    document.getElementById("contador-poligonos")?.classList.add("auth-hidden");
-    document.getElementById("info-panel")?.classList.add("auth-hidden");
-    try { territoriosLayer?.clearLayers(); } catch(_){}
-  }
-};
-
-// === UI refs ===
-const btnFab     = document.getElementById("btn-login-fab");
-const backdrop   = document.getElementById("login-backdrop");
-const frmLogin   = document.getElementById("login-form");
-const msgLogin   = document.getElementById("login-msg");
-const inUser     = document.getElementById("login-user");
-const inPass     = document.getElementById("login-pass");
-const btnCancel  = document.getElementById("login-cancel-btn");
-const menu       = document.getElementById("account-menu");
-const accountName= document.getElementById("account-name");
-const accountRole= document.getElementById("account-role");
-const btnLogout  = document.getElementById("logout-btn");
-
-// === abrir/cerrar modal y menú ===
-function openLogin(){ backdrop?.removeAttribute("hidden"); msgLogin.textContent=''; inUser.value=''; inPass.value=''; setTimeout(()=>inUser.focus(),0); }
-function closeLogin(){ backdrop?.setAttribute("hidden",""); msgLogin.textContent=''; }
-function openMenu(){ menu?.removeAttribute("hidden"); }
-function closeMenu(){ menu?.setAttribute("hidden",""); }
-
-// === estado de sesión (usa tu AUTH) ===
-function setLogged(username, role){
-  AUTH.user = username || AUTH.user;
-  AUTH.role = role || AUTH.role;
-  // Si tu backend no entrega token, poné uno simbólico para que isLoggedIn() te quede true
-  if (!AUTH.token) AUTH.token = 'login_ok'; 
-  btnFab.textContent = AUTH.user || "Mi cuenta";
-  accountName.textContent = AUTH.user || "—";
-  accountRole.textContent = AUTH.role || "—";
-  window.refreshPolygonsByAuth();
-}
-function clearLogged(){
-  if (AUTH && typeof AUTH.clear === 'function') AUTH.clear();
-  else {
-    localStorage.removeItem('auth_user');
-    localStorage.removeItem('auth_token');
-    localStorage.removeItem('auth_role');
-    if (AUTH) { AUTH.user=''; AUTH.token=''; AUTH.role=''; }
-  }
-  btnFab.textContent = "Iniciar sesión";
-  accountName.textContent = "—";
-  accountRole.textContent = "—";
-  if (typeof window.refreshPolygonsByAuth === 'function') {
-    window.refreshPolygonsByAuth();
-  }
-}
-
-
-
-async function doLogin(username, password){
-  msgLogin.textContent = "Validando…";
-  try {
-    const url = new URL(LOGIN_WEBAPP_URL);
-    url.searchParams.set("op","login");
-    url.searchParams.set("username", username);
-    url.searchParams.set("password", password);
-    url.searchParams.set("t", Date.now());
-    const resp = await fetch(url.toString(), { method:'GET' });
-    const text = await resp.text();
-    let data; try { data = JSON.parse(text); } catch { throw new Error("Respuesta no JSON"); }
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    if (data?.ok === true) {
-      const userFromApi = data.username || username;
-      setLogged(userFromApi, data.role || "");
-      if (typeof canUseTerritorios === 'function' && canUseTerritorios()) {
-        await cargarMapa();
-      }
-
-      window.refreshPolygonsByAuth?.();
-      msgLogin.textContent = "Acceso concedido";
-      setTimeout(closeLogin, 250);
-      if (typeof window.refreshPolygonsByAuth === 'function') {
-        window.refreshPolygonsByAuth();
-      }
+  btnGeo.addEventListener('click', async () => {
+    const active = window.MapApp.isGeoActive();
+    if (active) {
+      window.MapApp.stopGeo();
+      btnGeo.textContent = 'Mostrar Posición';
     } else {
-      clearLogged();
-      msgLogin.textContent = data?.error || "No autorizado";
+      // si estamos en modo predicación semanal, permitimos routing automático
+      window.MapApp.setWeeklyRoutingEnabled(weeklyActive);
+      const ok = await window.MapApp.startGeo();
+      if (ok) btnGeo.textContent = 'Ocultar Posición';
     }
-  } catch (err) {
-    console.error(err);
-    msgLogin.textContent = err.message || "Error de red";
-  }
-}
+  });
 
-btnFab?.addEventListener("click", () => {
-  if (AUTH.user) { if (menu.hasAttribute('hidden')) openMenu(); else closeMenu(); }
-  else { closeMenu(); openLogin(); }
-});
-btnLogout?.addEventListener("click", () => { 
-  try {
-  map.eachLayer(l => { if (l instanceof L.Polygon) map.removeLayer(l); });
-  } catch(_) {}
-  clearLogged(); 
-  window.refreshPolygonsByAuth?.(); 
-  closeMenu(); 
-});
-document.addEventListener("click", (e) => {
-  if (!menu || menu.hasAttribute('hidden')) return;
-  if (!menu.contains(e.target) && !btnFab.contains(e.target)) closeMenu();
-});
-btnCancel?.addEventListener("click", closeLogin);
-backdrop?.addEventListener("click", (e)=>{ if(e.target===backdrop) closeLogin(); });
-document.addEventListener("keydown", (e)=>{ if(e.key==='Escape' && !backdrop.hasAttribute('hidden')) closeLogin(); });
-frmLogin?.addEventListener("submit", (e)=>{ e.preventDefault(); doLogin(inUser.value.trim(), inPass.value); });
+  document.addEventListener('geo:state', (e)=>{
+    const active = !!(e.detail && e.detail.active);
+    btnGeo.textContent = active ? 'Ocultar Posición' : 'Mostrar Posición';
+  });
 
-// === restaurar sesión existente ===
-(function restore(){
-  if (AUTH.user || AUTH.role) setLogged(AUTH.user, AUTH.role);
-  else clearLogged();
-})();
-</script>
+  // ========== Mostrar / Ocultar Números ==========
+  btnToggleLabels.addEventListener('click', () => {
+    window.MapApp.toggleLabels();
+  });
 
+  // ========== Predicación Semanal ==========
+  // Abrir / cerrar panel
+  btnWeekly.addEventListener('click', async () => {
+    weeklyActive = !weeklyActive;
+    window.MapApp.setWeeklyRoutingEnabled(weeklyActive);
 
-<nav class="bottom-bar" role="toolbar" aria-label="Opciones">
-  <div class="group">
-    <button id="btn-geo-center" class="bar-btn">Mostrar mi posición</button>
-
-    <!-- Nuevo botón -->
-    <button id="btn-weekly" class="bar-btn">Territorios Semanal</button>
-
-  </div>
-
-  <div class="group" id="more-actions"></div>
-</nav>
-
-<!-- Panel compacto para elegir día (oculto por defecto) -->
-<div id="weekly-panel" class="weekly-panel" hidden>
-  <div class="weekly-title">Elegí un día</div>
-  <div class="weekly-days">
-    <label><input type="radio" name="weekly-day" value="mon"> Lunes</label>
-    <label><input type="radio" name="weekly-day" value="tue"> Martes</label>
-    <label><input type="radio" name="weekly-day" value="wed"> Miércoles</label>
-    <label><input type="radio" name="weekly-day" value="thu"> Jueves</label>
-    <label><input type="radio" name="weekly-day" value="fri"> Viernes</label>
-    <label><input type="radio" name="weekly-day" value="sat"> Sábado</label>
-    <label><input type="radio" name="weekly-day" value="sun"> Domingo</label>
-  </div>
-  <div class="weekly-actions">
-    <button id="weekly-close" class="bar-btn">Cerrar</button>
-  </div>
-</div>
-
-
-<script>
-/* ===== Geolocalización en tiempo real — módulo único ===== */
-(function initGeoWhenReady(){
-  window.addEventListener('load', () => {
-    if (typeof L === 'undefined' || typeof map === 'undefined') return;
-
-    const GEO_MAX_KM = 8;
-    const ORIGIN = map.getCenter();
-
-    let geoWatchId = null;
-    let userMarker = null;
-    let accuracyCircle = null;
-    let geoEnabled = false;
-
-    let firstFixCentered = false;
-    let pendingManualCenter = false;
-
-    const elGeoStatus  = document.getElementById("geo-status");
-    const btnGeoCenter = document.getElementById("btn-geo-center");
-
-    function centerMapOn(lat, lng){
-      const zoom = Math.max(map.getZoom() || 0, 17);
-      map.setView(L.latLng(lat, lng), zoom, { animate: true });
+    if (!weeklyActive){
+      // saliendo del modo semanal
+      btnWeekly.textContent = 'Predicación Semanal';
+      panelW.hidden = true;
+      btnWeeklyFloat.style.display = 'none';
+      window.MapApp.clearWeeklyPoint();
+      window.MapApp.clearRoute();
+      return;
     }
 
-    function setRegistroHabilitado(enabled){
-      document.querySelectorAll('[data-requires-geo="true"]').forEach(el=>{
-        if ('disabled' in el) el.disabled = !enabled;
-        el.classList.toggle("disabled-by-geo", !enabled);
+    // entrando al modo semanal
+    btnWeekly.textContent = 'Quitar Predicación Semanal';
+
+    // Pedimos a MapApp la lista de puntos semanales y pintamos UI
+    const items = window.MapApp.getWeeklyPoints();
+    weeklyList.innerHTML = "";
+    items.forEach((it, idx) => {
+      const div = document.createElement('div');
+      div.className = 'weekly-item';
+      div.textContent = it.label;
+      div.addEventListener('click', async () => {
+        // usuario eligió este punto
+        panelW.hidden = true;
+        btnWeeklyFloat.style.display = 'block';
+
+        await window.MapApp.selectWeeklyPoint(idx);
       });
-    }
-
-    function updateGeoUI(lat, lng, acc){
-      if (elGeoStatus) elGeoStatus.textContent = `📍 ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-      const pos = L.latLng(lat, lng);
-      if (!userMarker) userMarker = L.marker(pos).addTo(map).bindTooltip("Tu posición");
-      else userMarker.setLatLng(pos);
-
-      if (!accuracyCircle) {
-        accuracyCircle = L.circle(pos, { radius: acc||20, color: "#2563eb", fillColor: "#60a5fa", fillOpacity: 0.2 }).addTo(map);
-      } else {
-        accuracyCircle.setLatLng(pos);
-        accuracyCircle.setRadius(acc||20);
-      }
-
-      if (!firstFixCentered || pendingManualCenter) {
-        centerMapOn(lat, lng);
-        firstFixCentered = true;
-        pendingManualCenter = false;
-      }
-    }
-
-    function startGeo(){
-      if (geoWatchId) return;
-      geoEnabled = true;
-      btnGeoCenter.textContent = "Ocultar mi posición";
-      firstFixCentered = false;
-      geoWatchId = navigator.geolocation.watchPosition(
-        (pos) => {
-          const { latitude, longitude, accuracy } = pos.coords;
-          updateGeoUI(latitude, longitude, accuracy);
-        },
-        (err) => { elGeoStatus.textContent = `Error: ${err.message}`; },
-        { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
-      );
-    }
-
-    function stopGeo(){
-      geoEnabled = false;
-      btnGeoCenter.textContent = "Mostrar mi posición";
-      if (geoWatchId) {
-        navigator.geolocation.clearWatch(geoWatchId);
-        geoWatchId = null;
-      }
-      if (elGeoStatus) elGeoStatus.textContent = "—";
-      if (userMarker) { map.removeLayer(userMarker); userMarker = null; }
-      if (accuracyCircle) { map.removeLayer(accuracyCircle); accuracyCircle = null; }
-      setRegistroHabilitado(true);
-    }
-
-    btnGeoCenter?.addEventListener("click", () => {
-      if (geoEnabled) stopGeo();
-      else {
-        pendingManualCenter = true;
-        startGeo();
-      }
+      weeklyList.appendChild(div);
     });
 
-    elGeoStatus && (elGeoStatus.textContent = "—");
+    panelW.hidden = false;
   });
-})();
 
-</script>
-
-<script>
-// ======= Territorios Semanal (setup seguro post-DOM) =======
-document.addEventListener('DOMContentLoaded', () => {
-  // 0) Refs a elementos (deben existir en el HTML)
-  const btnWeekly   = document.getElementById('btn-weekly');
-  const panel       = document.getElementById('weekly-panel');
-  const btnClose    = document.getElementById('weekly-close');
-
-  if (!btnWeekly) { console.warn('[Semanal] Falta #btn-weekly'); return; }
-  if (!panel)     { console.warn('[Semanal] Falta #weekly-panel'); return; }
-
-  // 1) Endpoint Apps Script (reemplazá TU_DEPLOY_ID)
-  const WEEKLY_API_URL = "https://script.google.com/macros/s/AKfycbweQitKPLrgsjIcZP5tUbZBeov6_KLMcF9_SN-zaxvbsJFe-ekFMzeNQcRu9qWpYh8/exec?op=weekly";
-
-  // 2) Capa especial semanal (no requiere login)
-  if (typeof L === 'undefined' || typeof map === 'undefined') {
-    console.error('[Semanal] Leaflet/map no disponible');
-    return;
-  }
-  /* duplicate weeklyLayer removed */
-  let weeklyMode = false;
-
-  // 3) Helpers
-  const $$ = (s) => panel.querySelector(s);
-  function showPanel(show) { panel.hidden = !show; }
-  function clearWeekly()   { try { weeklyLayer.clearLayers(); } catch(_) {} }
-
-  function normalizarId(x) {
-    // usa tu normalizarId global si existe
-    if (window.normalizarId) return window.normalizarId(x);
-    return String(x ?? '').trim();
-  }
-
-  async function showWeeklyPolygons(ids) {
-  await waitForPoligonosLoaded();
-
-    clearWeekly();
-    if (!Array.isArray(ids) || !ids.length) return;
-
-    // oculto capa normal mientras dura semanal (para que no se mezclen)
-    try { window.territoriosLayer?.clearLayers(); } catch(_) {}
-
-    const set = new Set(ids.map((x) => String(normalizarId(x))));
-    (window.poligonos || []).forEach(p => {
-      const pid = String(normalizarId(p.id));
-      if (set.has(pid)) {
-        const layer = L.polygon(p.coords, { color:'#2563eb', weight:2, fillColor:'#60a5fa', fillOpacity:0.35 })
-          .addTo(weeklyLayer);
-        layer.bindTooltip(String(p.id), { permanent:true, direction:'center', className:'label' });
-      }
+  // Botón flotante para volver a ver lista
+  btnWeeklyFloat.addEventListener('click', () => {
+    // reabrir panel con la lista sin salir del modo semanal
+    const items = window.MapApp.getWeeklyPoints();
+    weeklyList.innerHTML = "";
+    items.forEach((it, idx) => {
+      const div = document.createElement('div');
+      div.className = 'weekly-item';
+      div.textContent = it.label;
+      div.addEventListener('click', async () => {
+        panelW.hidden = true;
+        btnWeeklyFloat.style.display = 'block';
+        await window.MapApp.selectWeeklyPoint(idx);
+      });
+      weeklyList.appendChild(div);
     });
 
-    try {
-      if (weeklyLayer.getLayers().length > 0) {
-        map.fitBounds(weeklyLayer.getBounds(), { padding:[20,20] });
-      }
-    } catch(_){}
-  }
-
-  async function fetchWeeklyIds(dayCode) {
-    const url = new URL(WEEKLY_API_URL);
-    url.searchParams.set('day', dayCode);
-    const resp = await fetch(url.toString(), { cache:'no-store' });
-    const text = await resp.text();
-
-    // intenta JSON
-    try {
-      const data = JSON.parse(text);
-      if (data && data.ok && Array.isArray(data.ids)) return data.ids;
-    } catch(_){}
-
-    // fallback CSV con encabezado 'id'
-    const lines = text.split(/\r?\n/).filter(Boolean);
-    if (!lines.length) return [];
-    const hdr = lines[0].split(',').map(s=>s.trim().toLowerCase());
-    const idx = hdr.indexOf('id');
-    if (idx === -1) return [];
-    const out = [];
-    for (let i=1;i<lines.length;i++){
-      const cols = lines[i].split(',');
-      const v = (cols[idx] ?? '').trim();
-      if (v) out.push(v);
-    }
-    return out;
-  }
-
-  async function setWeeklyMode(on) {
-    weeklyMode = !!on;
-    if (!weeklyMode) {
-      clearWeekly();
-      // restaurá el modo normal (si el usuario tiene permisos se repintan)
-      if (typeof window.refreshPolygonsByAuth === 'function') window.refreshPolygonsByAuth();
-    }
-  }
-
-  // 4) Eventos
-  btnWeekly.addEventListener('click', () => {
-    const opening = panel.hidden;  // si está oculto, lo abrimos
-    showPanel(opening);
-    setWeeklyMode(opening);
+    panelW.hidden = false;
   });
 
-  // radios dentro del panel
-  panel.addEventListener('change', async (e) => {
-    const r = e.target;
-    if (!r || r.name !== 'weekly-day') return;
-    try {
-      console.log("" + r.value);
-      const ids = await fetchWeeklyIds(r.value);
-      showWeeklyPolygons(ids);
-    } catch (err) {
-      console.error('[Semanal] Error obteniendo IDs:', err);
-      alert('No se pudieron obtener los territorios para ese día.');
-    }
+  // ========== Referencias / Info ==========
+  let infoVisible = false;
+  btnInfo.addEventListener('click', ()=>{
+    infoVisible = !infoVisible;
+    panelsInfo.forEach(p => p.style.display = infoVisible ? 'block' : 'none');
+    btnInfo.textContent = infoVisible ? '❌ Ocultar Información' : '📋 Ver Información';
   });
 
-  // cerrar
-  btnClose?.addEventListener('click', () => {
-    showPanel(false);
-    setWeeklyMode(false);
-  });
-
-
-  // click afuera -> cerrar
-  document.addEventListener('click', (e) => {
-    if (panel.hidden) return;
-    if (!panel.contains(e.target) && !btnWeekly.contains(e.target)) {
-      showPanel(false);
-      setWeeklyMode(false);
-    }
-  });
-
-  document.querySelectorAll('input[name="weekly-day"]').forEach(radio => {
-  radio.addEventListener('change', (e) => {
-    const day = e.target.value;  // mon|tue|...
-    // (Opcional) si querés ocultar la capa “normal” mientras mirás la semanal:
-    // territoriosLayer.clearLayers();
-    loadWeeklyPolygons(day);
-  });
-});
-
-  console.log('[Semanal] listo');
-});
-
-    function waitForPoligonosLoaded() {
-      return new Promise((resolve) => {
-        if (Array.isArray(window.poligonos) && window.poligonos.length) return resolve();
-        const t = setInterval(() => {
-          if (Array.isArray(window.poligonos) && window.poligonos.length) {
-            clearInterval(t);
-            resolve();
-          }
-        }, 100);
+  // ========== Init general ==========
+  (async function boot(){
+    // esperamos MapApp
+    const ok = await (async function waitFor(cond, timeoutMs){
+      const start = Date.now();
+      return new Promise((resolve)=>{
+        (function loop(){
+          if (cond()) return resolve(true);
+          if (Date.now() - start > timeoutMs) return resolve(false);
+          requestAnimationFrame(loop);
+        })();
       });
+    })(() => !!window.MapApp, 4000);
+
+    if (!ok || !window.MapApp){
+      console.error('MapApp no está disponible. Revisá errores de app-map.js.');
+      showToast('No se pudo inicializar el mapa.');
+      return;
     }
-    </script>
 
+    await window.MapApp.init();
+    await window.MapApp.ready;
 
-
+    // restaurar sesión inicial
+    await window.AuthApp.restore();
+  })();
+  </script>
 </body>
 </html>
