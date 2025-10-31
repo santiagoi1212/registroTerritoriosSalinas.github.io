@@ -5,41 +5,217 @@
   // Estado interno
   // ==========================
   let map;
-  let territoriosLayer;
-  let routeControl = null;
+let territoriosLayer;
+let housesLayer;
+let weeklyLayer;        // <--- NUEVA capa visual para predicación semanal (todas las salidas/puntos)
+let routeControl = null;
 
-  let geoWatchId   = null;
-  let geoMarker    = null;
+let geoWatchId   = null;
+let geoMarker    = null;
 
-  let labelsVisible = true;
-  let weeklyRoutingEnabled = false;
+let labelsVisible = true;
+let housesVisible = false;
+let weeklyRoutingEnabled = false;
 
-  // marcador actual de predicación semanal elegido
-  let weeklyMarker = null;
+let weeklyLayerVisible = false; // para trackear si estamos mostrando todos los puntos semanales
 
-  // cache de polígonos de territorio
-  let poligonosData = [];
+// marcador actual de predicación semanal elegido
+let weeklyMarker = null;
 
-  // Datos mock de predicación semanal (reemplazá con lo que venga de tu Apps Script)
-  // label = lo que se muestra al usuario
-  // lat,lng = punto al que queremos ir
-  const WEEKLY_POINTS = [
-    {
-      label: "Lunes 09:30 - Flia. Fernandez",
-      lat: -34.7705,
-      lng: -55.8259
-    },
-    {
-      label: "Martes 18:00 - Flia. Rodríguez",
-      lat: -34.7721,
-      lng: -55.8280
-    },
-    {
-      label: "Jueves 16:00 - Flia. García",
-      lat: -34.7694,
-      lng: -55.8272
+// último punto semanal elegido (para redibujar ruta)
+let lastWeeklyPoint = null;
+
+// cache polígonos
+let poligonosData = [];
+
+// cargadas desde JSON externo
+let WEEKLY_POINTS = [];
+let HOUSES_POINTS = [];
+
+
+
+ // ==========================
+// Cargar archivos JSON externos
+// ==========================
+async function loadWeeklyPoints() {
+  try {
+    const resp = await fetch("./predicacion_semanal.json", { cache: "no-store" });
+    if (!resp.ok) throw new Error("Error HTTP " + resp.status);
+    WEEKLY_POINTS = await resp.json();
+  } catch (err) {
+    console.error("No se pudo cargar predicación semanal:", err);
+    WEEKLY_POINTS = [];
+  }
+}
+
+async function loadHousesPoints() {
+  try {
+    const resp = await fetch("./casas_familias.json", { cache: "no-store" });
+    if (!resp.ok) throw new Error("Error HTTP " + resp.status);
+    HOUSES_POINTS = await resp.json();
+  } catch (err) {
+    console.error("No se pudo cargar casas de familias:", err);
+    HOUSES_POINTS = [];
+  }
+}
+
+function buildWeeklyMarkerHTML(p) {
+  // tipo define el ícono y color
+  const tipo = (p.type || "familia").toLowerCase();
+  const emoji = (tipo === "grupo") ? "👥" : "🏠";
+  const emojiClass = (tipo === "grupo")
+    ? "house-marker-emoji grupo"
+    : "house-marker-emoji familia";
+
+  // Lo que se ve siempre en el mapa (sin día/hora)
+  const visibleName = p.label || "Salida";
+
+  return `
+    <div class="house-marker">
+      <div class="${emojiClass}">${emoji}</div>
+      <div class="house-marker-label">${visibleName}</div>
+    </div>
+  `;
+}
+
+// crea icono leaflet.divIcon acorde al punto p
+function makeWeeklyDivIcon(p) {
+  return L.divIcon({
+    className: "",
+    html: buildWeeklyMarkerHTML(p),
+    iconSize: [1, 1],
+    iconAnchor: [20, 30]
+  });
+}
+
+// dibuja TODOS los puntos en weeklyLayer
+function renderWeeklyPointsOnMap() {
+  weeklyLayer.clearLayers();
+
+  WEEKLY_POINTS.forEach((p, idx) => {
+    const tipo = (p.type || "familia").toLowerCase();
+    const emoji = (tipo === "grupo") ? "👥" : "🏠";
+    const emojiClass = (tipo === "grupo")
+      ? "house-marker-emoji grupo"
+      : "house-marker-emoji familia";
+
+    const visibleName = p.label || "Salida";
+    const hoverInfo = `${p.dia || ""} ${p.hora || ""}`.trim();
+
+    const html = `
+      <div class="house-marker">
+        <div class="${emojiClass}">${emoji}</div>
+        <div class="house-marker-label">${visibleName}</div>
+      </div>
+    `;
+
+    const icon = L.divIcon({
+      className: "",
+      html: html,
+      iconSize: [1, 1],
+      iconAnchor: [20, 30]
+    });
+
+    const m = L.marker([p.lat, p.lng], {
+      icon: icon,
+      title: hoverInfo || visibleName,
+      interactive: true
+    });
+
+    // Popup táctil
+    m.bindPopup(`
+      <strong>${visibleName}</strong><br/>
+      <span>${p.dia || ""} ${p.hora || ""}</span>
+    `);
+
+    // Tooltip hover desktop
+    if (hoverInfo) {
+      m.bindTooltip(
+        `<div style="font-size:12px;font-weight:600;color:#fff;background:#111827cc;padding:4px 6px;border-radius:6px;line-height:1.3;box-shadow:0 4px 10px rgba(0,0,0,.6);">
+          ${hoverInfo}
+        </div>`,
+        { permanent: false, direction: "top", offset: [0, -10], opacity: 1 }
+      );
     }
-  ];
+
+    // 👇 NUEVO: click en el punto cuando estamos en modo "todas"
+    m.on("click", async () => {
+      // guardamos este punto como seleccionado
+      weeklyMarker = m;
+      lastWeeklyPoint = p;
+
+      // centramos
+      map.setView([p.lat, p.lng], 17, { animate: true });
+
+      // si tenemos geo activa, mostrar ruta
+      if (weeklyRoutingEnabled && geoMarker){
+        const from = geoMarker.getLatLng();
+        const to   = L.latLng(p.lat, p.lng);
+        drawRoute(from, to);
+
+        // avisar al UI de ruta que está activa
+        const btnRoute = document.getElementById('btn-route-toggle');
+        const iconRoute = document.getElementById('icon-route');
+        if (btnRoute && iconRoute){
+          btnRoute.setAttribute("data-active","on");
+          iconRoute.textContent = "🛣️";
+        }
+      }
+    });
+
+    m.addTo(weeklyLayer);
+  });
+}
+
+
+async function showSingleWeeklyPoint(idx){
+  const p = WEEKLY_POINTS[idx];
+  if (!p) return;
+
+  // limpiar marcador individual anterior + ruta vieja
+  clearWeeklyPoint();
+  clearRoute();
+
+ 
+  // crear un marker individual para esta salida concreta
+  const marker = L.marker([p.lat, p.lng], {
+    icon: makeWeeklyDivIcon(p),
+    title: `${p.dia || ""} ${p.hora || ""}`.trim()
+  });
+
+  // guardamos para poder trazar ruta luego
+  weeklyMarker = marker;
+  lastWeeklyPoint = p;
+
+  marker.bindPopup(`
+    <strong>${p.label || "Salida"}</strong><br/>
+    <span>${p.dia || ""} ${p.hora || ""}</span>
+  `);
+
+  if ((p.dia || p.hora)) {
+    marker.bindTooltip(
+      `<div style="font-size:12px;font-weight:600;color:#fff;background:#111827cc;padding:4px 6px;border-radius:6px;line-height:1.3;box-shadow:0 4px 10px rgba(0,0,0,.6);">
+        ${(p.dia||"")} ${(p.hora||"")}
+      </div>`,
+      { permanent: false, direction: "top", offset: [0,-10], opacity: 1 }
+    );
+  }
+
+  marker.addTo(map);
+
+  // centrar mapa ahí
+  map.setView([p.lat, p.lng], 17, { animate: true });
+
+  // si estamos en modo predicar + hay geolocalización activa, dibujar ruta
+  if (weeklyRoutingEnabled && geoMarker){
+    const from = geoMarker.getLatLng();
+    const to   = L.latLng(p.lat, p.lng);
+    drawRoute(from, to);
+  }
+}
+
+
+
 
   // ==========================
   // Helpers DOM
@@ -47,7 +223,7 @@
   function $(id){ return document.getElementById(id); }
 
   // ==========================
-  // Fechas / Colores (mismo que antes)
+  // Fechas / Colores
   // ==========================
   function parseFechaSeguro(raw){
     if (!raw) return null;
@@ -131,9 +307,14 @@
       const out=[]; let cur=""; let inQ=false;
       for (let i=0;i<row.length;i++){
         const ch=row[i];
-        if (ch === '"'){ inQ=!inQ; continue; }
-        if (ch === ',' && !inQ){ out.push(cur); cur=""; }
-        else { cur+=ch; }
+        if (ch === '"'){
+          if (inQ && row[i+1] === '"'){ cur+='"'; i++; }
+          else { inQ=!inQ; }
+        } else if (ch === ',' && !inQ){
+          out.push(cur); cur="";
+        } else {
+          cur+=ch;
+        }
       }
       out.push(cur);
       return out;
@@ -288,11 +469,12 @@
     const registros = await cargarDatosDesdeSheets();
     const byId = new Map();
     registros.forEach(r=>{
-      byId.set(String(r.id).trim(), r);
+      byId.set(String(r.id).trim().split("|")[0], r); // match por primera parte
     });
 
     poligonosData.forEach(p=>{
-      const found = byId.get(String(p.id).trim());
+      const key = String(p.id).trim().split("|")[0];
+      const found = byId.get(key);
       if (found){
         p.fecha = found.fecha;
         p.finalizado = found.finalizado;
@@ -316,7 +498,7 @@
   }
 
   // ==========================
-  // Toggle Números
+  // Toggle Números (devuelve true si quedan visibles)
   // ==========================
   function toggleLabels(){
     labelsVisible = !labelsVisible;
@@ -330,30 +512,76 @@
         p.layer.closeTooltip();
       }
     });
+    return labelsVisible;
+  }
 
-    const btn = $('btnToggleLabels');
-    if (btn){
-      btn.textContent = labelsVisible ? 'Ocultar Números' : 'Mostrar Números';
+  // ==========================
+  // Casas de familias
+  // ==========================
+function renderHouses(){
+  housesLayer.clearLayers();
+
+  HOUSES_POINTS.forEach(h => {
+    // Elegís el emoji que quieras mostrar:
+    const emoji = h.emoji || "🏠"; 
+    // Si querés por familia algo distinto, podés setear h.emoji en el array
+    // Ejemplo:
+    // { label:"Flia. Pérez", lat:..., lng:..., emoji:"👨‍👩‍👧‍👦" }
+
+    const html = `
+      <div class="house-marker">
+        <div class="house-marker-emoji">${emoji}</div>
+        <div class="house-marker-label">${h.label}</div>
+      </div>
+    `;
+
+
+    const icon = L.divIcon({
+      className: "",          // sin clase base de Leaflet
+      html: html,
+      iconSize: [1, 1],       // lo dejamos chico, el contenido define el tamaño real
+      iconAnchor: [0, 0]      // esquina superior izquierda "cae" en la coordenada
+    });
+
+    const m = L.marker([h.lat, h.lng], {
+      icon: icon,
+      interactive: true,      // click habilitado
+      title: h.label
+    });
+
+    m.bindPopup(`<strong>${h.label}</strong>`);
+    m.addTo(housesLayer);
+  });
+}
+
+
+  function toggleHouses(){
+    housesVisible = !housesVisible;
+    if (housesVisible){
+      // asegurar que estén dibujadas
+      renderHouses();
+      housesLayer.addTo(map);
+    } else {
+      housesLayer.remove();
     }
+    return housesVisible;
   }
 
   // ==========================
   // Predicación semanal con puntos
   // ==========================
-
   function getWeeklyPoints(){
-    // en el futuro podés filtrar por día, traer del servidor, etc.
-    // ahora devolvemos toda la lista
     return WEEKLY_POINTS.slice();
   }
 
-  // borra marcador y ruta actuales
-  function clearWeeklyPoint(){
-    if (weeklyMarker){
-      map.removeLayer(weeklyMarker);
-      weeklyMarker = null;
-    }
+function clearWeeklyPoint(){
+  if (weeklyMarker){
+    map.removeLayer(weeklyMarker);
+    weeklyMarker = null;
   }
+  lastWeeklyPoint = null;
+}
+
 
   function clearRoute(){
     if (routeControl){
@@ -362,31 +590,25 @@
     }
   }
 
-  // Dado un índice de WEEKLY_POINTS:
-  // - centra el mapa en ese punto
-  // - coloca marcador bonito
-  // - si weeklyRoutingEnabled y tenemos geoMarker => dibuja ruta
   async function selectWeeklyPoint(idx){
     const p = WEEKLY_POINTS[idx];
     if (!p) return;
 
-    // aseguramos geoloc si routing está habilitado
+    lastWeeklyPoint = p;
+
     if (weeklyRoutingEnabled){
       await startGeo();
     }
 
-    // limpiar marcador viejo
     clearWeeklyPoint();
     clearRoute();
 
-    // crear marcador destino
     weeklyMarker = L.marker([p.lat, p.lng], {
       title: p.label
     }).addTo(map);
 
     map.setView([p.lat, p.lng], 17, { animate:true });
 
-    // trazar ruta si corresponde
     if (weeklyRoutingEnabled && geoMarker){
       const from = geoMarker.getLatLng();
       const to   = L.latLng(p.lat, p.lng);
@@ -402,25 +624,82 @@
     }
   }
 
+  // ==========================
+  // Ruta / indicaciones en español
+  // ==========================
+  function traducirInstruccion(str){
+    if (!str || typeof str !== "string") return str || "";
+
+    let out = str;
+    out = out.replace(/Start/g, "Salida");
+    out = out.replace(/Destination/g, "Destino");
+    out = out.replace(/Turn left/gi, "Girar a la izquierda");
+    out = out.replace(/Turn right/gi, "Girar a la derecha");
+    out = out.replace(/Bear left/gi, "Mantenerse a la izquierda");
+    out = out.replace(/Bear right/gi, "Mantenerse a la derecha");
+    out = out.replace(/Slight left/gi, "Leve giro a la izquierda");
+    out = out.replace(/Slight right/gi, "Leve giro a la derecha");
+    out = out.replace(/Continue straight/gi, "Seguir derecho");
+    out = out.replace(/Continue/gi, "Continuar");
+    out = out.replace(/Arrive at destination/gi, "Llegar al destino");
+    out = out.replace(/Arrive at/gi, "Llegar a");
+    out = out.replace(/Drive/gi, "Conducir");
+    out = out.replace(/Head/gi, "Ir");
+    out = out.replace(/towards/gi, "hacia");
+
+    return out;
+  }
+
+  function postProcesarPanelRuta(container){
+    const rows = container.querySelectorAll('.leaflet-routing-alt, .leaflet-routing-alt *');
+    rows.forEach(el=>{
+      if (el.childNodes && el.childNodes.length === 1 && el.childNodes[0].nodeType === 3){
+        el.textContent = traducirInstruccion(el.textContent);
+      } else if (el.childNodes && el.childNodes.length > 1){
+        el.childNodes.forEach(n=>{
+          if (n.nodeType === 3){
+            n.textContent = traducirInstruccion(n.textContent);
+          }
+        });
+      }
+    });
+  }
+
   function drawRoute(fromLatLng, toLatLng){
     clearRoute();
+
     routeControl = L.Routing.control({
       waypoints: [
         L.latLng(fromLatLng.lat, fromLatLng.lng),
-        L.latLng(toLatLng.lat,   toLatLng.lng)
+        L.latLng(toLatLng.lat, toLatLng.lng)
       ],
-      lineOptions: {
-        addWaypoints: false,
-        weight: 5,
-        opacity: 0.8
-      },
-      draggableWaypoints: false,
-      fitSelectedRoutes: true,
-      show: false
+      routeWhileDragging: false,
+      show: true,
+      collapsible: true,
+      language: 'es', // 👈 idioma español
+      router: L.Routing.osrmv1({
+        language: 'es', // 👈 idioma español
+        serviceUrl: 'https://router.project-osrm.org/route/v1' // servicio público OSRM
+      }),
+      createMarker: function() { return null; } // opcional: no mostrar marcadores grandes
     }).addTo(map);
+
 
     const container = routeControl.getContainer();
     container.classList.add('route-panel-minimal');
+
+    postProcesarPanelRuta(container);
+    routeControl.on('routesfound', () => {
+      postProcesarPanelRuta(container);
+    });
+  }
+
+  function redrawRouteIfPossible(){
+    if (!lastWeeklyPoint) return;
+    if (!geoMarker) return;
+    const from = geoMarker.getLatLng();
+    const to   = L.latLng(lastWeeklyPoint.lat, lastWeeklyPoint.lng);
+    drawRoute(from, to);
   }
 
   // ==========================
@@ -441,6 +720,39 @@
     }
     document.dispatchEvent(new CustomEvent('geo:state',{detail:{active:false}}));
   }
+
+  async function ensureRouteWithGeo() {
+  // Queremos tener ruta desde MI posición hasta el punto de predicación actual.
+
+  // Caso 1: ya tengo un punto seleccionado (weeklyMarker/lastWeeklyPoint)
+  const target = lastWeeklyPoint;
+  if (!target) {
+    // No hay destino elegido todavía => no podemos trazar ruta.
+    window.showToast?.("Elegí un punto de predicación primero");
+    return false;
+  }
+
+  // Asegurarnos de tener geolocalización activa
+  if (!isGeoActive()) {
+    const ok = await startGeo(); // esto ya posiciona geoMarker si funciona
+    if (!ok) {
+      window.showToast?.("No se pudo activar tu ubicación");
+      return false;
+    }
+  }
+
+  // Ya tengo geoMarker y destino -> trazo ruta
+  if (geoMarker) {
+    const from = geoMarker.getLatLng();
+    const to   = L.latLng(target.lat, target.lng);
+    drawRoute(from, to);
+    return true;
+  }
+
+  window.showToast?.("No se detectó tu ubicación todavía");
+  return false;
+}
+
 
   async function startGeo(){
     if (geoWatchId !== null){
@@ -464,7 +776,6 @@
             geoMarker.setLatLng([lat,lng]);
           }
 
-          // centrar primera vez
           map.setView([lat,lng], Math.max(map.getZoom(),16), {animate:true});
 
           document.dispatchEvent(new CustomEvent('geo:state',{detail:{active:true}}));
@@ -507,22 +818,30 @@
   // ==========================
   // init() y hooks con AuthApp
   // ==========================
-  async function init(){
-    map = L.map('map').setView([-34.7773604512622, -55.855506081213164], 16);
+async function init(){
+  map = L.map('map').setView([-34.7773604512622, -55.855506081213164], 16);
 
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "&copy; OpenStreetMap contributors"
-    }).addTo(map);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: "&copy; OpenStreetMap contributors"
+  }).addTo(map);
 
-    territoriosLayer = L.layerGroup().addTo(map);
+  territoriosLayer = L.layerGroup().addTo(map);
+  housesLayer      = L.layerGroup(); // las casas arrancan ocultas
+  weeklyLayer      = L.layerGroup(); // las salidas/semanal arrancan ocultas
 
-    await loadPolygonsJSON();
+  // cargar data externa
+  await loadWeeklyPoints();
+  await loadHousesPoints();
 
-    // si ya estás logueado cuando arranca
-    if (window.AuthApp && window.AuthApp.isLogged()){
-      await paintAllPolygonsIfLogged();
-    }
+  // cargar polígonos del territorio
+  await loadPolygonsJSON();
+
+  // si ya estás logueado cuando arranca
+  if (window.AuthApp && window.AuthApp.isLogged()){
+    await paintAllPolygonsIfLogged();
   }
+}
+
 
   async function paintPolygonsForSession(){
     await paintAllPolygonsIfLogged();
@@ -532,28 +851,59 @@
     clearAllPolygons();
     clearWeeklyPoint();
     clearRoute();
+    if (housesVisible){
+      toggleHouses(); // esto las oculta
+    }
   }
+
+function showWeeklyLayerWithRoutingOnClick(){
+  // limpiar selección individual para que no haya un marcador suelto encima
+  clearWeeklyPoint();
+  clearRoute();
+
+  renderWeeklyPointsOnMap();
+
+  if (!weeklyLayerVisible){
+    weeklyLayer.addTo(map);
+    weeklyLayerVisible = true;
+  }
+}
+
 
   // ==========================
   // Exponer API pública
   // ==========================
-  window.MapApp = {
-    init,
-    ready: Promise.resolve(),
-    toggleLabels,
-    // predicación semanal:
-    getWeeklyPoints,
-    selectWeeklyPoint,
-    clearWeeklyPoint,
-    setWeeklyRoutingEnabled,
-    clearRoute,
-    // geo
-    startGeo,
-    stopGeo,
-    isGeoActive,
-    // territorios
-    paintPolygonsForSession,
-    clearAllPolygonsForLogout
-  };
+window.MapApp = {
+  init,
+  ready: Promise.resolve(),
+
+  // etiquetas en polígonos
+  toggleLabels,
+
+  // casas
+  toggleHouses,
+
+  // predicación semanal
+  getWeeklyPoints,
+  selectWeeklyPoint,          // <- esta la podés dejar o reemplazar por showSingleWeeklyPoint si ya no la usás
+  clearWeeklyPoint,
+  setWeeklyRoutingEnabled,
+  clearRoute,
+  redrawRouteIfPossible,
+  showWeeklyLayerWithRoutingOnClick,
+  showSingleWeeklyPoint,      // 👈 agregar ESTA nueva
+
+  // geo
+  startGeo,
+  stopGeo,
+  isGeoActive,
+  ensureRouteWithGeo,
+
+  // territorios
+  paintPolygonsForSession,
+  clearAllPolygonsForLogout
+};
+
+
 
 })();
