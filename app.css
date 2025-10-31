@@ -32,44 +32,41 @@ html, body {
   align-items: center;
   gap: 8px;
 }
+.auth-user-label {
+  font-size:12px;
+  font-weight:500;
+  color:#fff;
+}
 .auth-hidden {
   display: none !important;
 }
 
-#subbar {
-  position: fixed;
-  top: 44px;
-  left: 0;
-  right: 0;
-  background: #fff;
-  border-bottom: 1px solid #e5e7eb;
-  display: flex;
-  gap: 8px;
-  padding: 8px;
-  flex-wrap: wrap;
-  z-index: 1000;
-}
-#subbar .btn {
-  font-size: 13px;
-  background:#fff;
-  border:1px solid #d1d5db;
-  border-radius:8px;
-  padding:6px 10px;
-  line-height:1.2;
-  box-shadow:0 2px 4px rgba(0,0,0,.05);
-  min-height:32px;
-  flex: 1 1 auto;
-}
-#btnAuthOpen.btn.primary {
-  background:#2563eb;
+.icon-btn {
+  background:#1f2937;
+  border:1px solid #4b5563;
+  border-radius:10px;
   color:#fff;
+  font-size:14px;
+  line-height:1;
+  padding:6px 8px;
+  min-width:32px;
+  min-height:32px;
+  box-shadow:0 4px 10px rgba(0,0,0,.5);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+}
+.icon-btn.primary {
+  background:#2563eb;
   border:1px solid #1e40af;
-  box-shadow:0 4px 10px rgba(37,99,235,.4);
+  box-shadow:0 4px 10px rgba(37,99,235,.5);
 }
 
+/* Banner distancia */
 #far-banner {
   position: fixed;
-  top: calc(44px + 48px);
+  top: 44px;
   left: 0;
   right: 0;
   font-size: 12px;
@@ -82,14 +79,69 @@ html, body {
   z-index: 900;
 }
 
+/* MAP ocupa pantalla entre la top bar y la bottom bar */
 #map {
   position: fixed;
   left: 0;
   right: 0;
-  bottom: 0;
-  top: calc(44px + 48px);
+  bottom: 56px;  /* espacio barra inferior */
+  top: 44px;     /* espacio barra superior */
   background: #ddd;
   z-index: 1;
+}
+
+/* ===== Bottom bar ===== */
+#bottombar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 56px;
+  background:#ffffff;
+  border-top:1px solid #e5e7eb;
+  box-shadow:0 -4px 16px rgba(0,0,0,.15);
+  z-index:1300;
+
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-around;
+  padding:4px 6px;
+  font-size:11px;
+  line-height:1.2;
+  color:#111827;
+}
+
+.bb-item {
+  background:none;
+  border:none;
+  outline:none;
+  min-width:56px;
+  min-height:48px;
+  border-radius:10px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  font-size:11px;
+  line-height:1.2;
+  color:#111827;
+  cursor:pointer;
+  box-shadow:0 0 0 rgba(0,0,0,0);
+  border:1px solid transparent;
+}
+.bb-item .bb-icon {
+  font-size:18px;
+  line-height:1;
+  margin-bottom:2px;
+}
+.bb-item[data-active="on"] {
+  background:#111827;
+  color:#fff;
+  border-color:#4b5563;
+  box-shadow:0 10px 20px rgba(0,0,0,.4);
+}
+.bb-item[data-active="on"] .bb-icon {
+  color:#fff;
 }
 
 /* ===== Tooltip numeritos en los polígonos ===== */
@@ -108,7 +160,7 @@ html, body {
 #referencias {
   position: fixed;
   right: 12px;
-  bottom: 12px;
+  bottom: 70px; /* arriba de la bottom bar */
   background:#fff;
   border:1px solid #d1d5db;
   border-radius:12px;
@@ -144,85 +196,64 @@ html, body {
 .color-box.amarillo { background:#fde68a; border-color:#78350f; }
 .color-box.rojo     { background:#fca5a5; border-color:#7f1d1d; }
 
-/* Botón para abrir/cerrar el panel de referencias */
-#toggle-referencias {
-  position: fixed;
-  right: 12px;
-  bottom: calc(12px + 160px);
-  background:#fff;
-  border:1px solid #d1d5db;
-  border-radius:10px;
-  padding:8px 12px;
-  font-size:13px;
-  line-height:1.3;
-  box-shadow:0 10px 30px rgba(0,0,0,.2);
-  z-index:1300;
-}
-
-/* En pantallas chicas lo movemos ARRIBA a la derecha */
-@media (max-width:480px){
-  #toggle-referencias {
-    top: calc(130px + 8px);        /* un poquito debajo de la barra negra */
-    right: 8px;
-    bottom: auto;                 /* ya no abajo */
-    left: auto;
-    border-radius:8px;
-    padding:6px 10px;
-    font-size:12px;
-    line-height:1.2;
-    box-shadow:0 8px 20px rgba(0,0,0,.35);
-    z-index:1600;
-  }
-}
-
 /* ===== Panel semanal ===== */
 .weekly-panel {
   position: fixed;
-  left: 12px;
-  right: 12px;
-  bottom: 60px;
+  bottom: 70px; /* arriba de la barra inferior */
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0,0,0,.2);
+  padding: 12px;
+  z-index: 1400;
+  font-size: 14px;
   max-height: 40vh;
   overflow-y: auto;
-  background:#fff;
-  border:1px solid #e5e7eb;
-  border-radius:12px;
-  box-shadow:0 12px 32px rgba(0,0,0,.2);
-  padding:12px;
-  z-index:1100;
-  font-size:14px;
+
+  /* comportamiento base (móvil) */
+  left: 12px;
+  right: 12px;
+  width: auto;
 }
+
+/* 💻 Pantallas grandes: limitar al 30% del ancho, a la derecha */
+@media (min-width: 768px) {
+  .weekly-panel {
+    width: 30%;
+    right: 20px;
+    left: auto;
+  }
+}
+
 .weekly-title {
   font-weight:700;
   font-size:14px;
-  margin-bottom:8px;
+  margin-bottom:4px;
   color:#111827;
 }
-.weekly-days label {
+.weekly-hint {
+  font-size:12px;
+  color:#6b7280;
+  margin-bottom:8px;
+}
+.weekly-list {
   display:flex;
-  align-items:center;
-  gap:6px;
-  padding:6px 0;
-  border-bottom:1px solid #f3f4f6;
-  font-size:14px;
+  flex-direction:column;
+  gap:8px;
 }
-.weekly-days label:last-child {
-  border-bottom:none;
-}
-
-/* Botón flotante para volver a mostrar el panel semanal */
-#btn-weekly-toggle-float {
-  position: fixed;
-  left: 12px;
-  bottom: 12px;
-  background:#fff;
-  border:1px solid #d1d5db;
-  border-radius:9999px;
-  padding:10px 14px;
+.weekly-item {
+  background:#111827;
+  color:#fff;
+  border-radius:10px;
+  box-shadow:0 8px 20px rgba(0,0,0,.5);
+  border:1px solid #374151;
   font-size:13px;
-  line-height:1.2;
-  box-shadow:0 10px 30px rgba(0,0,0,.25);
-  z-index:1400;
-  display:none;
+  line-height:1.3;
+  padding:10px 12px;
+  cursor:pointer;
+}
+.weekly-item:active {
+  transform:scale(.98);
 }
 
 /* ===== Ruta compacta (Leaflet Routing Machine) ===== */
@@ -230,7 +261,7 @@ html, body {
   position: fixed !important;
   left: 12px !important;
   right: 12px !important;
-  bottom: calc(60px + 12px) !important;
+  bottom: 70px !important; /* arriba bottom bar */
   max-height: 28vh;
   overflow-y: auto;
   background: rgba(17,24,39,0.9);
@@ -247,6 +278,17 @@ html, body {
   color:#fff !important;
   background:transparent !important;
   border-color:rgba(255,255,255,0.2) !important;
+}
+.route-panel-minimal .leaflet-routing-alt h2 {
+  font-size:13px;
+  font-weight:600;
+  margin:0 0 4px;
+  color:#fff;
+}
+.route-panel-minimal .leaflet-routing-alt table,
+.route-panel-minimal .leaflet-routing-alt td {
+  font-size:12px;
+  line-height:1.3;
 }
 
 /* ===== Overlays (login y registrar) ===== */
@@ -370,7 +412,7 @@ html, body {
 .toast {
   position:fixed;
   left:50%;
-  bottom:20px;
+  bottom:70px; /* arriba de bottom bar */
   transform:translateX(-50%);
   background:#111827;
   color:#fff;
@@ -383,88 +425,135 @@ html, body {
   display:none;
 }
 
-/* ===== Responsive ajustes ===== */
+/* ===== Marcador de casa / familia ===== */
+.house-marker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: #fff;
+  font-weight: 600;
+  font-size: 13px;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+}
+
+.house-marker-emoji {
+  font-size: 22px;
+  line-height: 1;
+  background: rgba(17,24,39,0.85);
+  border: 2px solid #fff;
+  border-radius: 50%;
+  padding: 6px;
+  box-shadow: 0 4px 10px rgba(0,0,0,.6);
+}
+
+.house-marker-label {
+  margin-top: 2px;
+  background: rgba(17,24,39,0.8);
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+
+
+/* ===== Responsive ===== */
 @media (max-width:480px){
-  #subbar .btn {
-    min-width:48%;
-    font-size:12px;
-    padding:6px 8px;
-  }
-
-  #map {
-    top: calc(44px + 80px);
-  }
-
-/* ===== Panel semanal ===== */
-.weekly-panel {
-  position: fixed;
-  left: 12px;
-  right: 12px;
-  bottom: 60px;
-  max-height: 40vh;
-  overflow-y: auto;
-  background:#fff;
-  border:1px solid #e5e7eb;
-  border-radius:12px;
-  box-shadow:0 12px 32px rgba(0,0,0,.2);
-  padding:12px;
-  z-index:1100;
-  font-size:14px;
-}
-.weekly-title {
-  font-weight:700;
-  font-size:14px;
-  margin-bottom:4px;
-  color:#111827;
-}
-.weekly-hint {
-  font-size:12px;
-  color:#6b7280;
-  margin-bottom:8px;
-}
-.weekly-list {
-  display:flex;
-  flex-direction:column;
-  gap:8px;
-}
-.weekly-item {
-  background:#111827;
-  color:#fff;
-  border-radius:10px;
-  box-shadow:0 8px 20px rgba(0,0,0,.5);
-  border:1px solid #374151;
-  font-size:13px;
-  line-height:1.3;
-  padding:10px 12px;
-  cursor:pointer;
-}
-.weekly-item:active {
-  transform:scale(.98);
-}
-
-/* Botón flotante para reabrir */
-#btn-weekly-toggle-float {
-  position: fixed;
-  left: 12px;
-  bottom: 12px;
-  background:#fff;
-  border:1px solid #d1d5db;
-  border-radius:9999px;
-  padding:10px 14px;
-  font-size:13px;
-  line-height:1.2;
-  box-shadow:0 10px 30px rgba(0,0,0,.25);
-  z-index:1400;
-  display:none;
-}
-
-
   .modal-card {
     width:90vw;
     max-height:85vh;
   }
-
   .modal-body {
     padding:14px;
   }
 }
+
+.house-marker-emoji.grupo {
+  background: rgba(0, 102, 204, 0.9); /* azul oscuro distinto al de casas */
+  border: 2px solid #fff;
+}
+
+.house-marker-emoji.familia {
+  background: rgba(17,24,39,0.85); /* el que ya veníamos usando */
+  border: 2px solid #fff;
+}
+
+.weekly-item-all {
+  background:#2563eb;
+  border:1px solid #1e40af;
+  margin-bottom: 10px;
+  box-shadow:0 8px 20px rgba(37,99,235,.5);
+}
+.weekly-item-all:active {
+  transform:scale(.98);
+}
+
+/* Panel predicación minimizado (modo mobile) */
+.weekly-panel.minimized {
+  bottom: 70px;
+  left: 12px;
+  right: auto;
+  width: auto;
+  max-width: 200px;
+  max-height: none;
+  overflow: hidden;
+
+  padding: 8px 10px;
+  background: rgba(17,24,39,0.9);
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.2);
+  box-shadow: 0 12px 32px rgba(0,0,0,.6);
+
+  border-radius: 12px;
+  z-index: 1600;
+}
+
+/* Cuando está minimizado solo mostramos título tipo "Predicación" como chip */
+.weekly-panel.minimized .weekly-title,
+.weekly-panel.minimized .weekly-hint,
+.weekly-panel.minimized #weekly-show-all,
+.weekly-panel.minimized #weekly-list {
+  display: none;
+}
+
+/* chip visible en minimizado */
+.weekly-panel.minimized::after {
+  content: "Predicación";
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  display: block;
+}
+  
+/* En pantallas grandes (desktop), aunque minimicemos nunca usamos la versión chip */
+@media (min-width: 768px) {
+  .weekly-panel.minimized {
+    position: fixed;
+    right: 20px;
+    left: auto;
+    bottom: 70px;
+    width: 30%;
+    max-width: 340px;
+    max-height: 40vh;
+    background: #fff;
+    color: #111827;
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 12px 32px rgba(0,0,0,.2);
+  }
+
+  .weekly-panel.minimized .weekly-title,
+  .weekly-panel.minimized .weekly-hint,
+  .weekly-panel.minimized #weekly-show-all,
+  .weekly-panel.minimized #weekly-list {
+    display: block;
+  }
+
+  .weekly-panel.minimized::after {
+    content: "";
+    display: none;
+  }
+}
+
+
+
