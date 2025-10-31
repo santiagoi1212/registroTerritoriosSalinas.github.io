@@ -1,0 +1,66 @@
+[
+  {
+    "label": "Flia. Fernández",
+    "dia": "Lunes",
+    "hora": "09:30",
+    "type": "grupo",
+    "lat": -34.7705,
+    "lng": -55.8259
+  },
+  {
+    "label": "ANCAP (lado sur)",
+    "dia": "Martes",
+    "hora": "17:00",
+    "type": "grupo",
+    "lat": -34.7721,
+    "lng": -55.8280
+  },
+  {
+    "label": "Flia. Correa",
+    "dia": "Miércoles",
+    "hora": "17:00",
+    "type": "grupo",
+    "lat": -34.76302044096889, 
+    "lng": -55.86102119788422
+  },
+  {
+    "label": "Salida Central Salinas",
+    "dia": "Sábado",
+    "hora": "10:00",
+    "type": "grupo",
+    "lat": -34.7712,
+    "lng": -55.8267
+  },
+    {
+    "label": "Flia. Fernández",
+    "dia": "Lunes",
+    "hora": "09:30",
+    "type": "grupo",
+    "lat": -34.7705,
+    "lng": -55.8259
+  },
+  {
+    "label": "ANCAP (lado sur)",
+    "dia": "Martes",
+    "hora": "17:00",
+    "type": "grupo",
+    "lat": -34.7721,
+    "lng": -55.8280
+  },
+  {
+    "label": "Flia. Correa",
+    "dia": "Miércoles",
+    "hora": "17:00",
+    "type": "grupo",
+    "lat": -34.76302044096889, 
+    "lng": -55.86102119788422
+  },
+  {
+    "label": "Salida Central Salinas",
+    "dia": "Sábado",
+    "hora": "10:00",
+    "type": "grupo",
+    "lat": -34.7712,
+    "lng": -55.8267
+  }
+]
