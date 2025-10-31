@@ -26,17 +26,18 @@
   <div id="topbar">
     <div class="brand">Territorios</div>
     <div id="topbar-actions">
-      <span id="auth-info" class="auth-hidden" style="margin-right:8px;"></span>
-      <button id="btnAuthOpen" class="btn primary">Acceder</button>
-      <button id="btnLogout" class="auth-hidden">Salir</button>
-    </div>
-  </div>
+      <span id="auth-info" class="auth-hidden auth-user-label"></span>
 
-  <!-- SUB BAR -->
-  <div id="subbar">
-    <button id="btn-geo" class="btn">Mostrar Posición</button>
-    <button id="btn-weekly-panel" class="btn">Predicación Semanal</button>
-    <button id="btnToggleLabels" class="btn">Ocultar Números</button>
+      <!-- Botón abrir login -->
+      <button id="btnAuthOpen" class="icon-btn primary" title="Acceder">
+        <span class="icon">👤</span>
+      </button>
+
+      <!-- Botón logout -->
+      <button id="btnLogout" class="icon-btn auth-hidden" title="Salir">
+        <span class="icon">⏏</span>
+      </button>
+    </div>
   </div>
 
   <!-- AVISO DISTANCIA -->
@@ -45,27 +46,67 @@
   <!-- MAPA -->
   <div id="map"></div>
 
-  <!-- PANEL SEMANAL -->
+  <!-- BOTTOM BAR -->
+  <div id="bottombar">
+    <!-- GPS -->
+    <button id="btn-geo" class="bb-item" data-active="off" title="Mi posición">
+      <div class="bb-icon" id="icon-geo">📍</div>
+      <div class="bb-label">Posición</div>
+    </button>
+
+    <!-- Predicación semanal -->
+    <button id="btn-weekly-panel" class="bb-item" data-active="off" title="Predicación semanal">
+      <div class="bb-icon" id="icon-weekly">📅</div>
+      <div class="bb-label">Predicar</div>
+    </button>
+
+    <!-- Casas de familias -->
+    <button id="btn-houses-toggle" class="bb-item" data-active="off" title="Casas de familias">
+      <div class="bb-icon" id="icon-houses">🏠</div>
+      <div class="bb-label">Casas</div>
+    </button>
+
+    <!-- Mostrar / ocultar números -->
+    <button id="btnToggleLabels" class="bb-item" data-active="on" title="Mostrar / ocultar números" style="display:none">
+      <div class="bb-icon" id="icon-labels">👁️</div>
+      <div class="bb-label">Números</div>
+    </button>
+
+    <!-- Indicaciones / ruta -->
+    <button id="btn-route-toggle" class="bb-item" data-active="off" title="Indicaciones">
+      <div class="bb-icon" id="icon-route">🚗</div>
+      <div class="bb-label">Ruta</div>
+    </button>
+
+    <!-- Referencias / info colores -->
+    <button id="btn-info-toggle" class="bb-item" data-active="off" title="Información de colores" style="display:none">
+      <div class="bb-icon" id="icon-info">ℹ️</div>
+      <div class="bb-label">Info</div>
+    </button>
+
+  <!-- PANEL SEMANAL flotante -->
   <div id="weekly-panel" class="weekly-panel" hidden>
     <div class="weekly-title">Predicación Semanal</div>
-    <div class="weekly-hint">Tocá un punto para ver dónde es y cómo llegar:</div>
+    <div class="weekly-hint">Elegí una salida para verla en el mapa, o mostrarlas todas:</div>
+
+    <button id="weekly-show-all" class="weekly-item weekly-item-all" type="button">
+      👥 Mostrar todas las salidas
+    </button>
+
     <div id="weekly-list" class="weekly-list">
-      <!-- Se llena dinámicamente con .weekly-item -->
+      <!-- dinámico -->
     </div>
   </div>
 
-  <!-- BOTÓN FLOANTE PARA REABRIR SEMANAL -->
-  <button id="btn-weekly-toggle-float">📅 Cambiar punto</button>
 
-  <!-- REFERENCIAS -->
+  <!-- REFERENCIAS (colores de territorios) -->
   <div id="referencias">
-    <h3 style="margin-top:0">Referencias</h3>
+    <h3>Referencias</h3>
     <div class="referencia"><span class="color-box azul"></span>Se está trabajando</div>
-    <div class="referencia"><span class="color-box verde"></span>Menos de 2 meses (finalizado)</div>
-    <div class="referencia"><span class="color-box amarillo"></span>Más de 2 y menos de 3 meses</div>
-    <div class="referencia"><span class="color-box rojo"></span>3 meses o más</div>
+    <div class="referencia"><span class="color-box verde"></span>Finalizado &lt; 2 meses</div>
+    <div class="referencia"><span class="color-box amarillo"></span>Finalizado 2-3 meses</div>
+    <div class="referencia"><span class="color-box rojo"></span>Finalizado 3+ meses</div>
   </div>
-  <button id="toggle-referencias">📋 Ver Información</button>
 
   <!-- LOGIN MODAL -->
   <div id="login-overlay" class="overlay">
@@ -111,31 +152,7 @@
   <div id="territorio-toast" class="toast"></div>
 
   <script>
-  // ========== Overlays close ==========
-  (function(){
-    const loginOverlay = document.getElementById('login-overlay');
-    const territorioOverlay = document.getElementById('territorio-overlay');
-    const territorioClose = document.getElementById('territorio-close');
-
-    if (territorioClose){
-      territorioClose.addEventListener('click', ()=>{
-        territorioOverlay.style.display='none';
-      });
-    }
-
-    if (territorioOverlay){
-      territorioOverlay.addEventListener('click',(e)=>{
-        if (e.target===territorioOverlay) territorioOverlay.style.display='none';
-      });
-    }
-    if (loginOverlay){
-      loginOverlay.addEventListener('click',(e)=>{
-        if (e.target===loginOverlay) loginOverlay.style.display='none';
-      });
-    }
-  })();
-
-  // ========== Toast global ==========
+  // ====== Toast global ======
   function showToast(msg){
     const t = document.getElementById("territorio-toast");
     t.textContent = msg || "";
@@ -147,26 +164,59 @@
   }
   window.showToast = showToast;
 
-  // ========== DOM refs ==========
-  const btnAuthOpen      = document.getElementById('btnAuthOpen');
-  const btnLogout        = document.getElementById('btnLogout');
-  const overlayLogin     = document.getElementById('login-overlay');
-  const btnLogin         = document.getElementById('btnLogin');
-  const inUser           = document.getElementById('inUser');
-  const inPass           = document.getElementById('inPass');
-  const btnCloseLogin    = document.getElementById('login-close');
-  const btnCancelLogin   = document.getElementById('login-cancel');
+  // ====== DOM refs generales ======
+  const btnAuthOpen    = document.getElementById('btnAuthOpen');
+  const btnLogout      = document.getElementById('btnLogout');
+  const overlayLogin   = document.getElementById('login-overlay');
+  const btnLogin       = document.getElementById('btnLogin');
+  const inUser         = document.getElementById('inUser');
+  const inPass         = document.getElementById('inPass');
+  const btnCloseLogin  = document.getElementById('login-close');
+  const btnCancelLogin = document.getElementById('login-cancel');
 
-  const btnGeo           = document.getElementById('btn-geo');
-  const btnWeekly        = document.getElementById('btn-weekly-panel');
-  const btnWeeklyFloat   = document.getElementById('btn-weekly-toggle-float');
-  const panelW           = document.getElementById('weekly-panel');
-  const weeklyList       = document.getElementById('weekly-list');
-  const btnInfo          = document.getElementById('toggle-referencias');
-  const panelsInfo       = [document.getElementById('referencias')];
-  const btnToggleLabels  = document.getElementById('btnToggleLabels');
+  const btnGeo         = document.getElementById('btn-geo');
+  const iconGeo        = document.getElementById('icon-geo');
 
-  // ========== Login modal ==========
+  const btnWeekly      = document.getElementById('btn-weekly-panel');
+  const iconWeekly     = document.getElementById('icon-weekly');
+  const weeklyPanel    = document.getElementById('weekly-panel');
+  const weeklyList     = document.getElementById('weekly-list');
+
+  const btnHouses      = document.getElementById('btn-houses-toggle');
+  const iconHouses     = document.getElementById('icon-houses');
+
+  const btnLabels      = document.getElementById('btnToggleLabels');
+  const iconLabels     = document.getElementById('icon-labels');
+
+  const btnRoute       = document.getElementById('btn-route-toggle');
+  const iconRoute      = document.getElementById('icon-route');
+
+  const btnInfo        = document.getElementById('btn-info-toggle');
+  const iconInfo       = document.getElementById('icon-info');
+  const referenciasBox = document.getElementById('referencias');
+
+  const territorioOverlay = document.getElementById('territorio-overlay');
+  const territorioClose   = document.getElementById('territorio-close');
+  const loginOverlay      = document.getElementById('login-overlay');
+
+  // ====== Cerrar modales haciendo click afuera ======
+  if (territorioClose){
+    territorioClose.addEventListener('click', ()=>{
+      territorioOverlay.style.display='none';
+    });
+  }
+  if (territorioOverlay){
+    territorioOverlay.addEventListener('click',(e)=>{
+      if (e.target===territorioOverlay) territorioOverlay.style.display='none';
+    });
+  }
+  if (loginOverlay){
+    loginOverlay.addEventListener('click',(e)=>{
+      if (e.target===loginOverlay) loginOverlay.style.display='none';
+    });
+  }
+
+  // ====== Login modal open/close ======
   function openLogin(){
     overlayLogin.style.display='flex';
     inUser.focus();
@@ -194,102 +244,213 @@
     window.AuthApp.logout();
   });
 
-  // ========== Geolocalización botón ==========
+  // ====== Estado Predicación semanal activo? ======
   let weeklyActive = false;
 
+  // ====== GPS toggle ======
   btnGeo.addEventListener('click', async () => {
     const active = window.MapApp.isGeoActive();
     if (active) {
       window.MapApp.stopGeo();
-      btnGeo.textContent = 'Mostrar Posición';
+      btnGeo.setAttribute("data-active","off");
+      iconGeo.textContent = "📍";
     } else {
-      // si estamos en modo predicación semanal, permitimos routing automático
       window.MapApp.setWeeklyRoutingEnabled(weeklyActive);
       const ok = await window.MapApp.startGeo();
-      if (ok) btnGeo.textContent = 'Ocultar Posición';
+      if (ok){
+        btnGeo.setAttribute("data-active","on");
+        iconGeo.textContent = "📡";
+      }
     }
   });
 
   document.addEventListener('geo:state', (e)=>{
     const active = !!(e.detail && e.detail.active);
-    btnGeo.textContent = active ? 'Ocultar Posición' : 'Mostrar Posición';
+    btnGeo.setAttribute("data-active", active ? "on" : "off");
+    iconGeo.textContent = active ? "📡" : "📍";
   });
 
-  // ========== Mostrar / Ocultar Números ==========
-  btnToggleLabels.addEventListener('click', () => {
-    window.MapApp.toggleLabels();
+  // ====== Mostrar / Ocultar Números ======
+  btnLabels.addEventListener('click', () => {
+    const nowOn = window.MapApp.toggleLabels(); // devuelve true si quedan visibles
+    if (nowOn){
+      btnLabels.setAttribute("data-active","on");
+      iconLabels.textContent = "👁️";
+    } else {
+      btnLabels.setAttribute("data-active","off");
+      iconLabels.textContent = "👁️";
+    }
   });
 
-  // ========== Predicación Semanal ==========
-  // Abrir / cerrar panel
-  btnWeekly.addEventListener('click', async () => {
-    weeklyActive = !weeklyActive;
-    window.MapApp.setWeeklyRoutingEnabled(weeklyActive);
+  // ====== Mostrar / Ocultar Casas ======
+  btnHouses.addEventListener('click', () => {
+    const visibleNow = window.MapApp.toggleHouses(); // true si visibles
+    if (visibleNow){
+      btnHouses.setAttribute("data-active","on");
+      iconHouses.textContent = "🏠";
+    } else {
+      btnHouses.setAttribute("data-active","off");
+      iconHouses.textContent = "🏠";
+    }
+  });
 
-    if (!weeklyActive){
-      // saliendo del modo semanal
-      btnWeekly.textContent = 'Predicación Semanal';
-      panelW.hidden = true;
-      btnWeeklyFloat.style.display = 'none';
+  function isMobileViewport() {
+  return window.matchMedia("(max-width: 767px)").matches;
+}
+
+function minimizeWeeklyPanel() {
+  // Si es móvil, minimizar visualmente
+  if (isMobileViewport()) {
+    weeklyPanel.classList.add("minimized");
+  }
+}
+
+function restoreWeeklyPanel() {
+  weeklyPanel.classList.remove("minimized");
+}
+
+
+  // ====== Predicación Semanal ======
+btnWeekly.addEventListener('click', async () => {
+  weeklyActive = !weeklyActive;
+  window.MapApp.setWeeklyRoutingEnabled(weeklyActive);
+
+  if (!weeklyActive){
+    // === APAGANDO MODO PREDICAR ===
+    btnWeekly.setAttribute("data-active","off");
+    iconWeekly.textContent = "📅";
+
+    weeklyPanel.hidden = true;
+    restoreWeeklyPanel(); // por si estaba minimizado
+
+    // limpiar selección individual / ruta
+    window.MapApp.clearWeeklyPoint();
+    window.MapApp.clearRoute();
+
+    // apagar botón Ruta
+    btnRoute.setAttribute("data-active","off");
+    iconRoute.textContent = "🚗";
+
+
+
+    return;
+  }
+
+  // === PRENDER MODO PREDICAR ===
+  btnWeekly.setAttribute("data-active","on");
+  iconWeekly.textContent = "✅";
+
+  restoreWeeklyPanel(); // siempre lo abrimos "grande" al entrar
+  weeklyPanel.hidden = false;
+
+  // limpiar cualquier cosa anterior
+  window.MapApp.clearWeeklyPoint();
+  window.MapApp.clearRoute();
+  btnRoute.setAttribute("data-active","off");
+  iconRoute.textContent = "🚗";
+
+  // reconstruir la lista
+  weeklyList.innerHTML = "";
+  const items = window.MapApp.getWeeklyPoints(); // WEEKLY_POINTS
+
+  // Botón "Mostrar todas las salidas"
+  const btnAll = document.getElementById('weekly-show-all');
+  if (btnAll){
+    btnAll.onclick = () => {
+      // mostrar todos los puntos de predicación en el mapa
+      window.MapApp.showWeeklyLayerWithRoutingOnClick();
+      // no trazamos ruta todavía hasta que el usuario toque un punto
       window.MapApp.clearWeeklyPoint();
       window.MapApp.clearRoute();
-      return;
-    }
+      btnRoute.setAttribute("data-active","off");
+      iconRoute.textContent = "🚗";
 
-    // entrando al modo semanal
-    btnWeekly.textContent = 'Quitar Predicación Semanal';
+      // minimizar panel (en mobile)
+      minimizeWeeklyPanel();
+    };
+  }
 
-    // Pedimos a MapApp la lista de puntos semanales y pintamos UI
-    const items = window.MapApp.getWeeklyPoints();
-    weeklyList.innerHTML = "";
-    items.forEach((it, idx) => {
-      const div = document.createElement('div');
-      div.className = 'weekly-item';
-      div.textContent = it.label;
-      div.addEventListener('click', async () => {
-        // usuario eligió este punto
-        panelW.hidden = true;
-        btnWeeklyFloat.style.display = 'block';
+  // Cada salida individual
+  items.forEach((it, idx) => {
+    const div = document.createElement('div');
+    div.className = 'weekly-item';
+    div.textContent = it.label; // SOLO el lugar/nombre, sin día/hora
 
-        await window.MapApp.selectWeeklyPoint(idx);
-      });
-      weeklyList.appendChild(div);
+    div.addEventListener('click', async () => {
+      // esconder la capa de todos
+
+      // mostrar solo ese punto en el mapa y centrar
+      await window.MapApp.showSingleWeeklyPoint(idx);
+
+      // si GPS activo y routing habilitado, dibujar ruta automática
+      if (weeklyActive && window.MapApp.isGeoActive()){
+        btnRoute.setAttribute("data-active","on");
+        iconRoute.textContent = "🛣️";
+      } else {
+        btnRoute.setAttribute("data-active","off");
+        iconRoute.textContent = "🚗";
+      }
+
+      // minimizar panel en mobile para liberar mapa
+      minimizeWeeklyPanel();
     });
 
-    panelW.hidden = false;
+    weeklyList.appendChild(div);
   });
 
-  // Botón flotante para volver a ver lista
-  btnWeeklyFloat.addEventListener('click', () => {
-    // reabrir panel con la lista sin salir del modo semanal
-    const items = window.MapApp.getWeeklyPoints();
-    weeklyList.innerHTML = "";
-    items.forEach((it, idx) => {
-      const div = document.createElement('div');
-      div.className = 'weekly-item';
-      div.textContent = it.label;
-      div.addEventListener('click', async () => {
-        panelW.hidden = true;
-        btnWeeklyFloat.style.display = 'block';
-        await window.MapApp.selectWeeklyPoint(idx);
-      });
-      weeklyList.appendChild(div);
-    });
+});
 
-    panelW.hidden = false;
-  });
 
-  // ========== Referencias / Info ==========
-  let infoVisible = false;
+
+
+btnRoute.addEventListener('click', async () => {
+  const isOn = btnRoute.getAttribute("data-active") === "on";
+
+  if (isOn) {
+    // 🔻 Apagar ruta
+    window.MapApp.clearRoute();
+    btnRoute.setAttribute("data-active","off");
+    iconRoute.textContent = "🚗";
+    return;
+  }
+
+  // 🔺 Quieren encender ruta
+
+  // 1. Si ya tenemos posición y un destino, perfecto.
+  // 2. Si NO tenemos posición, la activamos y luego trazamos.
+  // 3. Si NO tenemos destino, avisamos.
+
+  // Intentar asegurar ruta con geolocalización activa
+  const ok = await window.MapApp.ensureRouteWithGeo();
+
+  if (ok) {
+    btnRoute.setAttribute("data-active","on");
+    iconRoute.textContent = "🛣️";
+  } else {
+    // Si no se pudo trazar ruta, nos aseguramos visualmente de dejar
+    // el botón apagado para no mentirle al usuario.
+    btnRoute.setAttribute("data-active","off");
+    iconRoute.textContent = "🚗";
+  }
+});
+
+
+  // ====== Info colores toggle ======
   btnInfo.addEventListener('click', ()=>{
-    infoVisible = !infoVisible;
-    panelsInfo.forEach(p => p.style.display = infoVisible ? 'block' : 'none');
-    btnInfo.textContent = infoVisible ? '❌ Ocultar Información' : '📋 Ver Información';
+    const active = btnInfo.getAttribute("data-active") === "on";
+    if (active){
+      btnInfo.setAttribute("data-active","off");
+      iconInfo.textContent = "ℹ️";
+      referenciasBox.style.display = "none";
+    } else {
+      btnInfo.setAttribute("data-active","on");
+      iconInfo.textContent = "❌";
+      referenciasBox.style.display = "block";
+    }
   });
 
-  // ========== Init general ==========
+  // ====== Init general ======
   (async function boot(){
-    // esperamos MapApp
     const ok = await (async function waitFor(cond, timeoutMs){
       const start = Date.now();
       return new Promise((resolve)=>{
