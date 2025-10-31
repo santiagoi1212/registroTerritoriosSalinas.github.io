@@ -35,6 +35,7 @@
 
   function quitarTildes(s) { return s?.normalize?.("NFD").replace(/\p{Diacritic}/gu, "") || s; }
 
+
   function parseCSVLine(line) {
     const out = []; let cur = "", inQ = false;
     for (let i = 0; i < line.length; i++) {
@@ -95,6 +96,7 @@
   }
 
   function obtenerColor(fecha, finalizado) {
+    console.log("obtener color:" + fecha + " - " + finalizado + " - FIN" );
     if (!(fecha instanceof Date) || isNaN(fecha)) return "gray";
     const ahora = new Date();
     const diffMeses = diferenciaEnMeses(fecha, ahora);
