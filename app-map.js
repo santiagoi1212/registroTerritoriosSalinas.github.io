@@ -380,9 +380,31 @@ async function showSingleWeeklyPoint(idx){
         <label class="form-label">Capitán</label>
         <select class="form-select" id="reg-capitan">
           <option value="">Seleccionar...</option>
-          <option value="Juan Pérez">Juan Pérez</option>
-          <option value="María Gómez">María Gómez</option>
-          <option value="Carlos Ruiz">Carlos Ruiz</option>
+          <option value="Julio Fernandez">Julio Fernandez</option>
+          <option value="Rafael Manente">Rafael Manente</option>
+          <option value="German Varela">German Varela</option>
+          <option value="Carlos Carminati">Carlos Carminati</option>
+          <option value="Julio Galarza">Julio Galarza</option>
+          <option value="Gaston Gerschuni">Gaston Gerschuni</option>
+          <option value="Carlos Pena">Carlos Pena</option>
+          <option value="Luis Lopez">Luis Lopez</option>
+          <option value="Fernando Taroco">Fernando Taroco</option>
+          <option value="Lucas Aviles">Lucas Aviles</option>
+          <option value="Andres Cruz">Andres Cruz</option>
+          <option value="Gabriel Correa">Gabriel Correa</option>
+          <option value="Mateo Damele">Mateo Damele</option>
+          <option value="Martin Kuzman">Martin Kuzman</option>
+          <option value="Gonzalo Valle">Gonzalo Valle</option>
+          <option value="Rodrigo Gomez">Rodrigo Gomez</option>
+          <option value="Santiago Inchausti">Santiago Inchausti</option>
+          <option value="Camilo Urdiozola">Camilo Urdiozola</option>
+          <option value="Delamar De Souza">Delamar De Souza</option>
+          <option value="Javier Martinez">Javier Martinez</option>
+          <option value="Juan Carlos Haristoy">Juan Carlos Haristoy</option>
+          <option value="Lucas Matias">Lucas Matias</option>
+          <option value="Nicolas Gunaris">Nicolas Gunaris</option>
+          <option value="Cesar De Brun">Cesar De Brun</option>
+          <option value="Leonardo Toloza">Leonardo Toloza</option>
         </select>
       </div>
 
