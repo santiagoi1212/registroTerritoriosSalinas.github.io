@@ -374,7 +374,7 @@ btnWeekly.addEventListener('click', async () => {
   items.forEach((it, idx) => {
     const div = document.createElement('div');
     div.className = 'weekly-item';
-    div.textContent = it.label; // SOLO el lugar/nombre, sin día/hora
+    div.textContent = it.dia + ' ' + it.hora + ' | ' + it.label ; // SOLO el lugar/nombre, sin día/hora
 
     div.addEventListener('click', async () => {
       // esconder la capa de todos
