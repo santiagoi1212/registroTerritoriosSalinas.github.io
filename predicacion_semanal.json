@@ -2,65 +2,65 @@
   {
     "label": "Flia. Fernández",
     "dia": "Lunes",
-    "hora": "09:30",
+    "hora": "17:00",
     "type": "grupo",
-    "lat": -34.7705,
-    "lng": -55.8259
+    "lat": -34.78079614801878,  
+    "lng": -55.84445378591098
   },
   {
-    "label": "ANCAP (lado sur)",
+    "label": "Espinillo y la RI",
+    "dia": "Martes",
+    "hora": "09:30",
+    "type": "grupo",
+    "lat": -34.781903160669714, 
+    "lng": -55.88079677310288
+  },
+  {
+    "label": "Colón y Achiras",
     "dia": "Martes",
     "hora": "17:00",
     "type": "grupo",
-    "lat": -34.7721,
-    "lng": -55.8280
+    "lat": -34.76562588964631,  
+    "lng": -55.851507228498875
   },
   {
     "label": "Flia. Correa",
     "dia": "Miércoles",
     "hora": "17:00",
     "type": "grupo",
-    "lat": -34.76302044096889, 
-    "lng": -55.86102119788422
+    "lat": -34.762901071164876,   
+    "lng": -55.861091554151145
   },
   {
-    "label": "Salida Central Salinas",
-    "dia": "Sábado",
-    "hora": "10:00",
+    "label": "Av.Pinos y la RI (lado sur)",
+    "dia": "Viernes",
+    "hora": "17:00",
     "type": "grupo",
-    "lat": -34.7712,
-    "lng": -55.8267
+    "lat": -34.778850708364935, 
+    "lng": -55.86251986544215
   },
-    {
-    "label": "Flia. Fernández",
-    "dia": "Lunes",
+  {
+    "label": "Av.Pinos y la RI (lado norte)",
+    "dia": "Sábado",
     "hora": "09:30",
     "type": "grupo",
-    "lat": -34.7705,
-    "lng": -55.8259
+    "lat": -34.7778943831899,   
+    "lng": -55.86318945328313
   },
   {
-    "label": "ANCAP (lado sur)",
-    "dia": "Martes",
-    "hora": "17:00",
-    "type": "grupo",
-    "lat": -34.7721,
-    "lng": -55.8280
-  },
-  {
-    "label": "Flia. Correa",
-    "dia": "Miércoles",
-    "hora": "17:00",
-    "type": "grupo",
-    "lat": -34.76302044096889, 
-    "lng": -55.86102119788422
-  },
-  {
-    "label": "Salida Central Salinas",
+    "label": "Flia. Carminati",
     "dia": "Sábado",
-    "hora": "10:00",
+    "hora": "17:00",
     "type": "grupo",
-    "lat": -34.7712,
-    "lng": -55.8267
+    "lat": -34.79001446655467, 
+    "lng": -55.85857186299252
+  },
+  {
+    "label": "Salón",
+    "dia": "Domingo",
+    "hora": "12:00",
+    "type": "grupo",
+    "lat": -34.77266209146247,  
+    "lng": -55.845943255553856
   }
 ]
