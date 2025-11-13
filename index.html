@@ -9,22 +9,57 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
+<script>
+  // ====== No Visitar toggle ======
+  (function(){
+    const btnNov = document.getElementById('btn-novistar-toggle');
+    if (!btnNov) return;
+    btnNov.addEventListener('click', () => {
+      const currentlyOn = btnNov.getAttribute('data-active') === 'on';
+      if (currentlyOn){
+        btnNov.setAttribute('data-active','off');
+        // disable pick mode if MapApp supports it
+        if (window.MapApp?.setNoVisitarPickEnabled) window.MapApp.setNoVisitarPickEnabled(false);
+      } else {
+        btnNov.setAttribute('data-active','on');
+        if (window.MapApp?.setNoVisitarPickEnabled){
+          window.MapApp.setNoVisitarPickEnabled(true);
+        } else {
+          // fallback: dispara modal con el centro del mapa
+          const map = window.MapApp?.getMap?.();
+          const center = map ? map.getCenter() : {lat: -34.77, lng: -55.83};
+          const ev = new CustomEvent('novistar:pick', { detail: { lat: center.lat, lng: center.lng } });
+          document.dispatchEvent(ev);
+        }
+      }
+    });
+    try{ updateLabelsFabVisibility(); }catch(_){/*ignore*/}
+})();
+
+</script>
+
   <!-- Leaflet Routing Machine -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
   <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
 
   <link rel="stylesheet" href="./app.css" />
 
+  <script src="./app-auth.js"></script>
   <script src="./app-config.js"></script>
+  <script src="./revisitas-api.js"></script>
   <script src="./helpers.js"></script>
   <script src="./app-map.js"></script>
-  <script src="./app-auth.js"></script>
+  <script src="/scripts/revisitas-csv.js"></script>
+
+  
 </head>
 
 <body>
   <!-- TOP BAR -->
   <div id="topbar">
-    <div class="brand">Territorios</div>
+    <div class="brand">
+      <span id="sheets-status-badge" class="status-badge disconnected" title="Google Sheets no conectado">Sheets OFF</span>
+Territorios</div>
     <div id="topbar-actions">
       <span id="auth-info" class="auth-hidden auth-user-label"></span>
 
@@ -45,6 +80,11 @@
 
   <!-- MAPA -->
   <div id="map"></div>
+  <!-- FAB NÚMEROS (flotante, sobre el mapa, arriba de Ruta) -->
+  <button id="btnToggleLabels" class="icon-btn fab-labels" title="Mostrar / ocultar números" style="display:none">
+    <span class="icon">🔢</span>
+  </button>
+
 
   <!-- BOTTOM BAR -->
   <div id="bottombar">
@@ -66,26 +106,45 @@
       <div class="bb-label">Casas</div>
     </button>
 
-    <!-- Mostrar / ocultar números -->
-    <button id="btnToggleLabels" class="bb-item" data-active="on" title="Mostrar / ocultar números" style="display:none">
-      <div class="bb-icon" id="icon-labels">👁️</div>
-      <div class="bb-label">Números</div>
+    <!-- Revisitas / Estudios (solo logueado) -->
+    <button id="btn-revisitas" class="bb-item" data-active="off" title="Revisitas y Estudios" style="display:none">
+      <div class="bb-icon" id="icon-revisitas">📒</div>
+      <div class="bb-label">Revisitas</div>
     </button>
 
-    <!-- Indicaciones / ruta -->
+    <!-- Territorios ON/OFF (solo logueado) -->
+    <button id="btn-territorios-toggle" class="bb-item" data-active="on" title="Mostrar/Ocultar territorios" style="display:none">
+      <div class="bb-icon" id="icon-territorios">🗺️</div>
+      <div class="bb-label">Territorios</div>
+    </button><!-- Indicaciones / ruta -->
     <button id="btn-route-toggle" class="bb-item" data-active="off" title="Indicaciones">
       <div class="bb-icon" id="icon-route">🚗</div>
       <div class="bb-label">Ruta</div>
     </button>
 
-    <!-- Referencias / info colores -->
+
+    <!-- Referencias / info colores (solo logueado) -->
     <button id="btn-info-toggle" class="bb-item" data-active="off" title="Información de colores" style="display:none">
       <div class="bb-icon" id="icon-info">ℹ️</div>
       <div class="bb-label">Info</div>
     </button>
 
+        <!-- No visitar: toggle visible para todos -->
+    <button id="btn-novistar-toggle" class="bb-item" data-active="off" title="Mostrar/Ocultar No visitar">
+      <div class="bb-icon" id="icon-novistar">⛔</div>
+      <div class="bb-label">No visitar</div>
+    </button>
+
+
+
+
+  </div>
+
   <!-- PANEL SEMANAL flotante -->
   <div id="weekly-panel" class="weekly-panel" hidden>
+    <div class="panel-actions">
+      <button id="weekly-minimize" class="panel-action" type="button" title="Minimizar">➖</button>
+    </div>
     <div class="weekly-title">Predicación Semanal</div>
     <div class="weekly-hint">Elegí una salida para verla en el mapa, o mostrarlas todas:</div>
 
@@ -93,13 +152,21 @@
       👥 Mostrar todas las salidas
     </button>
 
-    <div id="weekly-list" class="weekly-list">
-      <!-- dinámico -->
-    </div>
+    <div id="weekly-list" class="weekly-list"></div>
   </div>
 
+<!-- Panel flotante para Revisitas / Estudios -->
+<div id="revisita-panel" class="side-panel" hidden>
+  <div class="side-panel-header">
+    <div class="side-panel-title">Revisitas / Estudios</div>
+    
+  </div>
+  <div id="revisita-list" class="side-panel-body">
+    <!-- acá van las revisitas en forma de lista -->
+  </div>
+</div>
 
-  <!-- REFERENCIAS (colores de territorios) -->
+  <!-- REFERENCIAS -->
   <div id="referencias">
     <h3>Referencias</h3>
     <div class="referencia"><span class="color-box azul"></span>Se está trabajando</div>
@@ -143,16 +210,32 @@
         <button id="territorio-close" class="modal-close-btn" title="Cerrar">✕</button>
       </header>
       <div id="territorio-body" class="modal-body">
-        <!-- se rellena dinámicamente -->
+        <!-- dinámico -->
       </div>
     </div>
   </div>
 
+  <!-- =========================
+     MODAL Revisita / Estudio
+     ========================= -->
+<div id="revisita-overlay" class="overlay" style="display:none;">
+  <div class="overlay-box small-box">
+    <div class="overlay-header">
+      <div class="overlay-title">Revisita / Estudio</div>
+      <button id="revisita-close" class="overlay-close-btn">✖</button>
+    </div>
+    <div id="revisita-body" class="overlay-body">
+      <!-- acá inyectamos el formulario dinámicamente con buildRevisitaFormHTML(...) -->
+    </div>
+  </div>
+</div>
+
+
   <!-- TOAST -->
   <div id="territorio-toast" class="toast"></div>
 
-  <script>
-  // ====== Toast global ======
+<script>
+  // ====== Toast ======
   function showToast(msg){
     const t = document.getElementById("territorio-toast");
     t.textContent = msg || "";
@@ -164,7 +247,7 @@
   }
   window.showToast = showToast;
 
-  // ====== DOM refs generales ======
+  // ====== DOM refs ======
   const btnAuthOpen    = document.getElementById('btnAuthOpen');
   const btnLogout      = document.getElementById('btnLogout');
   const overlayLogin   = document.getElementById('login-overlay');
@@ -181,9 +264,22 @@
   const iconWeekly     = document.getElementById('icon-weekly');
   const weeklyPanel    = document.getElementById('weekly-panel');
   const weeklyList     = document.getElementById('weekly-list');
+  const weeklyMinimize = document.getElementById('weekly-minimize');
+
+  const btnAllWeekly   = document.getElementById('weekly-show-all');
 
   const btnHouses      = document.getElementById('btn-houses-toggle');
   const iconHouses     = document.getElementById('icon-houses');
+
+  const btnRevisitas   = document.getElementById('btn-revisitas');
+  const iconRevisitas  = document.getElementById('icon-revisitas');
+  const panelRevisitas = document.getElementById("revisita-panel"); // si tenés panel de lista
+  const revisitaPanel  = document.getElementById('revisita-panel');
+  const revisitaList   = document.getElementById('revisita-list');
+  const revisitaShowAll= document.getElementById('revisita-show-all');
+
+  const btnTerritorios = document.getElementById('btn-territorios-toggle');
+  const iconTerritorios= document.getElementById('icon-territorios');
 
   const btnLabels      = document.getElementById('btnToggleLabels');
   const iconLabels     = document.getElementById('icon-labels');
@@ -197,9 +293,27 @@
 
   const territorioOverlay = document.getElementById('territorio-overlay');
   const territorioClose   = document.getElementById('territorio-close');
+
   const loginOverlay      = document.getElementById('login-overlay');
 
-  // ====== Cerrar modales haciendo click afuera ======
+  const revisitaOverlay = document.getElementById('revisita-overlay');
+  const revisitaClose   = document.getElementById('revisita-close');
+  const revisitaBody    = document.getElementById('revisita-body');
+
+  const novOverlay   = document.getElementById('novistar-overlay');
+  const novModal     = document.getElementById('novistar-modal');
+  const novCloseBtn  = document.getElementById('novistar-close');
+  const novCancelBtn = document.getElementById('novistar-cancel');
+  const novSaveBtn   = document.getElementById('novistar-save');
+  const novForm      = document.getElementById('novistar-form');
+
+  const novLat = document.getElementById('novistar-lat');
+  const novLng = document.getElementById('novistar-lng');
+  const novDir = document.getElementById('novistar-direccion');
+  const novMot = document.getElementById('novistar-motivo');
+  const novCom = document.getElementById('novistar-comentario');
+
+  // ====== Modal cerrar ======
   if (territorioClose){
     territorioClose.addEventListener('click', ()=>{
       territorioOverlay.style.display='none';
@@ -215,8 +329,120 @@
       if (e.target===loginOverlay) loginOverlay.style.display='none';
     });
   }
+  if (revisitaClose){
+    revisitaClose.addEventListener('click', ()=>{
+      revisitaOverlay.style.display='none';
+    });
+  }
+  if (revisitaOverlay){
+    revisitaOverlay.addEventListener('click',(e)=>{
+      if (e.target===revisitaOverlay) revisitaOverlay.style.display='none';
+    });
+  }
+    // Minimizar con el botón
+  if (weeklyMinimize) {
+    weeklyMinimize.addEventListener('click', () => minimizePanel(weeklyPanel));
+  }
 
-  // ====== Login modal open/close ======
+  // Restaurar al tocar el "chip" (cuando está minimizado)
+  weeklyPanel.addEventListener('click', (e) => {
+    if (weeklyPanel.classList.contains('minimized')) {
+      if (e.target && e.target.id === 'weekly-minimize') return;
+      restorePanel(weeklyPanel);
+    }
+  });
+
+
+  // ===== No visitar modal == //
+
+function openNovistarModal({ lat, lng }) {
+  const novOverlay = document.getElementById('novistar-overlay');
+  const novLat     = document.getElementById('novistar-lat');
+  const novLng     = document.getElementById('novistar-lng');
+  const novDir     = document.getElementById('novistar-direccion');
+  const novMot     = document.getElementById('novistar-motivo');
+  const novCom     = document.getElementById('novistar-comentario');
+
+  // Validar que el modal esté en el DOM
+  if (!novOverlay || !novLat || !novLng || !novDir || !novMot || !novCom) {
+    console.error('Modal No Visitar no está inicializado en el DOM.');
+    // Opcional: mostrar un aviso al usuario
+    window.showToast?.('Error: el modal no está listo. Recargá la página.');
+    return;
+  }
+
+  // Cargar valores
+  novLat.value = lat ?? '';
+  novLng.value = lng ?? '';
+  novDir.value = '';
+  novMot.value = 'agresivo';
+  novCom.value = '';
+
+  // Mostrar overlay
+  novOverlay.style.display = 'flex';
+}
+
+
+function closeNovistarModal(){
+  const overlay = document.getElementById('novistar-overlay');
+  const modal   = document.getElementById('novistar-modal');
+  if (overlay) overlay.style.display = 'none';
+  if (modal)   modal.style.display   = 'none';
+  const btn = document.getElementById('btn-novistar-toggle');
+  if (btn) btn.setAttribute('data-active','off');
+}
+
+function updateLabelsFabVisibility(){
+  const role = window.AuthApp?.getRole?.() || "";
+  const logged = !!(window.AuthApp?.getUsername?.());
+  const territoriosOn = (window.MapApp?.areTerritoriosVisible?.() ?? (document.getElementById('btn-territorios-toggle')?.getAttribute('data-active')==='on'));
+  const show = logged && territoriosOn && (role === "admin" || role === "capitan");
+  if (btnLabels) btnLabels.style.display = show ? "" : "none";
+}
+
+// Cerrar con botón
+
+
+
+// Cerrar clic fuera de la tarjeta
+novOverlay?.addEventListener('click', (e) => {
+  if (e.target === novOverlay) closeNovistarModal();
+});
+
+// Cerrar con ESC
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && novOverlay.style.display === 'flex') {
+    closeNovistarModal();
+  }
+});
+
+// Guardar (enviá a tu backend / offline store)
+novForm?.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const payload = {
+    lat: parseFloat(novLat.value),
+    lng: parseFloat(novLng.value),
+    direccion: novDir.value.trim(),
+    motivo: novMot.value,
+    comentario: novCom.value.trim(),
+    fecha: new Date().toISOString(),
+    user: (typeof AuthApp !== "undefined" && AuthApp.getUsername ? (AuthApp.getUsername() || "anon") : "anon")
+  };
+
+  // Si ya tenés una función para guardar sugerencias offline/online, llamala aquí:
+  if (window.MapApp && typeof window.MapApp.saveNoVisitarSuggestion === "function") {
+    window.MapApp.saveNoVisitarSuggestion(payload);
+  } else {
+    // fallback: mostrás un toast y listo
+    window.showToast?.("Sugerencia enviada (mock).");
+    console.log("NoVisitar payload:", payload);
+  }
+
+  closeNovistarModal();
+});
+
+
+  // ====== Login modal ======
   function openLogin(){
     overlayLogin.style.display='flex';
     inUser.focus();
@@ -244,10 +470,28 @@
     window.AuthApp.logout();
   });
 
-  // ====== Estado Predicación semanal activo? ======
-  let weeklyActive = false;
+  // ====== Helpers responsive paneles ======
+  function isMobileViewport() {
+    return window.matchMedia("(max-width: 767px)").matches;
+  }
+function minimizePanel(panelEl) {
+  panelEl.classList.add("minimized");
+}
 
-  // ====== GPS toggle ======
+function restorePanel(panelEl) {
+  panelEl.classList.remove("minimized");
+}
+
+
+  // ====== Estado local ======
+  let weeklyActive    = false;
+  let revisitasActive = false;
+  let mapClickHandler = null;
+  // ahora cada elemento tendrá {id, user, nombre, fecha, direccion, tema, prox, tipo, lat, lng}
+  let revisitasData   = [];
+  let currentEditIndex = null;
+
+  // ====== Geolocalización ======
   btnGeo.addEventListener('click', async () => {
     const active = window.MapApp.isGeoActive();
     if (active) {
@@ -272,19 +516,34 @@
 
   // ====== Mostrar / Ocultar Números ======
   btnLabels.addEventListener('click', () => {
-    const nowOn = window.MapApp.toggleLabels(); // devuelve true si quedan visibles
+    if (btnLabels.disabled) return;
+    const nowOn = window.MapApp.toggleLabels();
     if (nowOn){
       btnLabels.setAttribute("data-active","on");
-      iconLabels.textContent = "👁️";
+      if (iconLabels) iconLabels.textContent = "👁️";
     } else {
       btnLabels.setAttribute("data-active","off");
-      iconLabels.textContent = "👁️";
+      if (iconLabels) iconLabels.textContent = "👁️";
     }
   });
 
   // ====== Mostrar / Ocultar Casas ======
+  // ====== Mostrar / Ocultar Territorios ======
+  if (btnTerritorios){
+    btnTerritorios.addEventListener('click', () => {
+      const visibleNow = (window.MapApp && window.MapApp.toggleTerritoriosLayer)
+        ? !!window.MapApp.toggleTerritoriosLayer()
+        : false;
+
+      btnTerritorios.setAttribute("data-active", visibleNow ? "on" : "off");
+      if (iconTerritorios) iconTerritorios.textContent = visibleNow ? "🗺️" : "❌";
+
+      if (typeof updateLabelsFabVisibility === "function") updateLabelsFabVisibility();
+    });
+  }
+
   btnHouses.addEventListener('click', () => {
-    const visibleNow = window.MapApp.toggleHouses(); // true si visibles
+    const visibleNow = window.MapApp.toggleHouses();
     if (visibleNow){
       btnHouses.setAttribute("data-active","on");
       iconHouses.textContent = "🏠";
@@ -294,146 +553,631 @@
     }
   });
 
-  function isMobileViewport() {
-  return window.matchMedia("(max-width: 767px)").matches;
-}
+  // 👇 Acá está lo importante
+      updateLabelsFabVisibility();
 
-function minimizeWeeklyPanel() {
-  // Si es móvil, minimizar visualmente
-  if (isMobileViewport()) {
-    weeklyPanel.classList.add("minimized");
-  }
-}
 
-function restoreWeeklyPanel() {
-  weeklyPanel.classList.remove("minimized");
-}
 
 
   // ====== Predicación Semanal ======
-btnWeekly.addEventListener('click', async () => {
-  weeklyActive = !weeklyActive;
-  window.MapApp.setWeeklyRoutingEnabled(weeklyActive);
+  btnWeekly.addEventListener('click', async () => {
+    weeklyActive = !weeklyActive;
+    window.MapApp.setWeeklyRoutingEnabled(weeklyActive);
 
-  if (!weeklyActive){
-    // === APAGANDO MODO PREDICAR ===
-    btnWeekly.setAttribute("data-active","off");
-    iconWeekly.textContent = "📅";
+    if (!weeklyActive){
+      btnWeekly.setAttribute("data-active","off");
+      iconWeekly.textContent = "📅";
 
-    weeklyPanel.hidden = true;
-    restoreWeeklyPanel(); // por si estaba minimizado
+      weeklyPanel.hidden = true;
+      restorePanel(weeklyPanel);
 
-    // limpiar selección individual / ruta
+      if (window.MapApp.clearWeeklyLayer) {
+        window.MapApp.clearWeeklyLayer();
+      }
+      window.MapApp.clearWeeklyPoint();
+      window.MapApp.clearRoute();
+
+      btnRoute.setAttribute("data-active","off");
+      iconRoute.textContent = "🚗";
+      return;
+    }
+
+    btnWeekly.setAttribute("data-active","on");
+    iconWeekly.textContent = "✅";
+
+    restorePanel(weeklyPanel);
+    weeklyPanel.hidden = false;
+
     window.MapApp.clearWeeklyPoint();
     window.MapApp.clearRoute();
-
-    // apagar botón Ruta
     btnRoute.setAttribute("data-active","off");
     iconRoute.textContent = "🚗";
 
+    weeklyList.innerHTML = "";
+    const items = window.MapApp.getWeeklyPoints();
+
+    if (btnAllWeekly){
+      btnAllWeekly.onclick = () => {
+        window.MapApp.showWeeklyLayerWithRoutingOnClick();
+        window.MapApp.clearWeeklyPoint();
+        window.MapApp.clearRoute();
+        btnRoute.setAttribute("data-active","off");
+        iconRoute.textContent = "🚗";
+        minimizePanel(weeklyPanel);
+      };
+    }
+
+    items.forEach((it, idx) => {
+      const div = document.createElement('div');
+      div.className = 'weekly-item';
+      div.textContent = it.dia + ' ' + it.hora + ' | ' + it.label ;
+
+      div.addEventListener('click', async () => {
+        await window.MapApp.showSingleWeeklyPoint(idx);
+        if (weeklyActive && window.MapApp.isGeoActive()){
+          btnRoute.setAttribute("data-active","on");
+          iconRoute.textContent = "🛣️";
+        } else {
+          btnRoute.setAttribute("data-active","off");
+          iconRoute.textContent = "🚗";
+        }
+        minimizePanel(weeklyPanel);
+      });
+
+      weeklyList.appendChild(div);
+    });
+  });
+
+  // ====== Revisitas / Estudios ======
+  function getTipoEmoji(tipo){
+    // revisita => folleto 📄
+    // estudio  => libro 📘
+    return (tipo === "estudio") ? "📘" : "📄";
+  }
+
+  function buildRevisitaFormHTML(rv){
+    const fechaVal = rv.fecha || new Date().toISOString().slice(0,10);
+    return `
+      <input id="rv-id"  type="hidden" value="${rv.id||""}"/>
+      <input id="rv-lat" type="hidden" value="${rv.lat}"/>
+      <input id="rv-lng" type="hidden" value="${rv.lng}"/>
+
+      <div class="form-field">
+        <label class="form-label">Nombre persona</label>
+        <input id="rv-nombre" class="form-input" value="${rv.nombre||""}" />
+      </div>
+
+      <div class="form-field">
+        <label class="form-label">Fecha</label>
+        <input id="rv-fecha" class="form-input" type="date" value="${fechaVal}" />
+      </div>
+
+      <div class="form-field">
+        <label class="form-label">Dirección</label>
+        <input id="rv-direccion" class="form-input" value="${rv.direccion||""}" />
+      </div>
+
+      <div class="form-field">
+        <label class="form-label">Tema</label>
+        <input id="rv-tema" class="form-input" value="${rv.tema||""}" />
+      </div>
+
+      <div class="form-field">
+        <label class="form-label">Próxima visita</label>
+        <div class="radio-row">
+          <label><input type="radio" name="rv-prox" value="1semana" ${rv.prox==="1semana"?"checked":""}/> 1 semana</label>
+          <label><input type="radio" name="rv-prox" value="2semanas" ${rv.prox==="2semanas"?"checked":""}/> 2 semanas</label>
+        </div>
+      </div>
+
+      <div class="form-field">
+        <label class="form-label">Tipo</label>
+        <div class="radio-row">
+          <label><input type="radio" name="rv-tipo" value="revisita" ${rv.tipo==="revisita"?"checked":""}/> Revisita 📄</label>
+          <label><input type="radio" name="rv-tipo" value="estudio"  ${rv.tipo==="estudio" ?"checked":""}/> Estudio 📘</label>
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <button id="rv-cancel" class="btn-cancel" type="button">Cancelar</button>
+        <button id="rv-save"   class="btn-primary" type="button">Guardar</button>
+      </div>
+    `;
+  }
+
+function makeRevisitaDivIcon(rv){
+    const emoji = getTipoEmoji(rv.tipo);
+    const label = rv.nombre || rv.direccion || "Revisita";
+    const html = `
+      <div class="house-marker">
+        <div class="house-marker-emoji">${emoji}</div>
+        <div class="house-marker-label">${label}</div>
+      </div>
+    `;
+    return L.divIcon({
+      className: "",
+      html,
+      iconSize: [1,1],
+      iconAnchor: [0,0]
+    });
+  }
+
+  function renderRevisitasMarkers(){
+    const layer = window.MapApp && window.MapApp.getRevisitasLayer ? window.MapApp.getRevisitasLayer() : null;
+    if (!layer) { return; }
+    layer.clearLayers();
+
+    revisitasData.forEach((rv, idx) => {
+      const icon = makeRevisitaDivIcon(rv);
+
+      const m = L.marker([rv.lat, rv.lng], {
+        icon,
+        title: rv.nombre || rv.direccion || "Revisita"
+      });
+
+      const emoji = getTipoEmoji(rv.tipo);
+      m.bindPopup(
+        `<strong>${emoji} ${rv.nombre||""}</strong><br/>
+         ${rv.direccion||""}<br/>
+         ${rv.tipo==="estudio" ? "Estudio" : "Revisita"}`
+      );
+
+      m.on('click', ()=>{
+        openEditRevisitaModal(idx);
+      });
+
+      layer.addLayer(m);
+    });
+  }
+
+  
+
+function renderRevisitasList(){
+  if (!Array.isArray(window.revisitasData)) window.revisitasData = [];
+  const list = document.getElementById('revisita-list');
+  if (!list) return;
+  list.innerHTML = "";
+  (window.revisitasData || []).forEach((rv, idx) => {
+    const div = document.createElement('div');
+    div.className = 'weekly-item';
+    const tipoEmoji = (rv.tipo === 'estudio') ? '📘' : '📄';
+    const title = rv.nombre || rv.direccion || '(sin nombre)';
+    const fecha = rv.fecha || '';
+    div.textContent = `${tipoEmoji} ${title}${fecha ? ' - ' + fecha : ''}`;
+    div.addEventListener('click', ()=> { if (typeof openEditRevisitaModal === 'function') openEditRevisitaModal(idx); });
+    list.appendChild(div);
+  });
+}
+
+async function onRevisitasClick(){
+    // 1) Obtener el mapa de Leaflet desde MapApp
+    const map = window.MapApp && typeof window.MapApp.getMap === "function"
+      ? window.MapApp.getMap()
+      : null;
+
+    if (!map){
+      console.error("Mapa no inicializado todavía");
+      alert("El mapa todavía no está listo. Probá de nuevo en unos segundos.");
+      return;
+    }
+
+    const active = btnRevisitas.getAttribute("data-active") !== "on";
+    btnRevisitas.setAttribute("data-active", active ? "on" : "off");
+
+    if (!active){
+      // ocultar capa y panel
+      RevisitasCsv.hide(map);
+      if (panelRevisitas) panelRevisitas.hidden = true;
+      return;
+    }
+
+    // 1) Obtener CSV desde tu config
+    const cfg = window.APP_CONFIG || {};
+    const url = cfg.REVISITAS_CSV_URL;  // definido en app-config.js
+    if (!url){ 
+      console.warn("Falta REVISITAS_CSV_URL");
+      alert("No está configurada la URL del CSV de revisitas.");
+      return; 
+    }
+
+    // 2) (Opcional) filtrar por usuario logueado
+    const user = window.AuthApp && typeof window.AuthApp.getUsername === "function"
+      ? window.AuthApp.getUsername()
+      : "";
+
+    try{
+      await RevisitasCsv.loadFromCsvUrl(url, user);
+      RevisitasCsv.renderMarkers(map);
+      RevisitasCsv.show(map);
+
+      if (panelRevisitas){
+        renderRevisitasListTo(panelRevisitas, RevisitasCsv.data);
+        panelRevisitas.hidden = false;
+      }
+    }catch(err){
+      console.error("Error cargando revisitas CSV:", err);
+      alert("No se pudieron cargar las revisitas desde el CSV.");
+    }
+}
 
 
+  btnRevisitas?.addEventListener("click", onRevisitasClick);
+
+  // (Opcional) Render simple de lista a un contenedor
+  function renderRevisitasListTo(container, items){
+    const el = container.querySelector("#revisita-list") || container; // usa #revisita-list si existe
+    el.innerHTML = "";
+    items.forEach((rv, idx)=>{
+      const div = document.createElement("div");
+      div.className = "weekly-item";
+      const emoji = rv.tipo === "estudio" ? "📘" : "📄";
+      const title = rv.nombre || rv.direccion || "(sin nombre)";
+      const fecha = rv.fecha || "";
+      div.textContent = `${emoji} ${title}${fecha ? " - " + fecha : ""}`;
+      div.onclick = () => {
+        // centrar mapa en el punto al clickear la fila
+        if (rv.lat && rv.lng){
+          map.setView([rv.lat, rv.lng], Math.max(map.getZoom(), 16));
+        }
+      };
+      el.appendChild(div);
+    });
+  }
+
+// Carga revisitas con JSONP y fallback CSV
+async function loadRevisitasFromServer(){
+  const username = window.AuthApp?.getUsername?.() || "";
+  if (!username){ window.revisitasData = []; return; }
+
+  const cfg = window.APP_CONFIG || {};
+  const API = cfg.REVISITAS_API_URL;
+  const CSV = cfg.REVISITAS_CSV_URL;
+
+  const normNum = (v,maxAbs)=>{ 
+    let s = String(v ?? "").trim().replace(",","."); 
+    const m = s.match(/^(-?\d+)\.(\d{3})\.(\d{3})$/); 
+    if (m) s = `${m[1]}.${m[2]}${m[3]}`;
+    const n = parseFloat(s);
+    return isFinite(n) && (!maxAbs || Math.abs(n)<=maxAbs) ? n : 0;
+  };
+  const normLat = v => normNum(v,90);
+  const normLng = v => normNum(v,180);
+
+  function parseCSV(text){
+    const rows = [];
+    let cur = "", row = [], inQ = false;
+    for (let i=0;i<text.length;i++){
+      const c = text[i], n = text[i+1];
+      if (inQ){
+        if (c === '"' && n === '"'){ cur += '"'; i++; }
+        else if (c === '"'){ inQ = false; }
+        else { cur += c; }
+      } else {
+        if (c === '"'){ inQ = true; }
+        else if (c === ','){ row.push(cur); cur=''; }
+        else if (c === '\r'){}
+        else if (c === '\n'){ row.push(cur); rows.push(row); row=[]; cur=''; }
+        else { cur += c; }
+      }
+    }
+    if (cur.length || row.length){ row.push(cur); rows.push(row); }
+    if (rows.length === 0) return [];
+    const headersLC = rows.shift().map(h => String(h||"").trim().toLowerCase());
+    return rows
+      .filter(r => r.some(x => String(x||'').trim() !== ''))
+      .map(r => {
+        const o = {};
+        headersLC.forEach((h,i)=> o[h] = r[i] ?? '');
+        return o;
+      });
+  }
+
+  function mapCsvRow(x){
+    const get = (obj, keys, def='')=>{
+      for (const k of keys){
+        if (k in obj && String(obj[k]).trim() !== '') return String(obj[k]).trim();
+      }
+      return def;
+    };
+    const user = get(x, ['user','usuario','username','mail','email'], '');
+    if (user && user !== username) return null;
+    const id    = get(x, ['id','codigo','cod','id_revisita','idrev'], '');
+    const nombre= get(x, ['nombre','name','persona','familia'], '');
+    const fecha = get(x, ['fecha','date','fch'], '');
+    const direccion = get(x, ['direccion','dirección','address','addr','dir'], '');
+    const tema  = get(x, ['tema','notas','nota','obs','observaciones','comentarios','comentario'], '');
+    const prox  = get(x, ['prox','proxima','próxima','next','proximo','próximo','fch_prox'], '1semana');
+    const tipo  = (get(x, ['tipo','clase','categoria','categoría'], 'revisita')||'revisita').toLowerCase();
+    const lat   = normLat(get(x, ['lat','latitud','latitude'], '0'));
+    const lng   = normLng(get(x, ['lng','long','lon','longitud','longitude'], '0'));
+    return { id, user: user || username, nombre, fecha, direccion, tema, prox, tipo, lat, lng };
+  }
+
+  function tryCSV(){
+    return new Promise((resolve)=>{
+      if (!CSV){ window.revisitasData = []; resolve(); return; }
+      fetch(CSV, { cache: 'no-store' })
+        .then(r => r.text())
+        .then(text => {
+          const arr = parseCSV(text).map(mapCsvRow).filter(Boolean);
+          window.revisitasData = arr;
+          resolve();
+        })
+        .catch(err => { console.error('CSV fallback error', err); window.revisitasData = []; resolve(); });
+    });
+  }
+
+  if (!API){ await tryCSV(); return; }
+
+  await new Promise((resolve)=>{
+    const cbName = 'jsonpListCb_' + Date.now();
+    let settled = false, script;
+
+    function cleanup(){ if (settled) return; settled = true; try{ delete window[cbName]; }catch(_){} if (script?.parentNode) script.parentNode.removeChild(script); }
+
+    window[cbName] = (data) => {
+      cleanup();
+      if (data && data.ok && Array.isArray(data.items)){
+        window.revisitasData = data.items.map(x => ({
+          id: (x.id || '').trim(),
+          user: (x.user || username).trim(),
+          nombre: x.nombre || '',
+          fecha: x.fecha || '',
+          direccion: x.direccion || '',
+          tema: x.tema || '',
+          prox: x.prox || '1semana',
+          tipo: (x.tipo || 'revisita').toLowerCase(),
+          lat: normLat(x.lat),
+          lng: normLng(x.lng || x.long)
+        }));
+        resolve();
+      } else {
+        tryCSV().then(resolve);
+      }
+    };
+
+    const params = new URLSearchParams({ action:'list', user: username, callback: cbName, rnd: String(Date.now()) });
+    script = document.createElement('script');
+    script.src = API + '?' + params.toString();
+    script.async = true;
+    script.referrerPolicy = 'no-referrer';
+    script.onerror = () => { cleanup(); tryCSV().then(resolve); };
+    script.onload  = () => { if (!settled){ cleanup(); tryCSV().then(resolve); } };
+    document.body.appendChild(script);
+
+    setTimeout(() => { if (!settled){ cleanup(); tryCSV().then(resolve); } }, 4000);
+  });
+}
+
+async function saveRevisitaToServer(nuevo){
+  try{
+    if (!window.RevisitasApi || !RevisitasApi.save) throw new Error("RevisitasApi.save no disponible");
+    const ok = await RevisitasApi.save(nuevo);
+    if (!ok) throw new Error("Guardar falló");
+    // refrescar cache y UI
+    await loadRevisitasFromServer();
+    renderRevisitasList();
+    renderRevisitasMarkers && renderRevisitasMarkers();
+    return true;
+  }catch(err){
+    console.error("saveRevisitaToServer error", err);
+    window.showToast && window.showToast("Error al guardar revisita");
+    return false;
+  }
+}
+window.saveRevisitaToServer = saveRevisitaToServer;
+// === Manejo de click/map para crear nuevas ===
+function setMapCursor(mode){
+  // mode: "add" | "normal"
+  const mapObj = window.MapApp.getMap();
+  if (!mapObj) return;
+  const container = mapObj.getContainer();
+  if (!container) return;
+
+  if (mode === "add"){
+    // Cursor tipo mira para que el usuario entienda "hacé click acá"
+    container.style.cursor = "crosshair";
+  } else {
+    // Cursor Leaflet normal (agarre/mano para pan)
+    container.style.cursor = "";
+  }
+}
+
+function attachMapClickForNew(){
+  const mapObj = window.MapApp.getMap();
+  if (!mapObj) return;
+  if (mapClickHandler) return; // ya enganchado
+
+  mapClickHandler = (e)=>{
+    // cuando hago click en el mapa estando en modo Revisitas:
+    // abrimos el modal para crear la revisita/estudio en ese punto
+    openNewRevisitaModal(e.latlng);
+  };
+
+  mapObj.on('click', mapClickHandler);
+
+  // Cambiamos cursor visualmente a "estás marcando ubicación"
+  setMapCursor("add");
+}
+
+function detachMapClickForNew(){
+  const mapObj = window.MapApp.getMap();
+  if (!mapObj) return;
+  if (mapClickHandler){
+    mapObj.off('click', mapClickHandler);
+    mapClickHandler = null;
+  }
+
+  // Volvemos el cursor normal (mano para arrastrar el mapa)
+  setMapCursor("normal");
+}
+
+
+  function openNewRevisitaModal(latlng){
+    currentEditIndex = -1;
+    const rv = {
+      id:"",
+      user: window.AuthApp.getUsername(),
+      nombre:"",
+      fecha:new Date().toISOString().slice(0,10),
+      direccion:"",
+      tema:"",
+      prox:"1semana",
+      tipo:"revisita",
+      lat:latlng.lat,
+      lng:latlng.lng
+    };
+    openRevisitaModalInternal(rv);
+  }
+
+  function openEditRevisitaModal(idx){
+    currentEditIndex = idx;
+    const rv = {...revisitasData[idx]};
+    openRevisitaModalInternal(rv);
+  }
+
+  function openRevisitaModalInternal(rv){
+    // seguridad: solo dueño puede editar/ver
+    const currentUser = window.AuthApp.getUsername();
+    if (!currentUser){
+      showToast("Primero iniciá sesión");
+      return;
+    }
+    if (rv.user && rv.user !== currentUser){
+      showToast("No tenés permiso para editar esto");
+      return;
+    }
+
+    revisitaBody.innerHTML = buildRevisitaFormHTML(rv);
+    revisitaOverlay.style.display = 'flex';
+
+    const btnCancel = document.getElementById('rv-cancel');
+    const btnSave   = document.getElementById('rv-save');
+
+    btnCancel.addEventListener('click', ()=>{
+      revisitaOverlay.style.display='none';
+    });
+
+    btnSave.addEventListener('click', async ()=>{
+      const id         = document.getElementById('rv-id').value;
+      const nombre     = document.getElementById('rv-nombre').value.trim();
+      const fecha      = document.getElementById('rv-fecha').value;
+      const direccion  = document.getElementById('rv-direccion').value.trim();
+      const tema       = document.getElementById('rv-tema').value.trim();
+      const prox       = (document.querySelector('input[name="rv-prox"]:checked')||{}).value || "1semana";
+      const tipo       = (document.querySelector('input[name="rv-tipo"]:checked')||{}).value || "revisita";
+      const lat        = parseFloat(document.getElementById('rv-lat').value);
+      const lng        = parseFloat(document.getElementById('rv-lng').value);
+
+      if (!nombre){
+        showToast("Falta el nombre.");
+        return;
+      }
+      if (!fecha){
+        showToast("Falta la fecha.");
+        return;
+      }
+
+      const nuevo = {id, user:currentUser, nombre, fecha, direccion, tema, prox, tipo, lat, lng};
+
+      const ok = await saveRevisitaToServer(nuevo);
+      if (!ok) return;
+
+      // refrescar desde server para mantener ids correctos
+      await loadRevisitasFromServer();
+      renderRevisitasList();
+      renderRevisitasMarkers();
+
+      revisitaOverlay.style.display='none';
+      showToast("Guardado ✅");
+    });
+  }
+
+  // Panel Revisitas toggle
+  btnRevisitas.addEventListener('click', async () => {
+  if (!window.AuthApp.isLogged()){
+    showToast("Tenés que iniciar sesión");
     return;
   }
 
-  // === PRENDER MODO PREDICAR ===
-  btnWeekly.setAttribute("data-active","on");
-  iconWeekly.textContent = "✅";
+  revisitasActive = !revisitasActive;
 
-  restoreWeeklyPanel(); // siempre lo abrimos "grande" al entrar
-  weeklyPanel.hidden = false;
+  if (!revisitasActive){
+    btnRevisitas.setAttribute("data-active","off");
+    iconRevisitas.textContent = "📒";
 
-  // limpiar cualquier cosa anterior
-  window.MapApp.clearWeeklyPoint();
-  window.MapApp.clearRoute();
-  btnRoute.setAttribute("data-active","off");
-  iconRoute.textContent = "🚗";
+    revisitaPanel.hidden = true;
+    restorePanel(revisitaPanel);
 
-  // reconstruir la lista
-  weeklyList.innerHTML = "";
-  const items = window.MapApp.getWeeklyPoints(); // WEEKLY_POINTS
+    const layer = window.MapApp.getRevisitasLayer();
+    if (layer) { layer.remove(); }
 
-  // Botón "Mostrar todas las salidas"
-  const btnAll = document.getElementById('weekly-show-all');
-  if (btnAll){
-    btnAll.onclick = () => {
-      // mostrar todos los puntos de predicación en el mapa
-      window.MapApp.showWeeklyLayerWithRoutingOnClick();
-      // no trazamos ruta todavía hasta que el usuario toque un punto
-      window.MapApp.clearWeeklyPoint();
+    detachMapClickForNew();
+    return;
+  }
+
+  btnRevisitas.setAttribute("data-active","on");
+  iconRevisitas.textContent = "✅";
+
+  restorePanel(revisitaPanel);
+  revisitaPanel.hidden = false;
+
+  await loadRevisitasFromServer();
+
+  renderRevisitasList();
+  renderRevisitasMarkers();
+
+  const layer = window.MapApp.getRevisitasLayer();
+  const mapObj = window.MapApp.getMap();
+  if (layer && mapObj && !mapObj.hasLayer(layer)){
+    layer.addTo(mapObj);
+  }
+
+  attachMapClickForNew();
+});
+
+
+  if (revisitaShowAll){
+    revisitaShowAll.addEventListener('click', ()=>{
+      const layer = window.MapApp.getRevisitasLayer();
+      renderRevisitasMarkers();
+      const mapObj = window.MapApp.getMap();
+      if (layer && mapObj && !mapObj.hasLayer(layer)){
+        layer.addTo(mapObj);
+      }
+      const arrLatLng = [];
+      layer.eachLayer(m => {
+        if (m.getLatLng) { arrLatLng.push(m.getLatLng()); }
+      });
+      if (arrLatLng.length){
+        const bounds = L.latLngBounds(arrLatLng);
+        mapObj.fitBounds(bounds, {padding:[40,40]});
+      }
+      minimizePanel(revisitaPanel);
+    });
+  }
+
+  // ====== Botón Ruta ======
+  btnRoute.addEventListener('click', async () => {
+    const isOn = btnRoute.getAttribute("data-active") === "on";
+
+    if (isOn) {
       window.MapApp.clearRoute();
       btnRoute.setAttribute("data-active","off");
       iconRoute.textContent = "🚗";
+      return;
+    }
 
-      // minimizar panel (en mobile)
-      minimizeWeeklyPanel();
-    };
-  }
+    const ok = await window.MapApp.ensureRouteWithGeo();
 
-  // Cada salida individual
-  items.forEach((it, idx) => {
-    const div = document.createElement('div');
-    div.className = 'weekly-item';
-    div.textContent = it.dia + ' ' + it.hora + ' | ' + it.label ; // SOLO el lugar/nombre, sin día/hora
-
-    div.addEventListener('click', async () => {
-      // esconder la capa de todos
-
-      // mostrar solo ese punto en el mapa y centrar
-      await window.MapApp.showSingleWeeklyPoint(idx);
-
-      // si GPS activo y routing habilitado, dibujar ruta automática
-      if (weeklyActive && window.MapApp.isGeoActive()){
-        btnRoute.setAttribute("data-active","on");
-        iconRoute.textContent = "🛣️";
-      } else {
-        btnRoute.setAttribute("data-active","off");
-        iconRoute.textContent = "🚗";
-      }
-
-      // minimizar panel en mobile para liberar mapa
-      minimizeWeeklyPanel();
-    });
-
-    weeklyList.appendChild(div);
+    if (ok) {
+      btnRoute.setAttribute("data-active","on");
+      iconRoute.textContent = "🛣️";
+    } else {
+      btnRoute.setAttribute("data-active","off");
+      iconRoute.textContent = "🚗";
+    }
   });
-
-});
-
-
-
-
-btnRoute.addEventListener('click', async () => {
-  const isOn = btnRoute.getAttribute("data-active") === "on";
-
-  if (isOn) {
-    // 🔻 Apagar ruta
-    window.MapApp.clearRoute();
-    btnRoute.setAttribute("data-active","off");
-    iconRoute.textContent = "🚗";
-    return;
-  }
-
-  // 🔺 Quieren encender ruta
-
-  // 1. Si ya tenemos posición y un destino, perfecto.
-  // 2. Si NO tenemos posición, la activamos y luego trazamos.
-  // 3. Si NO tenemos destino, avisamos.
-
-  // Intentar asegurar ruta con geolocalización activa
-  const ok = await window.MapApp.ensureRouteWithGeo();
-
-  if (ok) {
-    btnRoute.setAttribute("data-active","on");
-    iconRoute.textContent = "🛣️";
-  } else {
-    // Si no se pudo trazar ruta, nos aseguramos visualmente de dejar
-    // el botón apagado para no mentirle al usuario.
-    btnRoute.setAttribute("data-active","off");
-    iconRoute.textContent = "🚗";
-  }
-});
-
 
   // ====== Info colores toggle ======
   btnInfo.addEventListener('click', ()=>{
@@ -449,8 +1193,9 @@ btnRoute.addEventListener('click', async () => {
     }
   });
 
-  // ====== Init general ======
+  // ====== Init ======
   (async function boot(){
+    // Asegurarnos de que MapApp exista
     const ok = await (async function waitFor(cond, timeoutMs){
       const start = Date.now();
       return new Promise((resolve)=>{
@@ -471,9 +1216,393 @@ btnRoute.addEventListener('click', async () => {
     await window.MapApp.init();
     await window.MapApp.ready;
 
-    // restaurar sesión inicial
+    // al inicio asumimos territorios visibles -> habilitamos "Números"
+    if (typeof btnLabels !== 'undefined' && btnLabels) {
+      btnLabels.disabled = false;
+      btnLabels.classList.remove("bb-disabled");
+    }
+
+    // restaurar sesión (esto ajusta UI según rol)
     await window.AuthApp.restore();
+    await loadRevisitasFromServer();
+    renderRevisitasList();
+    renderRevisitasMarkers();
+    updateLabelsFabVisibility();
   })();
-  </script>
+</script>
+
+<!-- Modal No Visitar -->
+<div id="novistar-overlay" class="overlay" style="display:none;">
+  <div class="modal-card" id="novistar-modal">
+    <div class="modal-header">
+      <h3 class="modal-title">Sugerir “No visitar”</h3>
+      <button id="novistar-close" class="modal-close-btn" type="button">✖</button>
+    </div>
+    <div class="modal-body">
+      <form id="novistar-form">
+        <input type="hidden" id="novistar-lat">
+        <input type="hidden" id="novistar-lng">
+        <div class="form-field">
+          <label class="form-label" for="novistar-direccion">Dirección (opcional)</label>
+          <input id="novistar-direccion" class="form-input" placeholder="Ej: José Pedro Varela 1234" />
+        </div>
+
+        <div class="form-field">
+          <label class="form-label" for="novistar-motivo">Motivo</label>
+          <select id="novistar-motivo" class="form-select">
+            <option value="agresivo">Agresivo</option>
+            <option value="rechazo">Rechazo explícito</option>
+            <option value="otro">Otro</option>
+          </select>
+        </div>
+
+        <div class="form-field">
+          <label class="form-label" for="novistar-comentario">Comentario</label>
+          <input id="novistar-comentario" class="form-input" placeholder="Comentario breve..." />
+        </div>
+
+
+
+        <div class="form-actions">
+          <button id="novistar-cancel" class="btn-cancel" type="button">Cancelar</button>
+          <button id="novistar-save" class="btn-primary" type="submit">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+
+
+<script>
+(function(){
+  function qs(id){ return document.getElementById(id); }
+  function setSheetsCsvStatus(ok){
+    const el = qs('sheets-status-badge');
+    if(!el) return;
+    el.classList.remove('ok','disconnected');
+    if(ok){
+      el.classList.add('ok');
+      el.textContent = 'Sheets ON';
+      el.title = 'Google Sheets conectado';
+    } else {
+      el.classList.add('disconnected');
+      el.textContent = 'Sheets OFF';
+      el.title = 'Google Sheets no conectado o no publicado';
+    }
+  }
+  window.setSheetsCsvStatus = setSheetsCsvStatus;
+
+  async function checkOnce(){
+    try{
+      const cfg = window.APP_CONFIG || {};
+      const url = cfg.SHEETS_TERRITORIOS_CSV_URL;
+      if(!url){ setSheetsCsvStatus(false); return; }
+      const res = await fetch(url, { cache: 'no-store', redirect: 'follow' });
+      setSheetsCsvStatus(res && res.ok);
+    }catch(e){
+      setSheetsCsvStatus(false);
+    }
+  }
+
+  function monitorSheetsCsv(){
+    checkOnce();
+    // Revisa cada 5 minutos
+    setInterval(checkOnce, 5 * 60 * 1000);
+  }
+
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', monitorSheetsCsv);
+  }else{
+    monitorSheetsCsv();
+  }
+})();
+</script>
+
+
+<!-- Sheets help overlay -->
+<div id="sheets-help-overlay" class="overlay" style="display:none">
+  <div class="overlay-box">
+    <div class="overlay-header">
+      <h3 class="overlay-title">Conectar Google Sheets (CSV)</h3>
+      <button class="overlay-close-btn" onclick="closeSheetsHelp()">Cerrar</button>
+    </div>
+    <div class="overlay-body">
+      <ol style="margin:0; padding-left:18px">
+        <li>En tu Google Sheet, ve a <strong>Archivo → Publicar en la web</strong>.</li>
+        <li>Seleccioná la <strong>pestaña</strong> que usa el mapa (la que contiene los datos).</li>
+        <li>Formato: <strong>CSV</strong> y publicá. Copiá el enlace generado.</li>
+        <li>Verificá que el enlace contenga <code>gid=&lt;número&gt;</code> de esa pestaña.</li>
+        <li>Pegá ese enlace en <code>APP_CONFIG.SHEETS_TERRITORIOS_CSV_URL</code> o debajo para probar.</li>
+      </ol>
+      <hr style="border:none; border-top:1px solid #e5e7eb; margin:12px 0">
+      <div style="display:grid; gap:10px">
+        <label>GID de la pestaña (opcional para construir URL rápidamente)
+          <input id="sheets-gid-input" placeholder="Ej: 1217453780" style="width:100%">
+        </label>
+        <button class="btn" onclick="buildCsvUrlFromGid()">Construir URL CSV desde GID</button>
+        <label>URL CSV construida / actual
+          <input id="sheets-url-output" style="width:100%" readonly>
+        </label>
+        <div style="display:flex; gap:8px; flex-wrap:wrap">
+          <button class="btn" onclick="saveSheetsUrlToConfig()">Usar esta URL ahora</button>
+          <button class="btn" onclick="copyCurrentSheetsUrl()">Copiar URL actual</button>
+          <button class="btn" onclick="recheckSheetsStatus()">Revisar estado</button>
+          <a id="sheets-open-url" class="btn" target="_blank" href="#">Abrir URL</a>
+        </div>
+        <p class="hint">Si la URL devuelve 404/403, asegurate de que el Sheet esté <em>publicado</em> y que el GID sea el de la pestaña correcta.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+(function(){
+  function qs(id){ return document.getElementById(id); }
+  function getAppCfg(){ return window.APP_CONFIG || {}; }
+
+  window.openSheetsHelp = function(){
+    const o = qs('sheets-help-overlay');
+    if(!o) return;
+    // prefilla con la URL actual si existe
+    const url = (getAppCfg().SHEETS_TERRITORIOS_CSV_URL || "").trim();
+    const out = qs('sheets-url-output');
+    if (out) out.value = url;
+    const link = qs('sheets-open-url');
+    if (link) link.href = url || "#";
+    o.style.display = "flex";
+  };
+  window.closeSheetsHelp = function(){
+    const o = qs('sheets-help-overlay');
+    if(!o) return;
+    o.style.display = "none";
+  };
+
+  window.buildCsvUrlFromGid = function(){
+    const gid = (qs('sheets-gid-input')?.value || "").trim();
+    if(!gid){ alert("Ingresá un GID numérico de la pestaña"); return; }
+    const url = "https://docs.google.com/spreadsheets/d/e/2PACX-<TU_ID_PUBLICACION>/pub?gid=" + encodeURIComponent(gid) + "&single=true&output=csv";
+    const out = qs('sheets-url-output');
+    if(out){ out.value = url; }
+    const link = qs('sheets-open-url');
+    if(link){ link.href = url; }
+  };
+
+  window.copyCurrentSheetsUrl = async function(){
+    const out = qs('sheets-url-output');
+    const v = (out?.value || "").trim();
+    if(!v){ alert("No hay URL para copiar"); return; }
+    try{
+      await navigator.clipboard.writeText(v);
+      alert("URL copiada al portapapeles");
+    }catch(e){
+      console.warn(e);
+      // fallback
+      out.select(); document.execCommand("copy");
+      alert("URL copiada (fallback)");
+    }
+  };
+
+  window.recheckSheetsStatus = async function(){
+    try{
+      const url = (qs('sheets-url-output')?.value || "").trim() || (getAppCfg().SHEETS_TERRITORIOS_CSV_URL || "").trim();
+      if(!url){ window.setSheetsCsvStatus?.(false); return; }
+      const res = await fetch(url, { cache: 'no-store', redirect: 'follow' });
+      const ok = !!(res && res.ok);
+      window.setSheetsCsvStatus?.(ok);
+      if(ok){ alert("Conexión OK"); } else { alert("Sigue sin conectar"); }
+    }catch(e){
+      window.setSheetsCsvStatus?.(false);
+      alert("Error al chequear");
+    }
+  };
+
+  // Click en badge: si está OFF => abre ayuda; si está ON => copia URL (si existe)
+  function initBadgeClick(){
+    const badge = qs('sheets-status-badge');
+    if(!badge) return;
+    badge.style.cursor = "pointer";
+    badge.addEventListener('click', ()=>{
+      const isOff = badge.classList.contains('disconnected');
+      if(isOff){ openSheetsHelp(); }
+      else {
+        const url = getAppCfg().SHEETS_TERRITORIOS_CSV_URL || "";
+        if(url){
+          navigator.clipboard?.writeText(url).then(()=>{
+            badge.title = "URL copiada";
+          }).catch(()=>{ badge.title = "No se pudo copiar"; });
+        } else {
+          openSheetsHelp();
+        }
+      }
+    });
+  }
+
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', initBadgeClick);
+  }else{
+    initBadgeClick();
+  }
+})();
+</script>
+
+
+<script>
+(function(){
+  function qs(id){ return document.getElementById(id); }
+  function getAppCfg(){ return window.APP_CONFIG || (window.APP_CONFIG = {}); }
+  window.saveSheetsUrlToConfig = async function(){
+    const inp = qs('sheets-url-output');
+    const v = (inp?.value || "").trim();
+    if(!v){ alert("Ingresá una URL CSV válida primero."); return; }
+    const cfg = getAppCfg();
+    cfg.SHEETS_TERRITORIOS_CSV_URL = v;
+    try { localStorage.setItem('APP_CONFIG.SHEETS_TERRITORIOS_CSV_URL', v); } catch(e) {}
+    // Actualizar badge
+    if (window.recheckSheetsStatus) await window.recheckSheetsStatus();
+    // Recargar datos del mapa si existe el método
+    try{
+      if (typeof window.cargarDatosDesdeSheets === 'function'){
+        await window.cargarDatosDesdeSheets();
+        alert("URL aplicada y datos recargados.");
+      } else {
+        alert("URL aplicada. Recargá los datos desde el panel o refrescá la página.");
+      }
+    }catch(e){
+      console.warn(e);
+      alert("URL aplicada. Si no ves cambios, refrescá la página.");
+    }
+  };
+
+  // Al cargar, restaurar URL desde localStorage si existe (no pisa una ya definida en código)
+  try{
+    const stored = localStorage.getItem('APP_CONFIG.SHEETS_TERRITORIOS_CSV_URL');
+    if (stored && (!getAppCfg().SHEETS_TERRITORIOS_CSV_URL)){
+      getAppCfg().SHEETS_TERRITORIOS_CSV_URL = stored;
+    }
+  }catch(e){}
+})();
+
+document.addEventListener('DOMContentLoaded', () => {
+  // listeners del modal
+  const novCloseBtn  = document.getElementById('novistar-close');
+  const novCancelBtn = document.getElementById('novistar-cancel');
+  const novOverlay   = document.getElementById('novistar-overlay');
+  const novForm      = document.getElementById('novistar-form');
+
+  
+  
+
+  novOverlay?.addEventListener('click', (e) => {
+    if (e.target === novOverlay) closeNovistarModal();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeNovistarModal();
+  });
+
+  novForm?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const payload = {
+      lat: parseFloat(document.getElementById('novistar-lat').value),
+      lng: parseFloat(document.getElementById('novistar-lng').value),
+      direccion: (document.getElementById('novistar-direccion').value || '').trim(),
+      motivo: document.getElementById('novistar-motivo').value,
+      comentario: (document.getElementById('novistar-comentario').value || '').trim(),
+      fecha: new Date().toISOString(),
+      user: (typeof AuthApp !== "undefined" && AuthApp.getUsername ? (AuthApp.getUsername() || "anon") : "anon")
+    };
+    if (window.MapApp?.saveNoVisitarSuggestion) {
+      window.MapApp.saveNoVisitarSuggestion(payload);
+    } else {
+      window.showToast?.('Sugerencia enviada (mock)');
+      console.log('NoVisitar payload:', payload);
+    }
+    closeNovistarModal();
+  });
+
+  // escuchar cuando se elige el punto en el mapa
+  document.addEventListener('novistar:pick', (e) => {
+    openNovistarModal(e.detail || {});
+  });
+
+});
+</script>
+
+<!-- Modal simple -->
+<div id="overlay" style="position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:99999">
+  <div style="width:min(560px,92vw);background:#121a2b;border:1px solid #223254;border-radius:16px;padding:16px">
+    <h3 style="margin:0 0 8px 0">Ingresar revisita</h3>
+    <div style="display:grid;grid-template-columns:120px 1fr;gap:10px;align-items:center;margin-bottom:10px">
+      <label>Nombre</label><input id="rv-nombre" />
+      <label>Fecha</label><input id="rv-fecha" type="date" />
+      <label>Dirección</label><input id="rv-direccion" />
+      <label>Tema</label><input id="rv-tema" />
+      <label>Próxima</label>
+      <select id="rv-prox"><option value="1semana">1 semana</option><option value="2semanas">2 semanas</option><option value="1mes">1 mes</option></select>
+      <label>Tipo</label>
+      <select id="rv-tipo"><option value="revisita">Revisita</option><option value="estudio">Estudio</option><option value="visita">Visita</option><option value="otro">Otro</option></select>
+      <label>Lat/Lng</label>
+      <div><input id="rv-lat" readonly style="opacity:.6"><br><input id="rv-lng" readonly style="opacity:.6;margin-top:6px"></div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px">
+      <button id="rv-cancel">Cancelar</button>
+      <button id="rv-save">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Panel Revisitas -->
+<aside id="revisitas-panel" class="side-panel" hidden>
+  <div class="toolbar">
+    <h3 style="margin:0;flex:1">Revisitas</h3>
+    <select id="rv-tipo-filter">
+      <option value="">Todos</option>
+      <option value="revisita">Revisita</option>
+      <option value="estudio">Estudio</option>
+      <option value="visita">Visita</option>
+      <option value="otro">Otro</option>
+    </select>
+    <input id="rv-q" placeholder="Buscar..." />
+  </div>
+  <div id="revisitas-list" class="list"></div>
+</aside>
+
+<!-- Modal Ingresar Revisita -->
+<div id="rv-overlay" class="overlay" style="display:none">
+  <div class="modal">
+    <h3 style="margin:0 0 8px 0">Ingresar revisita</h3>
+    <div class="row"><label>Nombre</label><input id="rvf-nombre"></div>
+    <div class="row"><label>Fecha</label><input id="rvf-fecha" type="date"></div>
+    <div class="row"><label>Dirección</label><input id="rvf-direccion"></div>
+    <div class="row"><label>Tema</label><input id="rvf-tema"></div>
+    <div class="row">
+      <label>Próxima</label>
+      <select id="rvf-prox">
+        <option value="1semana">1 semana</option>
+        <option value="2semanas">2 semanas</option>
+        <option value="1mes">1 mes</option>
+      </select>
+    </div>
+    <div class="row">
+      <label>Tipo</label>
+      <select id="rvf-tipo">
+        <option value="revisita">Revisita</option>
+        <option value="estudio">Estudio</option>
+        <option value="visita">Visita</option>
+        <option value="otro">Otro</option>
+      </select>
+    </div>
+    <div class="row"><label>Lat</label><input id="rvf-lat" readonly class="ghost"></div>
+    <div class="row"><label>Lng</label><input id="rvf-lng" readonly class="ghost"></div>
+    <div class="actions">
+      <button id="rvf-cancel">Cancelar</button>
+      <button id="rvf-save">Guardar</button>
+    </div>
+  </div>
+</div>
+
+
 </body>
 </html>
