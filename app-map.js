@@ -1,270 +1,408 @@
 (function () {
-  'use strict';
+  "use strict";
 
   // ==========================
   // Estado interno
   // ==========================
   let map;
-let territoriosLayer;
-let housesLayer;
-let weeklyLayer;        // <--- NUEVA capa visual para predicación semanal (todas las salidas/puntos)
-let routeControl = null;
 
-let geoWatchId   = null;
-let geoMarker    = null;
-
-let labelsVisible = true;
-let housesVisible = false;
-let weeklyRoutingEnabled = false;
-
-let weeklyLayerVisible = false; // para trackear si estamos mostrando todos los puntos semanales
-
-// marcador actual de predicación semanal elegido
-let weeklyMarker = null;
-
-// último punto semanal elegido (para redibujar ruta)
-let lastWeeklyPoint = null;
-
-// cache polígonos
-let poligonosData = [];
-
-// cargadas desde JSON externo
-let WEEKLY_POINTS = [];
-let HOUSES_POINTS = [];
-
-
-
- // ==========================
-// Cargar archivos JSON externos
-// ==========================
-async function loadWeeklyPoints() {
-  try {
-    const resp = await fetch("./predicacion_semanal.json", { cache: "no-store" });
-    if (!resp.ok) throw new Error("Error HTTP " + resp.status);
-    WEEKLY_POINTS = await resp.json();
-  } catch (err) {
-    console.error("No se pudo cargar predicación semanal:", err);
-    WEEKLY_POINTS = [];
+  // Capas
+  let territoriosLayer;
+  let housesLayer;
+  let weeklyLayer;
+  let revisitasLayer;
+// === Safe renderer for Revisitas markers ===
+function renderRevisitasMarkers(data){
+  try{
+    const map = getMap();
+    if (!map) return;
+    revisitasLayer.addTo(map);
+    revisitasLayer.clearLayers();
+    (Array.isArray(data) ? data : []).forEach(rv => {
+      const lat = parseFloat(rv.lat);
+      const lng = parseFloat(rv.lng ?? rv.long);
+      if (!isFinite(lat) || !isFinite(lng)) return;
+      const m = L.marker([lat, lng]).addTo(revisitasLayer);
+      const title = rv.nombre || rv.direccion || "Revisita";
+      m.bindPopup(`<b>${title}</b><br>${rv.fecha||""}`);
+    });
+  }catch(e){
+    console.warn("renderRevisitasMarkers error", e);
   }
 }
 
-async function loadHousesPoints() {
-  try {
-    const resp = await fetch("./casas_familias.json", { cache: "no-store" });
-    if (!resp.ok) throw new Error("Error HTTP " + resp.status);
-    HOUSES_POINTS = await resp.json();
-  } catch (err) {
-    console.error("No se pudo cargar casas de familias:", err);
-    HOUSES_POINTS = [];
-  }
-}
 
-function buildWeeklyMarkerHTML(p) {
-  // tipo define el ícono y color
-  const tipo = (p.type || "familia").toLowerCase();
-  const emoji = (tipo === "grupo") ? "👥" : "🏠";
-  const emojiClass = (tipo === "grupo")
-    ? "house-marker-emoji grupo"
-    : "house-marker-emoji familia";
+  
+  // ===== Revisitas CSV unificado en MapApp =====
+  let revisitasData = [];
 
-  // Lo que se ve siempre en el mapa (sin día/hora)
-  const visibleName = p.label || "Salida";
-
-  return `
-    <div class="house-marker">
-      <div class="${emojiClass}">${emoji}</div>
-      <div class="house-marker-label">${visibleName}</div>
-    </div>
-  `;
-}
-
-// crea icono leaflet.divIcon acorde al punto p
-function makeWeeklyDivIcon(p) {
-  return L.divIcon({
-    className: "",
-    html: buildWeeklyMarkerHTML(p),
-    iconSize: [1, 1],
-    iconAnchor: [20, 30]
-  });
-}
-
-// dibuja TODOS los puntos en weeklyLayer
-function renderWeeklyPointsOnMap() {
-  weeklyLayer.clearLayers();
-
-  WEEKLY_POINTS.forEach((p, idx) => {
-    const tipo = (p.type || "familia").toLowerCase();
-    const emoji = (tipo === "grupo") ? "👥" : "🏠";
-    const emojiClass = (tipo === "grupo")
-      ? "house-marker-emoji grupo"
-      : "house-marker-emoji familia";
-
-    const visibleName = p.label || "Salida";
-    const hoverInfo = `${p.dia || ""} ${p.hora || ""}`.trim();
-
-    const html = `
-      <div class="house-marker">
-        <div class="${emojiClass}">${emoji}</div>
-        <div class="house-marker-label">${visibleName}</div>
-      </div>
-    `;
-
-    const icon = L.divIcon({
-      className: "",
-      html: html,
-      iconSize: [1, 1],
-      iconAnchor: [20, 30]
-    });
-
-    const m = L.marker([p.lat, p.lng], {
-      icon: icon,
-      title: hoverInfo || visibleName,
-      interactive: true
-    });
-
-    // Popup táctil
-    m.bindPopup(`
-      <strong>${visibleName}</strong><br/>
-      <span>${p.dia || ""} ${p.hora || ""}</span>
-    `);
-
-    // Tooltip hover desktop
-    if (hoverInfo) {
-      m.bindTooltip(
-        `<div style="font-size:12px;font-weight:600;color:#fff;background:#111827cc;padding:4px 6px;border-radius:6px;line-height:1.3;box-shadow:0 4px 10px rgba(0,0,0,.6);">
-          ${hoverInfo}
-        </div>`,
-        { permanent: false, direction: "top", offset: [0, -10], opacity: 1 }
-      );
+  function parseCsvRfc4180(text){
+    const rows = [];
+    let cur = "", row = [], inQ = false;
+    for (let i=0;i<text.length;i++){
+      const c = text[i], n = text[i+1];
+      if (inQ){
+        if (c === '"' && n === '"'){ cur += '"'; i++; }
+        else if (c === '"'){ inQ = false; }
+        else { cur += c; }
+      } else {
+        if (c === '"'){ inQ = true; }
+        else if (c === ','){ row.push(cur); cur=''; }
+        else if (c === '\r'){ /* ignore */ }
+        else if (c === '\n'){ row.push(cur); rows.push(row); row=[]; cur=''; }
+        else { cur += c; }
+      }
     }
+    if (cur.length>0 || row.length>0) { row.push(cur); rows.push(row); }
+    return rows;
+  }
+  function normalizeLatLngToFloat(s, maxAbs){
+    s = String(s ?? "").trim();
+    if (!s) return 0;
+    const m = s.match(/^(-?\d+)\.(\d{3})\.(\d{3})$/);
+    if (m) s = `${m[1]}.${m[2]}${m[3]}`;
+    s = s.replace(",", ".");
+    const n = parseFloat(s);
+    if (!isFinite(n)) return 0;
+    if (maxAbs && Math.abs(n) > maxAbs) return 0;
+    return n;
+  }
+  function nLat(s){ return normalizeLatLngToFloat(s, 90); }
+  function nLng(s){ return normalizeLatLngToFloat(s, 180); }
 
-    // 👇 NUEVO: click en el punto cuando estamos en modo "todas"
-    m.on("click", async () => {
-      // guardamos este punto como seleccionado
-      weeklyMarker = m;
-      lastWeeklyPoint = p;
+  async function loadRevisitasCsv(url, user){
+    const res = await fetch(url, { cache: "no-store" });
+    const text = await res.text();
+    const rows = parseCsvRfc4180(text);
+    const head = rows[0] || [];
+    const idx = (name) => head.indexOf(name);
+    const IU = idx("user"), IN = idx("nombre"), IF = idx("fecha"), ID = idx("direccion"),
+          IT = idx("tema"), IP = idx("prox"), ITP = idx("tipo"), ILA = idx("lat"), ILO = idx("lng");
+    revisitasData = rows.slice(1).map(r => ({
+      user: r[IU] || "", nombre: r[IN] || "", fecha: r[IF] || "",
+      direccion: r[ID] || "", tema: r[IT] || "", prox: r[IP] || "",
+      tipo: r[ITP] || "", lat: nLat(r[ILA]), lng: nLng(r[ILO])
+    })).filter(x => x.lat && x.lng && (!user || (x.user||'').toLowerCase() === user.toLowerCase()));
+    // Pintar
+    renderRevisitasMarkers(revisitasData);
+  }
 
-      // centramos
-      map.setView([p.lat, p.lng], 17, { animate: true });
+  function renderRevisitasMarkers(data){
+    try{
+      if (!map) return;
+      if (!revisitasLayer) revisitasLayer = L.layerGroup();
+      // limpiar previos
+      revisitasLayer.clearLayers();
+      (data||[]).forEach((rv)=>{
+        if (!isFinite(rv.lat) || !isFinite(rv.lng)) return;
+        const m = L.marker([rv.lat, rv.lng], { title: rv.nombre || "Revisita" });
+        m.bindPopup(
+          `<strong>${rv.nombre||"Revisita"}</strong><br>`+
+          (rv.direccion? `${rv.direccion}<br>`:"")+
+          (rv.fecha? `📅 ${rv.fecha}<br>`:"")+
+          (rv.tipo? `🏷️ ${rv.tipo}`:"")
+        );
+        m.addTo(revisitasLayer);
+      });
+    }catch(e){
+      console.warn("renderRevisitasMarkers error", e);
+    }
+  }
 
-      // si tenemos geo activa, mostrar ruta
-      if (weeklyRoutingEnabled && geoMarker){
-        const from = geoMarker.getLatLng();
-        const to   = L.latLng(p.lat, p.lng);
-        drawRoute(from, to);
+  function showRevisitas(on){
+    if (!map) return;
+    if (!revisitasLayer) revisitasLayer = L.layerGroup();
+    if (on){ revisitasLayer.addTo(map); } else { try{ map.removeLayer(revisitasLayer); }catch(_){ } }
+    return !!on;
+  }
 
-        // avisar al UI de ruta que está activa
-        const btnRoute = document.getElementById('btn-route-toggle');
-        const iconRoute = document.getElementById('icon-route');
-        if (btnRoute && iconRoute){
-          btnRoute.setAttribute("data-active","on");
-          iconRoute.textContent = "🛣️";
+// ===== NUEVO: "No visitar" y offline-first de sugerencias =====
+  let noVisitarLayer;
+  let noVisitarVisible = false;
+
+  const NOVI_LS = {
+    points: "novisitar.points.v1",      // puntos aprobados (visibles a todos)
+    queue:  "novisitar.suggestions.v1", // cola de sugerencias (si falla red)
+  };
+
+  function nv_lsGet(key, def){ try { return JSON.parse(localStorage.getItem(key)||"null") ?? def; } catch { return def; } }
+  function nv_lsSet(key, val){ try { localStorage.setItem(key, JSON.stringify(val)); } catch {} }
+
+  function buildNoVisitarIcon(label="⛔"){
+    return L.divIcon({
+      className: "no-visitar-marker",
+      html: label,
+      iconSize: [1,1],
+      iconAnchor: [0,0],
+    });
+  }
+
+  function renderNoVisitar(){
+    if (!noVisitarLayer) return;
+    noVisitarLayer.clearLayers();
+    const pts = nv_lsGet(NOVI_LS.points, []);
+    pts.forEach(p=>{
+      const m = L.marker([p.lat, p.lng], {
+        icon: buildNoVisitarIcon("⛔"),
+        title: p.comment ? `No visitar: ${p.comment}` : "No visitar",
+        interactive: true
+      });
+      if (p.comment){
+        m.bindPopup(`<strong>No visitar</strong><br>${p.comment}`);
+      }
+      m.addTo(noVisitarLayer);
+    });
+  }
+
+  function toggleNoVisitar(){
+    noVisitarVisible = !noVisitarVisible;
+    if (noVisitarVisible){
+      renderNoVisitar();
+      noVisitarLayer && noVisitarLayer.addTo(map);
+    } else {
+      noVisitarLayer && noVisitarLayer.remove();
+    }
+    updateNovisitarFab();
+    return noVisitarVisible;
+  }
+
+  let novistarPendingLatLng = null;
+
+  function enableNovistarPick(){
+    if (!map) return;
+    window.showToast && window.showToast("Tocá el mapa para marcar el lugar");
+    const onceHandler = (ev) => {
+      novistarPendingLatLng = ev.latlng;
+      // Abrir modal si existe; si no, usamos prompt
+      const ov = document.getElementById("novistar-overlay");
+      if (ov){
+        const pos = document.getElementById("novistar-pos");
+        if (pos){
+          const {lat,lng} = novistarPendingLatLng;
+          pos.textContent = `Posición: ${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+        }
+        ov.style.display = "block";
+      } else {
+        // Fallback
+        const comment = window.prompt("Comentario para 'No visitar':");
+        if (comment !== null){
+          sendNovistarSuggestion(comment);
         }
       }
+      map.off("click", onceHandler);
+    };
+    map.once("click", onceHandler);
+  }
+
+  async function sendNovistarSuggestion(comment){
+    const cfg = (window.APP_CONFIG || window.APP || {});
+    const url = cfg.WEBHOOK_URL;
+    const payload = {
+      type: "no_visitar_suggestion",
+      lat: novistarPendingLatLng?.lat,
+      lng: novistarPendingLatLng?.lng,
+      comment: comment || "",
+      user: (typeof AuthApp !== "undefined" && AuthApp.getUsername ? (AuthApp.getUsername() || "anon") : "anon"),
+      ts: Date.now()
+    };
+    if (!payload.lat || !payload.lng){
+      window.showToast && window.showToast("Falta posición. Intentá de nuevo.");
+      return;
+    }
+    try{
+      const r = await fetch(url, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(payload) });
+      if (!r.ok) throw new Error("HTTP "+r.status);
+      window.showToast && window.showToast("Sugerencia enviada ✅");
+    } catch(err){
+      const q = nv_lsGet(NOVI_LS.queue, []);
+      q.push(payload);
+      nv_lsSet(NOVI_LS.queue, q);
+      window.showToast && window.showToast("Sin red. Sugerencia en cola ⏳");
+    } finally {
+      novistarPendingLatLng = null;
+    }
+  }
+
+  async function flushNovistarSuggestions(){
+    const cfg = (window.APP_CONFIG || window.APP || {});
+    const url = cfg.WEBHOOK_URL;
+    if (!url) return;
+    let q = nv_lsGet(NOVI_LS.queue, []);
+    if (!q.length) return;
+    const remain = [];
+    for (const item of q){
+      try{
+        const r = await fetch(url, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(item) });
+        if (!r.ok) throw new Error("HTTP "+r.status);
+      } catch {
+        remain.push(item);
+      }
+    }
+    nv_lsSet(NOVI_LS.queue, remain);
+    if (q.length && !remain.length){
+      window.showToast && window.showToast("Sugerencias enviadas ✅");
+    }
+  }
+
+  // ===== FAB flotante "Sugerir" =====
+  let fabNovisitar;
+
+  function ensureNovisitarToggleButton(){
+    const bar = document.getElementById("bottombar");
+    if (!bar) return;
+    if (!document.getElementById("btn-novistar-toggle")){
+      const btn = document.createElement("button");
+      btn.id = "btn-novistar-toggle";
+      btn.className = "bb-item";
+      btn.setAttribute("data-active","off");
+      btn.title = "Mostrar/Ocultar No visitar";
+      btn.innerHTML = '<div class="bb-icon" id="icon-novistar">⛔</div><div class="bb-label">No visitar</div>';
+      bar.appendChild(btn);
+      btn.addEventListener("click", ()=>{
+        const on = toggleNoVisitar();
+        btn.setAttribute("data-active", on ? "on" : "off");
+      });
+    }
+  }
+
+  function createNovisitarFab(){
+    if (fabNovisitar) return;
+    fabNovisitar = document.createElement("button");
+    fabNovisitar.id = "fab-novistar-sugerir";
+    fabNovisitar.textContent = "Sugerir";
+    fabNovisitar.setAttribute("type","button");
+    fabNovisitar.style.display = "none";
+    fabNovisitar.className = "fab-novisitar";
+    document.body.appendChild(fabNovisitar);
+
+    fabNovisitar.addEventListener("click", ()=>{
+      enableNovistarPick();
     });
 
-    m.addTo(weeklyLayer);
-  });
+    // Modal hooks si existen
+    const ov = document.getElementById("novistar-overlay");
+    if (ov){
+      const btnClose = document.getElementById("novistar-close");
+      const btnCancel= document.getElementById("novistar-cancel");
+      const btnSend  = document.getElementById("novistar-send");
+      const txtArea  = document.getElementById("novistar-coment");
+
+      const closeModal = ()=>{ ov.style.display = "none"; txtArea && (txtArea.value=""); };
+      btnClose && btnClose.addEventListener("click", closeModal);
+      btnCancel && btnCancel.addEventListener("click", closeModal);
+      btnSend && btnSend.addEventListener("click", async ()=>{
+        const comment = (txtArea && txtArea.value) || "";
+        await sendNovistarSuggestion(comment);
+        closeModal();
+      });
+    }
+  }
+
+function updateNovisitarFab(){
+  const fab = document.getElementById("fab-novistar-sugerir");
+  if (!fab) return;
+  const visible = (typeof AuthApp !== "undefined" && AuthApp.getRole && AuthApp.getRole() === "publicador") && noVisitarVisible;
+  fab.style.display = visible ? "flex" : "none";
 }
 
 
-async function showSingleWeeklyPoint(idx){
-  const p = WEEKLY_POINTS[idx];
-  if (!p) return;
-
-  // limpiar marcador individual anterior + ruta vieja
-  clearWeeklyPoint();
-  clearRoute();
-
- 
-  // crear un marker individual para esta salida concreta
-  const marker = L.marker([p.lat, p.lng], {
-    icon: makeWeeklyDivIcon(p),
-    title: `${p.dia || ""} ${p.hora || ""}`.trim()
-  });
-
-  // guardamos para poder trazar ruta luego
-  weeklyMarker = marker;
-  lastWeeklyPoint = p;
-
-  marker.bindPopup(`
-    <strong>${p.label || "Salida"}</strong><br/>
-    <span>${p.dia || ""} ${p.hora || ""}</span>
-  `);
-
-  if ((p.dia || p.hora)) {
-    marker.bindTooltip(
-      `<div style="font-size:12px;font-weight:600;color:#fff;background:#111827cc;padding:4px 6px;border-radius:6px;line-height:1.3;box-shadow:0 4px 10px rgba(0,0,0,.6);">
-        ${(p.dia||"")} ${(p.hora||"")}
-      </div>`,
-      { permanent: false, direction: "top", offset: [0,-10], opacity: 1 }
-    );
+  function injectExtraStyles(){
+    if (document.getElementById("appmap-extra-styles")) return;
+    const st = document.createElement("style");
+    st.id = "appmap-extra-styles";
+    st.textContent = `
+      .no-visitar-marker{
+        display:inline-flex;align-items:center;justify-content:center;
+        font-weight:700;font-size:14px;background:rgba(220,38,38,.9);
+        color:#fff;border:1px solid #7f1d1d;border-radius:10px;padding:3px 6px;
+        box-shadow:0 2px 6px rgba(0,0,0,.35);
+      }
+      .fab-novisitar{
+        position:fixed;right:16px;bottom:120px;z-index:1000;
+        padding:10px 14px;border-radius:9999px;border:none;
+        box-shadow:0 6px 16px rgba(0,0,0,.35);
+        background:#ef4444;color:#fff;font-weight:700;cursor:pointer;
+      }
+      .fab-route{
+        position:fixed;right:16px;bottom:180px;z-index:1000;
+      }
+      #btnToggleLabels.bb-item{ /* nada */}
+    `;
+    document.head.appendChild(st);
   }
 
-  marker.addTo(map);
-
-  // centrar mapa ahí
-  map.setView([p.lat, p.lng], 17, { animate: true });
-
-  // si estamos en modo predicar + hay geolocalización activa, dibujar ruta
-  if (weeklyRoutingEnabled && geoMarker){
-    const from = geoMarker.getLatLng();
-    const to   = L.latLng(p.lat, p.lng);
-    drawRoute(from, to);
+  function fixRouteButtonAsFab(){
+    const btn = document.getElementById("btn-route-toggle");
+    if (!btn) return;
+    btn.classList.add("fab-route");
   }
-}
 
 
+  // Visibilidad / flags
+  let territoriosVisible      = true;
+  let housesVisible           = false;
+  let weeklyRoutingEnabled    = false;
+  let weeklyLayerVisible      = false;
+  let revisitasMode = false;
+  // Ruta / geoloc
+  let routeControl = null;
+  let geoWatchId   = null;
+  let geoMarker    = null;
 
+  // Predicación semanal selección
+  let weeklyMarker    = null;
+  let lastWeeklyPoint = null;
+
+  // Etiquetas polígonos
+  let labelsVisible   = true;
+
+  // Rol actual del usuario (admin/capitan/publicador/etc)
+  let userRole        = "";
+
+  // Datos
+  let poligonosData   = [];
+  let WEEKLY_POINTS   = [];
+  let HOUSES_POINTS   = [];
 
   // ==========================
-  // Helpers DOM
+  // Helpers
   // ==========================
-  function $(id){ return document.getElementById(id); }
-
-  // ==========================
-  // Fechas / Colores
-  // ==========================
-  function parseFechaSeguro(raw){
-    if (!raw) return null;
-    const s = String(raw).trim();
-    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
-      const d = new Date(s+"T00:00:00");
-      return isNaN(d) ? null : d;
-    }
-    if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)){
-      const [dd,mm,yyyy] = s.split('/');
-      const d = new Date(+yyyy, +mm-1, +dd);
-      return isNaN(d) ? null : d;
-    }
-    const d2 = new Date(s);
-    return isNaN(d2) ? null : d2;
+  function mesesDiferencia(a, b){
+    if (!(a instanceof Date) || isNaN(a)) return Infinity;
+    let m = (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth());
+    if (b.getDate() < a.getDate()) m -= 1;
+    return m;
   }
 
-  function normalizarFinalizado(val){
-    const s = String(val || '').trim().toLowerCase();
-    if (s === 'si' || s === 'sí' || s === 'true' || s === '1' || s.startsWith('s')) return 'Si';
-    return 'No';
-  }
-
-  function mesesDiferencia(a,b){
-    const ms = Math.abs(b - a);
-    const meses = ms / (1000*60*60*24*30.4375);
-    return meses;
-  }
+    // Ajustar visibilidad inicial del botón "Números" (ojo)
+    (function initToggleLabelsButton(){
+      const btnLabels = document.getElementById("btnToggleLabels");
+      if (!btnLabels) return;
+      if (territoriosVisible){
+        btnLabels.style.display = "";
+        btnLabels.disabled = false;
+        btnLabels.classList.remove("bb-disabled");
+      } else {
+        btnLabels.style.display = "none";
+      }
+    })();
 
   function colorKeyPorFechaEstado(fecha, finalizado){
-    const fin = normalizarFinalizado(finalizado);
-    const f = parseFechaSeguro(fecha);
-    if (!f) return "grey";
+    // Esta función para cuando SÍ hay fecha
+    const f = fecha ? new Date(fecha) : null;
+    const fin = String(finalizado||"").trim();
 
-    const diffMeses = mesesDiferencia(f, new Date());
+    if (!f || isNaN(f)) {
+      return "grey";
+    }
 
     if (fin === 'Si'){
+      const diffMeses = mesesDiferencia(f, new Date());
       if (diffMeses < 2) return 'green';
       if (diffMeses <= 3) return 'yellow';
       return 'red';
     } else {
+      // tiene fecha pero no finalizado -> azul
       return 'blue';
     }
   }
@@ -272,24 +410,119 @@ async function showSingleWeeklyPoint(idx){
   function styleFromColorKey(key){
     switch(key){
       case 'blue':
-        return {color:'#1e3a8a', weight:1.2, fillColor:'#93c5fd', fillOpacity:0.5};
+        return {color:'#1e3a8a', weight:1.2, fillColor:'#93c5fd', fillOpacity:0.5}; // trabajando
       case 'green':
-        return {color:'#065f46', weight:1.2, fillColor:'#86efac', fillOpacity:0.5};
+        return {color:'#065f46', weight:1.2, fillColor:'#86efac', fillOpacity:0.5}; // finalizado reciente
       case 'yellow':
-        return {color:'#78350f', weight:1.2, fillColor:'#fde68a', fillOpacity:0.5};
+        return {color:'#78350f', weight:1.2, fillColor:'#fde68a', fillOpacity:0.5}; // finalizado 2-3m
       case 'red':
-        return {color:'#7f1d1d', weight:1.2, fillColor:'#fca5a5', fillOpacity:0.5};
+        return {color:'#7f1d1d', weight:1.2, fillColor:'#fca5a5', fillOpacity:0.5}; // finalizado viejo
+      case 'grey':
       default:
-        return {color:'#374151', weight:1.2, fillColor:'#e5e7eb', fillOpacity:0.5};
+        return {color:'#374151', weight:1.2, fillColor:'#e5e7eb', fillOpacity:0.5}; // sin datos aún
     }
   }
 
   // ==========================
-  // Sheets merge
+  // Carga de datos externos
+  // ==========================
+  async function loadWeeklyPoints() {
+    try {
+      const resp = await fetch("./predicacion_semanal.json", { cache: "no-store" });
+      if (!resp.ok) throw new Error("Error HTTP " + resp.status);
+      WEEKLY_POINTS = await resp.json();
+    } catch (err) {
+      console.error("No se pudo cargar predicación semanal:", err);
+      WEEKLY_POINTS = [];
+    }
+  }
+
+  async function loadHousesPoints() {
+    try {
+      const resp = await fetch("./casas_familias.json", { cache: "no-store" });
+      if (!resp.ok) throw new Error("Error HTTP " + resp.status);
+      HOUSES_POINTS = await resp.json();
+    } catch (err) {
+      console.error("No se pudo cargar casas_familias.json:", err);
+      HOUSES_POINTS = [];
+    }
+  }
+
+  async function loadPolygonsJSON(){
+    const url = (window.APP && window.APP.POLIGONOS_JSON_URL) || "./poligonos_salinas.json";
+    const res = await fetch(url, { cache: "no-store" });
+    const arr = await res.json();
+
+    // territorio: nro territorio (si lo tenés)
+    // id: identificador único de polígono (lo mostramos como "manzana")
+    poligonosData = arr.map(p => ({
+      id: p.id,
+      territorio: p.territorio || p.id,
+      coords: p.coords,
+      fecha: null,
+      finalizado: null,
+      colorKey: "grey", // default gris
+      layer: null
+    }));
+  }
+
+  // ==========================
+  // Casas
+  // ==========================
+  function renderHouses(){
+    housesLayer.clearLayers();
+
+    HOUSES_POINTS.forEach(h => {
+      const emoji = h.emoji || "🏠";
+
+      const html = `
+        <div class="house-marker">
+          <div class="house-marker-emoji">${emoji}</div>
+          <div class="house-marker-label">${h.label}</div>
+        </div>
+      `;
+
+      const icon = L.divIcon({
+        className: "",
+        html,
+        iconSize: [1,1],
+        iconAnchor: [0,0]
+      });
+
+      const m = L.marker([h.lat, h.lng], {
+        icon,
+        interactive: true,
+        title: h.label
+      });
+
+      m.bindPopup(`<strong>${h.label}</strong>`);
+      m.addTo(housesLayer);
+    });
+  }
+
+  function toggleHouses(){
+    housesVisible = !housesVisible;
+    if (housesVisible){
+      renderHouses();
+      housesLayer.addTo(map);
+    } else {
+      housesLayer.remove();
+    }
+    return housesVisible;
+  }
+
+  // ==========================
+  // Polígonos territorios
   // ==========================
   async function cargarDatosDesdeSheets() {
-    const SHEETS_URL = (window.APP && window.APP.SHEETS_URL)
-      || 'https://docs.google.com/spreadsheets/d/e/2PACX-1vS-TxyDU1xvaMwDjc5GQxjglSfBUYTUyu2_NDcAsJ_v0ngaD8g_-WcmxsUd9921RF2q5I4bcscjsf6N/pub?gid=1159469350&single=true&output=csv';
+    // Tomar primero de APP_CONFIG, luego de APP, sin usar la URL dummy
+    const cfg = (window.APP_CONFIG || window.APP || {});
+    const SHEETS_URL = cfg.SHEETS_TERRITORIOS_CSV_URL;
+
+    if (!SHEETS_URL) {
+      console.warn("Falta SHEETS_URL en app-config.js o en APP");
+      return [];
+    }
 
     let text;
     try {
@@ -336,124 +569,15 @@ async function showSingleWeeklyPoint(idx){
       const rawFecha = cols[idxFecha] ?? "";
       const rawFin   = cols[idxFin]   ?? "";
 
-      if (!rawId.trim()) continue;
-
       data.push({
-        id: rawId.trim(),
-        fecha: rawFecha.trim(),
-        finalizado: rawFin.trim()
+        id: rawId,
+        fecha: rawFecha,
+        finalizado: rawFin
       });
     }
-
-    const mapUltimo = new Map();
-    data.forEach(row=>{
-      mapUltimo.set(String(row.id).trim(), row);
-    });
-
-    return Array.from(mapUltimo.values());
+    return data;
   }
 
-  // ==========================
-  // Registrar territorio (modal)
-  // ==========================
-  function fmtDateInput(d){
-    const dt = d instanceof Date && !isNaN(d) ? d : new Date();
-    const y = dt.getFullYear();
-    const m = String(dt.getMonth()+1).padStart(2,'0');
-    const dd= String(dt.getDate()).padStart(2,'0');
-    return `${y}-${m}-${dd}`;
-  }
-
-  function buildRegistroFormHTML(poly){
-    return `
-      <div class="form-field">
-        <label class="form-label">Número de Territorio</label>
-        <input class="form-input" id="reg-territorio" value="${poly.territorio || ''}" readonly />
-      </div>
-
-      <div class="form-field">
-        <label class="form-label">Número de Manzana</label>
-        <input class="form-input" id="reg-manzana" value="${poly.id || ''}" readonly />
-      </div>
-
-      <div class="form-field">
-        <label class="form-label">Capitán</label>
-        <select class="form-select" id="reg-capitan">
-          <option value="">Seleccionar...</option>
-          <option value="Julio Fernandez">Julio Fernandez</option>
-          <option value="Rafael Manente">Rafael Manente</option>
-          <option value="German Varela">German Varela</option>
-          <option value="Carlos Carminati">Carlos Carminati</option>
-          <option value="Julio Galarza">Julio Galarza</option>
-          <option value="Gaston Gerschuni">Gaston Gerschuni</option>
-          <option value="Carlos Pena">Carlos Pena</option>
-          <option value="Luis Lopez">Luis Lopez</option>
-          <option value="Fernando Taroco">Fernando Taroco</option>
-          <option value="Lucas Aviles">Lucas Aviles</option>
-          <option value="Andres Cruz">Andres Cruz</option>
-          <option value="Gabriel Correa">Gabriel Correa</option>
-          <option value="Mateo Damele">Mateo Damele</option>
-          <option value="Martin Kuzman">Martin Kuzman</option>
-          <option value="Gonzalo Valle">Gonzalo Valle</option>
-          <option value="Rodrigo Gomez">Rodrigo Gomez</option>
-          <option value="Santiago Inchausti">Santiago Inchausti</option>
-          <option value="Camilo Urdiozola">Camilo Urdiozola</option>
-          <option value="Delamar De Souza">Delamar De Souza</option>
-          <option value="Javier Martinez">Javier Martinez</option>
-          <option value="Juan Carlos Haristoy">Juan Carlos Haristoy</option>
-          <option value="Lucas Matias">Lucas Matias</option>
-          <option value="Nicolas Gunaris">Nicolas Gunaris</option>
-          <option value="Cesar De Brun">Cesar De Brun</option>
-          <option value="Leonardo Toloza">Leonardo Toloza</option>
-        </select>
-      </div>
-
-      <div class="form-field">
-        <label class="form-label">Fecha</label>
-        <input class="form-input" id="reg-fecha" type="date" value="${fmtDateInput(new Date())}" />
-      </div>
-
-      <div class="form-field">
-        <label class="form-label">Finalizado</label>
-        <select class="form-select" id="reg-finalizado">
-          <option value="No">No</option>
-          <option value="Si">Sí</option>
-        </select>
-      </div>
-
-      <div class="form-actions">
-        <button class="btn-cancel" type="button" id="reg-cancel">Cancelar</button>
-        <button class="btn-primary" type="button" id="reg-send">Enviar</button>
-      </div>
-    `;
-  }
-
-  function openRegistroModal(poly){
-    const overlay = $('territorio-overlay');
-    const body    = $('territorio-body');
-    if (!overlay || !body) return;
-
-    if (!window.AuthApp || !window.AuthApp.isLogged()){
-      window.showToast?.('Tenés que iniciar sesión para registrar este territorio');
-      return;
-    }
-
-    body.innerHTML = buildRegistroFormHTML(poly);
-    overlay.style.display = 'flex';
-
-    body.querySelector('#reg-cancel').addEventListener('click', ()=>{
-      overlay.style.display = 'none';
-    });
-
-    body.querySelector('#reg-send').addEventListener('click', async ()=>{
-      window.showToast?.('Enviado ✅');
-      overlay.style.display = 'none';
-    });
-  }
-
-  // ==========================
-  // Pintar polígonos
-  // ==========================
   function applyTooltip(layer, texto){
     layer.bindTooltip(
       `<div class="tooltip-content">${texto}</div>`,
@@ -470,8 +594,97 @@ async function showSingleWeeklyPoint(idx){
     }
   }
 
+  function buildRegistroFormHTML(poly){
+    return `
+      <div class="form-field">
+        <label class="form-label">Nº Territorio</label>
+        <input class="form-input" value="${poly.territorio || poly.id || ""}" readonly />
+      </div>
+
+      <div class="form-field">
+        <label class="form-label">Nº Manzana</label>
+        <input class="form-input" value="${poly.id || "-"}" readonly />
+      </div>
+
+      <div class="form-field">
+        <label class="form-label">Capitán</label>
+        <select id="reg-capitan" class="form-input">
+          <option></option>
+          <option>Juan Pérez</option>
+          <option>María Gómez</option>
+          <option>Luis Rodríguez</option>
+          <option>Ana Fernández</option>
+        </select>
+      </div>
+
+      <div class="form-field">
+        <label class="form-label">Fecha</label>
+        <input id="reg-fecha" class="form-input" type="date"
+               value="${new Date().toISOString().slice(0,10)}" />
+      </div>
+
+      <div class="form-field">
+        <label class="form-label">¿Finalizado?</label>
+        <select id="reg-fin" class="form-input">
+          <option value="No" selected>No</option>
+          <option value="Si">Si</option>
+        </select>
+      </div>
+
+      <div class="form-actions">
+        <button id="reg-cancel" class="btn-cancel" type="button">Cancelar</button>
+        <button id="reg-send"   class="btn-primary" type="button">Guardar</button>
+      </div>
+    `;
+  }
+
+  function recolorPolygon(poly, newColorKey){
+    poly.colorKey = newColorKey;
+    if (poly.layer){
+      const st = styleFromColorKey(newColorKey);
+      poly.layer.setStyle(st);
+    }
+  }
+
+  function openRegistroModal(poly){
+    const overlay = document.getElementById("territorio-overlay");
+    const body    = document.getElementById("territorio-body");
+    if (!overlay || !body) return;
+
+    if (!window.AuthApp || !window.AuthApp.isLogged()){
+      window.showToast?.("Tenés que iniciar sesión para registrar este territorio");
+      return;
+    }
+
+    // si sos publicador no deberías ni ver polígonos,
+    // pero por las dudas bloqueamos también acá
+    if (userRole === "publicador"){
+      window.showToast?.("No tenés permiso para registrar este territorio");
+      return;
+    }
+
+    body.innerHTML = buildRegistroFormHTML(poly);
+    overlay.style.display = "flex";
+
+    body.querySelector("#reg-cancel").addEventListener("click", ()=>{
+      overlay.style.display = "none";
+    });
+
+    body.querySelector("#reg-send").addEventListener("click", ()=>{
+      const finVal = (body.querySelector('#reg-fin') || {}).value || "No";
+
+      // "Si"  => verde
+      // "No"  => azul
+      const newColorKey = (finVal === "Si") ? "green" : "blue";
+      recolorPolygon(poly, newColorKey);
+
+      window.showToast?.("Registrado ✅");
+      overlay.style.display = "none";
+    });
+  }
+
   function attachPolygonClick(poly, layer){
-    layer.on('click', ()=>{
+    layer.on("click", ()=>{
       openRegistroModal(poly);
     });
   }
@@ -481,33 +694,48 @@ async function showSingleWeeklyPoint(idx){
     const layer = L.polygon(poly.coords, style).addTo(territoriosLayer);
     poly.layer = layer;
 
-    applyTooltip(layer, poly.id || '');
+    applyTooltip(layer, poly.id || "");
     attachPolygonClick(poly, layer);
   }
 
   async function paintAllPolygonsIfLogged(){
     if (!window.AuthApp || !window.AuthApp.isLogged()) return;
+    if (userRole === "publicador") {
+      // publicador no pinta polígonos
+      return;
+    }
 
     const registros = await cargarDatosDesdeSheets();
+
     const byId = new Map();
     registros.forEach(r=>{
-      byId.set(String(r.id).trim().split("|")[0], r); // match por primera parte
+      const key = String(r.id).trim().split("|")[0];
+      byId.set(key, r);
     });
 
     poligonosData.forEach(p=>{
       const key = String(p.id).trim().split("|")[0];
       const found = byId.get(key);
+
       if (found){
-        p.fecha = found.fecha;
-        p.finalizado = found.finalizado;
+        p.fecha       = found.fecha;
+        p.finalizado  = found.finalizado;
+
+        if (p.fecha) {
+          p.colorKey = colorKeyPorFechaEstado(p.fecha, p.finalizado);
+        } else {
+          p.colorKey = "grey";
+        }
+      } else {
+        // sin datos
+        p.fecha       = null;
+        p.finalizado  = null;
+        p.colorKey    = "grey";
       }
-      p.colorKey = colorKeyPorFechaEstado(p.fecha, p.finalizado);
     });
 
     territoriosLayer.clearLayers();
-    poligonosData.forEach(p=>{
-      drawSinglePolygon(p);
-    });
+    poligonosData.forEach(p=> drawSinglePolygon(p));
   }
 
   function clearAllPolygons(){
@@ -519,9 +747,35 @@ async function showSingleWeeklyPoint(idx){
     });
   }
 
-  // ==========================
-  // Toggle Números (devuelve true si quedan visibles)
-  // ==========================
+  // Mostrar/ocultar capa de territorios manualmente (botón)
+function toggleTerritoriosLayer(){
+  if (!map || !territoriosLayer) return false;
+
+  territoriosVisible = !territoriosVisible;
+  if (territoriosVisible){
+    territoriosLayer.addTo(map);
+  } else {
+    territoriosLayer.remove();
+  }
+
+  const btnLabels = document.getElementById("btnToggleLabels");
+  if (btnLabels){
+    if (territoriosVisible){
+      btnLabels.style.display = "";
+      btnLabels.disabled = false;
+      btnLabels.classList.remove("bb-disabled");
+    } else {
+      btnLabels.style.display = "none";
+    }
+  }
+  return territoriosVisible;
+}
+
+
+  function isTerritoriosVisible(){
+    return territoriosVisible;
+  }
+
   function toggleLabels(){
     labelsVisible = !labelsVisible;
     poligonosData.forEach(p=>{
@@ -538,241 +792,172 @@ async function showSingleWeeklyPoint(idx){
   }
 
   // ==========================
-  // Casas de familias
+  // Predicación semanal
   // ==========================
-function renderHouses(){
-  housesLayer.clearLayers();
+  function buildWeeklyMarkerHTML(p) {
+    const tipo = (p.type || "familia").toLowerCase();
+    const emoji = (tipo === "grupo") ? "👥" : "🏠";
+    const emojiClass = (tipo === "grupo")
+      ? "house-marker-emoji grupo"
+      : "house-marker-emoji familia";
 
-  HOUSES_POINTS.forEach(h => {
-    // Elegís el emoji que quieras mostrar:
-    const emoji = h.emoji || "🏠"; 
-    // Si querés por familia algo distinto, podés setear h.emoji en el array
-    // Ejemplo:
-    // { label:"Flia. Pérez", lat:..., lng:..., emoji:"👨‍👩‍👧‍👦" }
-
-    const html = `
+    const visibleName = p.label || "Salida";
+    return `
       <div class="house-marker">
-        <div class="house-marker-emoji">${emoji}</div>
-        <div class="house-marker-label">${h.label}</div>
+        <div class="${emojiClass}">${emoji}</div>
+        <div class="house-marker-label">${visibleName}</div>
       </div>
     `;
-
-
-    const icon = L.divIcon({
-      className: "",          // sin clase base de Leaflet
-      html: html,
-      iconSize: [1, 1],       // lo dejamos chico, el contenido define el tamaño real
-      iconAnchor: [0, 0]      // esquina superior izquierda "cae" en la coordenada
-    });
-
-    const m = L.marker([h.lat, h.lng], {
-      icon: icon,
-      interactive: true,      // click habilitado
-      title: h.label
-    });
-
-    m.bindPopup(`<strong>${h.label}</strong>`);
-    m.addTo(housesLayer);
-  });
-}
-
-
-  function toggleHouses(){
-    housesVisible = !housesVisible;
-    if (housesVisible){
-      // asegurar que estén dibujadas
-      renderHouses();
-      housesLayer.addTo(map);
-    } else {
-      housesLayer.remove();
-    }
-    return housesVisible;
   }
 
-  // ==========================
-  // Predicación semanal con puntos
-  // ==========================
+  function makeWeeklyDivIcon(p) {
+    return L.divIcon({
+      className: "",
+      html: buildWeeklyMarkerHTML(p),
+      iconSize: [1,1],
+      iconAnchor: [20,30]
+    });
+  }
+
+  function renderWeeklyPointsOnMap() {
+    weeklyLayer.clearLayers();
+
+    WEEKLY_POINTS.forEach((p, idx) => {
+      const icon = makeWeeklyDivIcon(p);
+
+      const m = L.marker([p.lat, p.lng], {
+        icon,
+        title: p.label || "Salida"
+      });
+
+      const hoverInfo = `${p.dia || ""} ${p.hora || ""}`.trim();
+      m.bindPopup(
+        `<strong>${p.label || ""}</strong><br>${hoverInfo || ""}`
+      );
+
+      m.on("click", async () => {
+        await showSingleWeeklyPoint(idx);
+        redrawRouteIfPossible();
+      });
+
+      weeklyLayer.addLayer(m);
+    });
+  }
+
   function getWeeklyPoints(){
     return WEEKLY_POINTS.slice();
   }
 
-function clearWeeklyPoint(){
-  if (weeklyMarker){
-    map.removeLayer(weeklyMarker);
-    weeklyMarker = null;
-  }
-  lastWeeklyPoint = null;
-}
-
-
-  function clearRoute(){
-    if (routeControl){
-      map.removeControl(routeControl);
-      routeControl = null;
+  function showWeeklyLayerWithRoutingOnClick(){
+    clearWeeklyPoint();
+    clearRoute();
+    renderWeeklyPointsOnMap();
+    if (!weeklyLayerVisible){
+      weeklyLayer.addTo(map);
+      weeklyLayerVisible = true;
     }
   }
 
-  async function selectWeeklyPoint(idx){
-    const p = WEEKLY_POINTS[idx];
-    if (!p) return;
-
-    lastWeeklyPoint = p;
-
-    if (weeklyRoutingEnabled){
-      await startGeo();
-    }
-
+  async function showSingleWeeklyPoint(idx){
     clearWeeklyPoint();
     clearRoute();
 
+    const p = WEEKLY_POINTS[idx];
+    if (!p) return;
+    lastWeeklyPoint = p;
+
+    const icon = makeWeeklyDivIcon(p);
     weeklyMarker = L.marker([p.lat, p.lng], {
-      title: p.label
+      icon,
+      title: p.label || "Salida"
     }).addTo(map);
 
     map.setView([p.lat, p.lng], 17, { animate:true });
-
-    if (weeklyRoutingEnabled && geoMarker){
-      const from = geoMarker.getLatLng();
-      const to   = L.latLng(p.lat, p.lng);
-      drawRoute(from, to);
-    }
+    redrawRouteIfPossible();
   }
 
+  function clearWeeklyPoint(){
+    if (weeklyMarker){
+      try { map.removeLayer(weeklyMarker); } catch(_){}
+      weeklyMarker = null;
+    }
+    lastWeeklyPoint = null;
+  }
+
+  // ==========================
+  // Geolocalización + Ruta
+  // ==========================
   function setWeeklyRoutingEnabled(flag){
     weeklyRoutingEnabled = !!flag;
-    if (!weeklyRoutingEnabled){
-      clearWeeklyPoint();
-      clearRoute();
-    }
   }
 
-  // ==========================
-  // Ruta / indicaciones en español
-  // ==========================
-  function traducirInstruccion(str){
-    if (!str || typeof str !== "string") return str || "";
-
-    let out = str;
-    out = out.replace(/Start/g, "Salida");
-    out = out.replace(/Destination/g, "Destino");
-    out = out.replace(/Turn left/gi, "Girar a la izquierda");
-    out = out.replace(/Turn right/gi, "Girar a la derecha");
-    out = out.replace(/Bear left/gi, "Mantenerse a la izquierda");
-    out = out.replace(/Bear right/gi, "Mantenerse a la derecha");
-    out = out.replace(/Slight left/gi, "Leve giro a la izquierda");
-    out = out.replace(/Slight right/gi, "Leve giro a la derecha");
-    out = out.replace(/Continue straight/gi, "Seguir derecho");
-    out = out.replace(/Continue/gi, "Continuar");
-    out = out.replace(/Arrive at destination/gi, "Llegar al destino");
-    out = out.replace(/Arrive at/gi, "Llegar a");
-    out = out.replace(/Drive/gi, "Conducir");
-    out = out.replace(/Head/gi, "Ir");
-    out = out.replace(/towards/gi, "hacia");
-
-    return out;
-  }
-
-  function postProcesarPanelRuta(container){
-    const rows = container.querySelectorAll('.leaflet-routing-alt, .leaflet-routing-alt *');
-    rows.forEach(el=>{
-      if (el.childNodes && el.childNodes.length === 1 && el.childNodes[0].nodeType === 3){
-        el.textContent = traducirInstruccion(el.textContent);
-      } else if (el.childNodes && el.childNodes.length > 1){
-        el.childNodes.forEach(n=>{
-          if (n.nodeType === 3){
-            n.textContent = traducirInstruccion(n.textContent);
-          }
-        });
-      }
-    });
-  }
-
-  function drawRoute(fromLatLng, toLatLng){
-    clearRoute();
-
-    routeControl = L.Routing.control({
-      waypoints: [
-        L.latLng(fromLatLng.lat, fromLatLng.lng),
-        L.latLng(toLatLng.lat, toLatLng.lng)
-      ],
-      routeWhileDragging: false,
-      show: true,
-      collapsible: true,
-      language: 'es', // 👈 idioma español
-      router: L.Routing.osrmv1({
-        language: 'es', // 👈 idioma español
-        serviceUrl: 'https://router.project-osrm.org/route/v1' // servicio público OSRM
-      }),
-      createMarker: function() { return null; } // opcional: no mostrar marcadores grandes
-    }).addTo(map);
-
-
-    const container = routeControl.getContainer();
-    container.classList.add('route-panel-minimal');
-
-    postProcesarPanelRuta(container);
-    routeControl.on('routesfound', () => {
-      postProcesarPanelRuta(container);
-    });
-  }
-
-  function redrawRouteIfPossible(){
-    if (!lastWeeklyPoint) return;
-    if (!geoMarker) return;
-    const from = geoMarker.getLatLng();
-    const to   = L.latLng(lastWeeklyPoint.lat, lastWeeklyPoint.lng);
-    drawRoute(from, to);
-  }
-
-  // ==========================
-  // Geolocalización
-  // ==========================
   function isGeoActive(){
     return geoWatchId !== null;
   }
 
-  function stopGeo(){
-    if (geoWatchId !== null){
-      navigator.geolocation.clearWatch(geoWatchId);
-      geoWatchId = null;
+function redrawRouteIfPossible(){
+  if (!weeklyRoutingEnabled) return;
+  if (!geoMarker) return;
+  if (!lastWeeklyPoint) return;
+
+  const fromLatLng = geoMarker.getLatLng();
+  const toLatLng   = L.latLng(lastWeeklyPoint.lat, lastWeeklyPoint.lng);
+
+  // Limpiar anterior de forma segura
+  clearRoute();
+
+  // Crear control y asegurarnos de agregarlo ANTES de setear waypoints
+  routeControl = L.Routing.control({
+    fitSelectedRoutes: false,
+    addWaypoints: false,
+    draggableWaypoints: false,
+    routeWhileDragging: false,
+    language: 'es',
+    show: false,
+    showAlternatives: false,
+    lineOptions: { addWaypoints: false, weight: 5 },
+    createMarker: function(){ return null; }
+  });
+
+  // 👇 Asegurate de agregarlo al mapa primero
+  routeControl.addTo(map);
+
+  try {
+    routeControl.setWaypoints([ fromLatLng, toLatLng ]);
+  } catch (e) {
+    // Si algo falló, destruimos y reintentamos una vez
+    try { clearRoute(); } catch(_) {}
+    routeControl = L.Routing.control({
+      fitSelectedRoutes: false,
+      addWaypoints: false,
+      draggableWaypoints: false,
+      routeWhileDragging: false,
+      language: 'es',
+      show: false,
+      showAlternatives: false,
+      lineOptions: { addWaypoints: false, weight: 5 },
+      createMarker: function(){ return null; }
+    }).addTo(map);
+    try { routeControl.setWaypoints([ fromLatLng, toLatLng ]); } catch(_) {}
+  }
+}
+
+
+ function clearRoute(){
+  if (!routeControl) return;
+  try {
+    // Vaciar waypoints primero evita que intente tocar capas ya removidas
+    try { routeControl.setWaypoints([]); } catch(_) {}
+
+    // Remover el control solo si sigue asociado a un map
+    if (routeControl._map) {
+      try { routeControl._map.removeControl(routeControl); } catch(_) {}
     }
-    if (geoMarker){
-      map.removeLayer(geoMarker);
-      geoMarker = null;
-    }
-    document.dispatchEvent(new CustomEvent('geo:state',{detail:{active:false}}));
+  } catch(_) {
+    // no-op
+  } finally {
+    routeControl = null;
   }
-
-  async function ensureRouteWithGeo() {
-  // Queremos tener ruta desde MI posición hasta el punto de predicación actual.
-
-  // Caso 1: ya tengo un punto seleccionado (weeklyMarker/lastWeeklyPoint)
-  const target = lastWeeklyPoint;
-  if (!target) {
-    // No hay destino elegido todavía => no podemos trazar ruta.
-    window.showToast?.("Elegí un punto de predicación primero");
-    return false;
-  }
-
-  // Asegurarnos de tener geolocalización activa
-  if (!isGeoActive()) {
-    const ok = await startGeo(); // esto ya posiciona geoMarker si funciona
-    if (!ok) {
-      window.showToast?.("No se pudo activar tu ubicación");
-      return false;
-    }
-  }
-
-  // Ya tengo geoMarker y destino -> trazo ruta
-  if (geoMarker) {
-    const from = geoMarker.getLatLng();
-    const to   = L.latLng(target.lat, target.lng);
-    drawRoute(from, to);
-    return true;
-  }
-
-  window.showToast?.("No se detectó tu ubicación todavía");
-  return false;
 }
 
 
@@ -781,90 +966,79 @@ function clearWeeklyPoint(){
       return true;
     }
     if (!navigator.geolocation){
-      window.showToast?.('Geolocalización no disponible');
+      window.showToast?.("Geolocalización no soportada");
       return false;
     }
-
     return new Promise((resolve)=>{
       geoWatchId = navigator.geolocation.watchPosition(
         (pos)=>{
-          const lat = pos.coords.latitude;
-          const lng = pos.coords.longitude;
+          const { latitude, longitude } = pos.coords;
+          const latlng = [latitude, longitude];
 
           if (!geoMarker){
-            geoMarker = L.marker([lat,lng], { draggable:false })
-              .addTo(map);
+            geoMarker = L.marker(latlng, { title: "Mi posición" }).addTo(map);
           } else {
-            geoMarker.setLatLng([lat,lng]);
+            geoMarker.setLatLng(latlng);
           }
 
-          map.setView([lat,lng], Math.max(map.getZoom(),16), {animate:true});
+          document.dispatchEvent(new CustomEvent("geo:state", {
+            detail: { active: true, lat: latitude, lng: longitude }
+          }));
 
-          document.dispatchEvent(new CustomEvent('geo:state',{detail:{active:true}}));
+          if (!lastWeeklyPoint){
+            map.setView(latlng, 16, { animate:true });
+          }
+
+          redrawRouteIfPossible();
           resolve(true);
         },
         (err)=>{
-          console.error('geo error', err);
-          window.showToast?.('No se pudo obtener ubicación precisa');
+          console.error("watchPosition error:", err);
           stopGeo();
+          document.dispatchEvent(new CustomEvent("geo:state", {
+            detail: { active: false }
+          }));
+          window.showToast?.("No se pudo obtener ubicación precisa");
           resolve(false);
         },
         {
           enableHighAccuracy: true,
-          maximumAge: 1000,
-          timeout: 10000
+          maximumAge: 10000,
+          timeout: 20000
         }
       );
     });
   }
 
-  // ==========================
-  // Carga inicial de polígonos
-  // ==========================
-  async function loadPolygonsJSON(){
-    const url = (window.APP && window.APP.POLIGONOS_JSON_URL) || './poligonos_salinas.json';
-    const res = await fetch(url, {cache:'no-store'});
-    const arr = await res.json();
-
-    poligonosData = arr.map(p => ({
-      id: p.id,
-      territorio: p.territorio,
-      coords: p.coords,
-      fecha: null,
-      finalizado: null,
-      colorKey: 'grey',
-      layer: null
+  function stopGeo(){
+    if (geoWatchId !== null){
+      navigator.geolocation.clearWatch(geoWatchId);
+      geoWatchId = null;
+    }
+    if (geoMarker){
+      try { map.removeLayer(geoMarker); } catch(_){}
+      geoMarker = null;
+    }
+    document.dispatchEvent(new CustomEvent("geo:state", {
+      detail: { active: false }
     }));
   }
 
-  // ==========================
-  // init() y hooks con AuthApp
-  // ==========================
-async function init(){
-  map = L.map('map').setView([-34.7773604512622, -55.855506081213164], 16);
+  async function ensureRouteWithGeo(){
+    weeklyRoutingEnabled = true;
 
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    attribution: "&copy; OpenStreetMap contributors"
-  }).addTo(map);
+    if (!isGeoActive()){
+      const ok = await startGeo();
+      if (!ok) return false;
+    }
 
-  territoriosLayer = L.layerGroup().addTo(map);
-  housesLayer      = L.layerGroup(); // las casas arrancan ocultas
-  weeklyLayer      = L.layerGroup(); // las salidas/semanal arrancan ocultas
-
-  // cargar data externa
-  await loadWeeklyPoints();
-  await loadHousesPoints();
-
-  // cargar polígonos del territorio
-  await loadPolygonsJSON();
-
-  // si ya estás logueado cuando arranca
-  if (window.AuthApp && window.AuthApp.isLogged()){
-    await paintAllPolygonsIfLogged();
+    redrawRouteIfPossible();
+    return !!routeControl;
   }
-}
 
-
+  // ==========================
+  // Sesión / logout hooks
+  // ==========================
   async function paintPolygonsForSession(){
     await paintAllPolygonsIfLogged();
   }
@@ -874,58 +1048,211 @@ async function init(){
     clearWeeklyPoint();
     clearRoute();
     if (housesVisible){
-      toggleHouses(); // esto las oculta
+      toggleHouses();
     }
+    // revisitasLayer la maneja index.slim
   }
 
-function showWeeklyLayerWithRoutingOnClick(){
-  // limpiar selección individual para que no haya un marcador suelto encima
-  clearWeeklyPoint();
-  clearRoute();
+  
 
-  renderWeeklyPointsOnMap();
+function handleClickNewRevisita(e){
+  // Si tenés modal propio, llamalo aquí. Fallback a prompt:
+  const comentario = (document.getElementById("revisita-coment") ? null : prompt("Comentario de revisita (opcional):")) || "";
+  const payload = {
+    lat: e.latlng.lat,
+    lng: e.latlng.lng,
+    comentario,
+    tipo: "revisita",
+    fecha: new Date().toISOString(),
+    user: (typeof AuthApp !== "undefined" && AuthApp.getUsername ? (AuthApp.getUsername() || "anon") : "anon")
+  };
+  if (window.MapApp && typeof window.MapApp.saveRevisitaOfflineFirst === "function"){
+    window.MapApp.saveRevisitaOfflineFirst(payload);
+  }
+  // pintar pin local si usás revisitasLayer
+  try {
+    if (revisitasLayer) L.marker([payload.lat, payload.lng]).addTo(revisitasLayer);
+  } catch(_){}
+}
 
-  if (!weeklyLayerVisible){
-    weeklyLayer.addTo(map);
-    weeklyLayerVisible = true;
+function enableRevisitasMode(on){
+  revisitasMode = !!on;
+  if (!map) return;
+  map.off("click", handleClickNewRevisita);
+  if (revisitasMode){
+    map.on("click", handleClickNewRevisita);
+    window.showToast?.("Tocá el mapa para crear una revisita");
+  } else {
+    window.showToast?.("Revisitas desactivado");
   }
 }
 
+// Wiring del botón Revisitas
+(function wireRevisitas(){
+  const btnRev = document.getElementById("btn-revisitas");
+  if (!btnRev) return;
+  btnRev.addEventListener("click", () => {
+    const active = btnRev.getAttribute("data-active") === "on";
+    const next = !active;
+    btnRev.setAttribute("data-active", next ? "on" : "off");
+    enableRevisitasMode(next);
+    if (next && revisitasLayer && !map.hasLayer(revisitasLayer)) revisitasLayer.addTo(map);
+    if (!next && revisitasLayer && map.hasLayer(revisitasLayer)) revisitasLayer.remove();
+  });
+})();
+
 
   // ==========================
-  // Exponer API pública
+  // init()
   // ==========================
-window.MapApp = {
-  init,
-  ready: Promise.resolve(),
+  async function init(){
+    map = L.map("map").setView(
+      [-34.7773604512622, -55.855506081213164],
+      16
+    );
 
-  // etiquetas en polígonos
-  toggleLabels,
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "&copy; OpenStreetMap contributors",
+    }).addTo(map);
 
-  // casas
-  toggleHouses,
+    territoriosLayer = L.layerGroup().addTo(map);
+    housesLayer      = L.layerGroup();
+    weeklyLayer      = L.layerGroup();
+    revisitasLayer   = L.layerGroup();
 
-  // predicación semanal
-  getWeeklyPoints,
-  selectWeeklyPoint,          // <- esta la podés dejar o reemplazar por showSingleWeeklyPoint si ya no la usás
-  clearWeeklyPoint,
-  setWeeklyRoutingEnabled,
-  clearRoute,
-  redrawRouteIfPossible,
-  showWeeklyLayerWithRoutingOnClick,
-  showSingleWeeklyPoint,      // 👈 agregar ESTA nueva
+    // No visitar layer y UI
+    noVisitarLayer = L.layerGroup();
 
-  // geo
-  startGeo,
-  stopGeo,
-  isGeoActive,
-  ensureRouteWithGeo,
+    // Inyectar estilos extra y ajustar FAB de ruta
+    injectExtraStyles();
+    fixRouteButtonAsFab();
 
-  // territorios
-  paintPolygonsForSession,
-  clearAllPolygonsForLogout
-};
+    // Asegurar botón en barra y FAB de sugerencia
+    ensureNovisitarToggleButton();
+    createNovisitarFab();
+    updateNovisitarFab();
+
+    // En cada arranque, intentar enviar sugerencias pendientes
+    flushNovistarSuggestions && flushNovistarSuggestions();
+
+    // Ajustar visibilidad inicial del botón "Números" según territoriosVisible
+    const btnLabelsInit = document.getElementById("btnToggleLabels");
+    if (btnLabelsInit){
+      if (territoriosVisible){
+        btnLabelsInit.style.display = "";
+      } else {
+        btnLabelsInit.style.display = "none";
+      }
+    }
 
 
+    await loadWeeklyPoints();
+    await loadHousesPoints();
+    await loadPolygonsJSON();
 
+    (function wireNoVisitarUI(){
+  const btnToggle = document.getElementById("btn-novistar-toggle");
+  if (btnToggle){
+    btnToggle.addEventListener("click", () => {
+      const on = toggleNoVisitar();
+      btnToggle.setAttribute("data-active", on ? "on" : "off");
+      updateNovisitarFab(); // refrescar visibilidad de la FAB
+    });
+  }
+
+  const btnSug = document.getElementById("btn-novistar-sugerir");
+  if (btnSug){
+    btnSug.addEventListener("click", () => {
+      const role = (typeof AuthApp !== "undefined" && AuthApp.getRole ? AuthApp.getRole() : "");
+      if (role === "publicador"){
+        // Mostrar FAB si el toggle está activo; si no, activarlo y pedir punto
+        if (!noVisitarVisible) {
+          toggleNoVisitar();
+          btnToggle && btnToggle.setAttribute("data-active", "on");
+        }
+        updateNovisitarFab();
+        enableNovistarPick(); // pedir marcar en el mapa
+      } else {
+        window.showToast?.("Solo los publicadores pueden sugerir.");
+      }
+    });
+  }
+
+  // FAB flotante
+  const fab = document.getElementById("fab-novistar-sugerir");
+  if (fab){
+    fab.addEventListener("click", () => {
+      const role = (typeof AuthApp !== "undefined" && AuthApp.getRole ? AuthApp.getRole() : "");
+      if (role === "publicador"){
+        enableNovistarPick();
+      } else {
+        window.showToast?.("Solo los publicadores pueden sugerir.");
+      }
+    });
+  }
+})();
+
+  }
+
+  // ==========================
+  // API pública
+  // ==========================
+  function getMap(){ return map; }
+  function getRevisitasLayer(){ return revisitasLayer; }
+
+  function setUserRole(r){
+    userRole = r || "";
+    // Si es publicador, sacamos polígonos inmediatamente
+    if (userRole === "publicador"){
+      clearAllPolygons();
+      territoriosLayer.remove();
+      territoriosVisible = false;
+    }
+  }
+
+  window.MapApp = {
+  renderRevisitasMarkers: renderRevisitasMarkers,
+    init,
+    ready: Promise.resolve(),
+
+    // Territorios
+    paintPolygonsForSession,
+    clearAllPolygonsForLogout,
+
+    toggleTerritoriosLayer,
+    isTerritoriosVisible,
+    toggleLabels,
+
+    // Casas
+    toggleHouses,
+
+    // Predicación semanal
+    getWeeklyPoints,
+    showWeeklyLayerWithRoutingOnClick,
+    showSingleWeeklyPoint,
+    clearWeeklyPoint,
+    setWeeklyRoutingEnabled,
+
+    // Geoloc / ruta
+    startGeo,
+    stopGeo,
+    isGeoActive,
+    ensureRouteWithGeo,
+    clearRoute,
+    redrawRouteIfPossible,
+
+    // Revisitas
+    getMap,
+    getRevisitasLayer,
+    loadRevisitasCsv,
+    showRevisitas,
+    get revisitasData(){ return revisitasData; },
+
+    // Rol
+    setUserRole
+  ,
+
+    // No visitar
+    toggleNoVisitar,
+    renderNoVisitar};
 })();
