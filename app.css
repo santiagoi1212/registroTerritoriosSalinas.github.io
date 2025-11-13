@@ -256,6 +256,7 @@ html, body {
   transform:scale(.98);
 }
 
+
 /* ===== Ruta compacta (Leaflet Routing Machine) ===== */
 .route-panel-minimal {
   position: fixed !important;
@@ -292,16 +293,192 @@ html, body {
 }
 
 /* ===== Overlays (login y registrar) ===== */
+/* ============================
+   ESTILO GLOBAL PARA MODALES
+   ============================ */
+/* ============================
+   OVERLAY & MODALES UNIFICADOS
+   ============================ */
+
+/* Fondo del overlay para TODOS los modales */
 .overlay {
-  position:fixed;
-  inset:0;
-  background:rgba(0,0,0,.45);
-  display:none;
-  justify-content:center;
-  align-items:center;
-  z-index:2000;
-  font-size:14px;
+  position: fixed;
+  inset: 0; /* top:0; right:0; bottom:0; left:0 */
+  background: rgba(15, 23, 42, 0.55); /* negro azulado con transparencia */
+  display: none;              /* se muestra con display:flex desde JS */
+  align-items: center;        /* centra vertical */
+  justify-content: center;    /* centra horizontal */
+  z-index: 2000;
+  font-size: 14px;
+  backdrop-filter: blur(4px); /* efecto moderno */
 }
+
+/* Tarjeta modal genérica (login, territorio, no visitar) */
+/* Ya tenés .modal-card; acá la reforzamos un poco */
+.modal-card {
+  width: min(420px, 90vw);
+  background: #ffffff;
+  border-radius: 16px;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 24px 60px rgba(0,0,0,.6);
+  display: flex;
+  flex-direction: column;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+/* Cabecera genérica de cualquier modal */
+.modal-header,
+.overlay-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 8px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.modal-title,
+.overlay-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* Botones de cierre (✖) */
+.modal-close-btn,
+.overlay-close-btn {
+  background: #1f2937;
+  border: 1px solid #4b5563;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 13px;
+  line-height: 1.2;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+.modal-close-btn:hover,
+.overlay-close-btn:hover {
+  background: #374151;
+}
+
+/* Cuerpo del modal */
+.modal-body,
+.overlay-body {
+  padding-top: 8px;
+}
+
+/* ============================
+   MODALES "SIMPLES" (revisitas)
+   ============================ */
+
+/* El modal que usa la clase .modal (Ingresar revisita, etc.) */
+.overlay .modal,
+#revisita-overlay .overlay-box.small-box {
+  background: #ffffff;
+  border-radius: 16px;
+  border: 1px solid #e5e7eb;
+  width: min(440px, 92vw);
+  max-height: 80vh;
+  padding: 16px 18px;
+  box-shadow: 0 24px 60px rgba(0,0,0,.55);
+  display: flex;
+  flex-direction: column;
+}
+
+/* Título del modal simple */
+.overlay .modal > h3 {
+  margin: 0 0 10px 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #111827;
+}
+
+/* Filas del formulario: label + input en columna */
+.overlay .row {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.overlay .row label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+}
+
+/* Inputs y selects dentro de los modales simples */
+.overlay .row input,
+.overlay .row select {
+  border: 1px solid #d1d5db;
+  background: #f9fafb;
+  border-radius: 10px;
+  padding: 6px 8px;
+  font-size: 14px;
+  line-height: 1.4;
+  color: #111827;
+  box-shadow: 0 1px 2px rgba(0,0,0,.03) inset;
+}
+
+.overlay .row input:focus,
+.overlay .row select:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 1px rgba(37,99,235,.4);
+}
+
+/* Lat / Lng “fantasma” un poco más apagados */
+.overlay .row input.ghost {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+/* ============================
+   Botonera de acciones (Cancelar / Guardar)
+   ============================ */
+
+.overlay .actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* Estilo base de los botones dentro de modales simples */
+.overlay .actions button {
+  border-radius: 9999px;
+  padding: 7px 14px;
+  font-size: 13px;
+  line-height: 1.2;
+  cursor: pointer;
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  color: #111827;
+  box-shadow: 0 1px 2px rgba(0,0,0,.06);
+}
+
+/* Botón primario (normalmente Guardar) = último botón */
+.overlay .actions button:last-child {
+  background: #2563eb;
+  border-color: #1d4ed8;
+  color: #ffffff;
+  font-weight: 600;
+}
+.overlay .actions button:last-child:hover {
+  background: #1d4ed8;
+}
+
+/* Botón secundario (Cancelar) = primero */
+.overlay .actions button:first-child {
+  background: #f9fafb;
+}
+.overlay .actions button:first-child:hover {
+  background: #e5e7eb;
+}
+
+
 
 /* ===== Tarjeta modal reutilizable ===== */
 .modal-card {
@@ -509,6 +686,26 @@ html, body {
   z-index: 1600;
 }
 
+/* Acciones del panel (esquina superior derecha) */
+.weekly-panel .panel-actions {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  display: flex;
+  gap: 6px;
+}
+.panel-action {
+  background: #fff;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 4px 6px;
+  font-size: 12px;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0,0,0,.1);
+}
+.weekly-panel.minimized { cursor: pointer; } /* para restaurar con click */
+
+
 /* Cuando está minimizado solo mostramos título tipo "Predicación" como chip */
 .weekly-panel.minimized .weekly-title,
 .weekly-panel.minimized .weekly-hint,
@@ -527,33 +724,390 @@ html, body {
 }
   
 /* En pantallas grandes (desktop), aunque minimicemos nunca usamos la versión chip */
-@media (min-width: 768px) {
+/* Estado minimizado del panel en escritorio */
+@media (min-width: 767px) {
   .weekly-panel.minimized {
-    position: fixed;
+    width: auto;
+    height: auto;
+    max-height: none;
+    overflow: visible;
+    padding: 6px 10px;
     right: 20px;
-    left: auto;
     bottom: 70px;
-    width: 30%;
-    max-width: 340px;
-    max-height: 40vh;
-    background: #fff;
-    color: #111827;
-    border: 1px solid #e5e7eb;
-    box-shadow: 0 12px 32px rgba(0,0,0,.2);
+    background: rgba(17,24,39,0.9);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 9999px;
+    box-shadow: 0 8px 20px rgba(0,0,0,.4);
+    cursor: pointer;
   }
-
-  .weekly-panel.minimized .weekly-title,
-  .weekly-panel.minimized .weekly-hint,
-  .weekly-panel.minimized #weekly-show-all,
-  .weekly-panel.minimized #weekly-list {
-    display: block;
-  }
-
   .weekly-panel.minimized::after {
-    content: "";
-    display: none;
+    content: "📅 Predicación";
+    font-weight: 600;
+    font-size: 13px;
+  }
+  .weekly-panel.minimized > * {
+    display: none; /* Oculta el contenido interior */
+  }
+   .weekly-panel.minimized .panel-actions {
+    display: none !important;
+  }
+
+}
+
+/* Móvil: ocultar botón cuando está minimizado */
+@media (max-width: 767px) {
+  .weekly-panel.minimized .panel-actions {
+    display: none !important;
   }
 }
 
 
 
+/* ==== Revisitas / Estudios extras ==== */
+
+.radio-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 14px;
+  color: #1f2937;
+}
+
+.coord-row {
+  display: flex;
+  gap: 8px;
+}
+
+.coord-row .coord {
+  flex: 1;
+  font-size: 14px;
+}
+
+.side-panel {
+  position:absolute;
+  top:4rem;
+  right:0.5rem;
+  z-index:8000;
+  background:#ffffffee;
+  color:#000;
+  border-radius:8px;
+  box-shadow:0 10px 30px rgba(0,0,0,.4);
+  width:250px;
+  max-height:60vh;
+  display:block;
+  overflow:hidden;
+  font-size:0.85rem;
+}
+
+.side-panel[hidden] {
+  display:none !important;
+}
+
+.side-panel-header {
+  background:#f5f5f5;
+  border-bottom:1px solid #ddd;
+  padding:0.5rem;
+  display:flex;
+  flex-wrap:wrap;
+  row-gap:0.5rem;
+  align-items:flex-start;
+  justify-content:space-between;
+}
+
+.side-panel-title {
+  font-weight:600;
+  font-size:0.9rem;
+}
+
+.side-panel-action {
+  background:#2563eb;
+  border:none;
+  border-radius:4px;
+  color:#fff;
+  font-size:0.75rem;
+  line-height:1rem;
+  padding:0.4rem 0.5rem;
+  cursor:pointer;
+}
+
+.side-panel-body {
+  max-height:calc(60vh - 3rem);
+  overflow-y:auto;
+  padding:0.5rem;
+}
+
+.weekly-item {
+  background:#000;
+  border:1px solid #ddd;
+  border-radius:4px;
+  padding:0.5rem;
+  margin-bottom:0.5rem;
+  cursor:pointer;
+  line-height:1.2rem;
+  font-size:0.8rem;
+}
+.weekly-item:hover {
+  background: #2563eb; /* azul fuerte */
+  color: #fff;
+  border-color: #1e3a8a;
+  box-shadow: 0 0 12px rgba(37,99,235,0.5);
+}
+
+/* icono "No visitar" en mapa */
+.no-visitar-marker {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  font-weight:700;
+  font-size:14px;
+  background: rgba(220, 38, 38, .9); /* rojo */
+  color:#fff;
+  border:1px solid #7f1d1d;
+  border-radius: 10px;
+  padding: 3px 6px;
+  box-shadow: 0 2px 6px rgba(0,0,0,.35);
+}
+
+/* overlay del modal (ya tenés .overlay y .modal-card, reusamos) */
+#novistar-overlay .modal-card .modal-title { margin: 0; }
+#novistar-overlay .form-input { width: 100%; }
+
+/* Botón flotante del auto */
+#btn-route-toggle {
+  background-color: #111827; /* azul intenso */
+  color: #fff;
+  border-radius: 50%;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+  padding: 10px;
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  position: fixed;
+  bottom: 90px;  /* ajustá según tu diseño */
+  right: 15px;
+  z-index: 9999;
+  opacity: 75%;
+  font-size: 15px;
+}
+
+/* Cambiar color cuando se activa */
+#btn-route-toggle.active {
+  background-color: #198754; /* verde */
+}
+
+#btn-route-toggle:hover {
+  background-color: #0b5ed7;
+}
+
+
+
+/* Reutilizamos .weekly-panel también para el panel de Revisitas.
+   Ya tiene position:fixed; right:0; top:...; ancho fijo; fondo blanco;
+   En mobile, la clase .minimized la empuja hacia el costado para no tapar el mapa. */
+
+
+
+
+/* Move the Sugerir FAB so it doesn't overlap 'Ruta' */
+#fab-novistar-sugerir {
+  right: 1rem !important;
+  bottom: 6.5rem !important; /* push above bottombar/route */
+  z-index: 2001;
+}
+
+
+/* Revisitas usan exactamente el estilo de weekly-item */
+#revisita-panel .revisita-item {
+  background: var(--panel-item-bg, rgba(255,255,255,0.05));
+  border: 1px solid rgba(255,255,255,0.08);
+  border-left: 3px solid var(--accent-color, #38bdf8);
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin: 6px 4px;
+  cursor: pointer;
+  transition: background-color .12s ease, border-color .12s ease, transform .12s ease;
+}
+
+#revisita-panel .revisita-item:hover {
+  background: rgba(56, 189, 248, 0.15);
+  border-color: rgba(56, 189, 248, 0.55);
+  transform: translateX(3px);
+}
+
+#revisita-overlay {
+  background: rgba(0,0,0,0.55);
+  backdrop-filter: blur(4px);
+}
+
+#revisita-modal.modal-card {
+  background: var(--modal-bg, #0f172a);
+  border-radius: 14px;
+  padding: 0;
+  border: 1px solid rgba(255,255,255,0.12);
+  color: #e9eef7;
+}
+
+#revisita-modal .modal-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.12);
+}
+
+#revisita-modal .modal-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+#revisita-modal .modal-body {
+  padding: 14px 16px;
+}
+
+/* === Revisitas / Estudios: marcador tipo badge (violeta) === */
+.rev-marker {
+  width: 34px; height: 34px; line-height: 34px;
+  border-radius: 50%;
+  text-align: center;
+  font-size: 18px;
+  font-weight: 700;
+  color: #ffffff;
+  background: radial-gradient( circle at 30% 30%, #a78bfa 0%, #6d28d9 60%, #4c1d95 100% );
+  border: 2px solid rgba(255,255,255,.7);
+  box-shadow: 0 6px 16px rgba(76, 29, 149, 0.45), inset 0 1px 0 rgba(255,255,255,.15);
+}
+.rev-marker--estudio {
+  /* sutil diferencia para estudios */
+  background: radial-gradient( circle at 30% 30%, #c084fc 0%, #7c3aed 60%, #5b21b6 100% );
+}
+.rev-marker-label {
+  display: inline-block; width: 100%;
+  transform: translateY(1px);   /* centra ópticamente */
+  filter: drop-shadow(0 1px 0 rgba(0,0,0,.25));
+}
+
+#revisita-body {
+    background: #fff;
+    padding: 16px;
+    overflow-y: auto;
+    border-bottom-left-radius: 16px;
+    border-bottom-right-radius: 16px;
+}
+
+#revisita-header {
+padding: 12px 16px;
+    background: #111827;
+    color: #fff;
+    border-top-left-radius: 16px;
+    border-top-right-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+/* FAB "No visitar – Sugerir" */
+#fab-novistar-sugerir {
+  position: fixed;
+  z-index: 1600;            /* por encima del weekly-panel (1400) y ruta (1500) */
+  inset: auto;              /* resetea top/right/bottom/left */
+  display: none;            /* el JS lo muestra/oculta según estado */
+  /* look & feel opcional */
+  border-radius: 9999px;
+  box-shadow: 0 8px 20px rgba(0,0,0,.3);
+}
+
+/* 📱 MÓVIL: ponelo abajo a la izquierda para no chocar con los botones de ruta (abajo derecha) ni el panel semanal */
+@media (max-width: 767px) {
+  #fab-novistar-sugerir {
+    display: block;
+    width: fit-content;
+    left: 12px;
+    bottom: 82px; /* encima de la bottom bar; ajustá si la barra es más alta */
+  }
+}
+
+/* 💻 ESCRITORIO: ponelo arriba a la derecha, debajo de la topbar */
+@media (min-width: 768px) {
+  #fab-novistar-sugerir {
+    display: block;
+    height: fit-content;
+    right: 20px;
+    top: 52px; /* debajo de la topbar (~44px) con un margen */
+  }
+}
+
+/* Aseguramos que el modal quede sobre el mapa/ruta/FAB */
+#novistar-overlay {
+  z-index: 3000; /* más alto que route-panel (1500) y weekly-panel (1400) */
+}
+
+/* En móviles, el botón cerrar se oculta si el panel está en chip (no aplica aquí,
+   pero mantenemos consistencia de UI) */
+@media (max-width: 767px) {
+  #novistar-modal .modal-header .modal-close-btn {
+    /* visible igual; si quisieras ocultarlo en móvil, comenta esta regla */
+    display: inline-flex;
+  }
+}
+
+/* FAB "No visitar - Sugerir" */
+#fab-novistar-sugerir {
+  position: fixed;
+  z-index: 1600;
+  right: 16px;
+  height: fit-content;
+  bottom: 120px; /* 👈 justo arriba del botón Ruta (que está en 60px o 70px) */
+  border: none;
+  border-radius: 9999px;
+  padding: 10px 14px;
+  background: #ef4444;
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  box-shadow: 0 6px 16px rgba(0,0,0,.35);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Hover y active */
+#fab-novistar-sugerir:hover {
+  background: #410101;
+}
+#fab-novistar-sugerir:active {
+  transform: scale(0.96);
+}
+
+/* En pantallas grandes mantener la misma ubicación */
+@media (min-width: 768px) {
+  #fab-novistar-sugerir {
+    bottom: 120px; /* arriba del FAB ruta */
+    right: 16px;
+  }
+}
+
+/* En celulares, si molesta con la barra inferior, lo subimos un poco más */
+@media (max-width: 767px) {
+  #fab-novistar-sugerir {
+    bottom: 140px;
+    right: 12px;
+  }
+}
+
+
+
+/* ===== FAB Números (arriba del botón Ruta) ===== */
+.fab-labels{
+  position: fixed;
+  right: 16px;
+  bottom: 230px; /* por encima de .fab-route (180px) */
+  z-index: 1100;
+  padding: 10px 12px;
+  border-radius: 9999px;
+  box-shadow: 0 10px 24px rgba(0,0,0,.35);
+  background: #1f2937;
+  border: 1px solid #4b5563;
+}
+.fab-labels .icon{ font-size:16px; }
