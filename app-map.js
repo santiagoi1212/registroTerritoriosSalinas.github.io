@@ -31,6 +31,36 @@ function renderRevisitasMarkers(data){
   }
 }
 
+function getWeeklyPoints(){
+  return WEEKLY_POINTS.slice();
+}
+
+function showWeeklyLayerWithRoutingOnClick(){
+  clearWeeklyPoint();
+  clearRoute();
+  renderWeeklyPointsOnMap();
+  if (!weeklyLayerVisible){
+    weeklyLayer.addTo(map);
+    weeklyLayerVisible = true;
+  }
+}
+
+function clearWeeklyLayer(){
+  if (!map || !weeklyLayer) return;
+  try {
+    map.removeLayer(weeklyLayer);
+  } catch(_){}
+  weeklyLayerVisible = false;
+  weeklyLayer.clearLayers();
+  clearWeeklyPoint();
+}
+
+async function showSingleWeeklyPoint(idx){
+  clearWeeklyPoint();
+  clearRoute();
+  // ...
+}
+
 
   
   // ===== Revisitas CSV unificado en MapApp =====
@@ -168,31 +198,48 @@ function renderRevisitasMarkers(data){
 
   let novistarPendingLatLng = null;
 
-  function enableNovistarPick(){
-    if (!map) return;
-    window.showToast && window.showToast("Tocá el mapa para marcar el lugar");
-    const onceHandler = (ev) => {
-      novistarPendingLatLng = ev.latlng;
-      // Abrir modal si existe; si no, usamos prompt
-      const ov = document.getElementById("novistar-overlay");
-      if (ov){
-        const pos = document.getElementById("novistar-pos");
-        if (pos){
-          const {lat,lng} = novistarPendingLatLng;
-          pos.textContent = `Posición: ${lat.toFixed(6)}, ${lng.toFixed(6)}`;
-        }
-        ov.style.display = "block";
-      } else {
-        // Fallback
-        const comment = window.prompt("Comentario para 'No visitar':");
-        if (comment !== null){
-          sendNovistarSuggestion(comment);
-        }
-      }
-      map.off("click", onceHandler);
-    };
-    map.once("click", onceHandler);
+function enableNovistarPick() {
+  if (!map) return;
+
+  if (window.showToast) {
+    window.showToast("Tocá el mapa para marcar el lugar");
   }
+
+  const onceHandler = (ev) => {
+    novistarPendingLatLng = ev.latlng;
+
+    const ov = document.getElementById("novistar-overlay");
+    if (ov){
+      const { lat, lng } = novistarPendingLatLng;
+
+      // Texto con la posición
+      const pos = document.getElementById("novistar-pos");
+      if (pos){
+        pos.textContent = `Posición: ${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+      }
+
+      // Inputs ocultos de lat / lng (si existen en el formulario)
+      const latInput = document.getElementById("novistar-lat");
+      const lngInput = document.getElementById("novistar-lng");
+      if (latInput) latInput.value = lat.toString();
+      if (lngInput) lngInput.value = lng.toString();
+
+      // Mostrar modal centrado
+      ov.style.display = "flex";
+    } else {
+      // Fallback sin modal: usar prompt
+      const comment = window.prompt("Comentario para 'No visitar':");
+      if (comment !== null){
+        sendNovistarSuggestion(comment);
+      }
+    }
+
+    map.off("click", onceHandler);
+  };
+
+  map.once("click", onceHandler);
+}
+
 
   async function sendNovistarSuggestion(comment){
     const cfg = (window.APP_CONFIG || window.APP || {});
@@ -284,10 +331,14 @@ function renderRevisitasMarkers(data){
     if (ov){
       const btnClose = document.getElementById("novistar-close");
       const btnCancel= document.getElementById("novistar-cancel");
-      const btnSend  = document.getElementById("novistar-send");
-      const txtArea  = document.getElementById("novistar-coment");
+      const btnSend  = document.getElementById("novistar-save");
+      const txtArea  = document.getElementById("novistar-comentario");
 
-      const closeModal = ()=>{ ov.style.display = "none"; txtArea && (txtArea.value=""); };
+      const closeModal = ()=>{ 
+        ov.style.display = "none"; 
+        if (txtArea) txtArea.value = "";
+        novistarPendingLatLng = null;
+      };
       btnClose && btnClose.addEventListener("click", closeModal);
       btnCancel && btnCancel.addEventListener("click", closeModal);
       btnSend && btnSend.addEventListener("click", async ()=>{
@@ -301,9 +352,14 @@ function renderRevisitasMarkers(data){
 function updateNovisitarFab(){
   const fab = document.getElementById("fab-novistar-sugerir");
   if (!fab) return;
-  const visible = (typeof AuthApp !== "undefined" && AuthApp.getRole && AuthApp.getRole() === "publicador") && noVisitarVisible;
+  // Solo mostrar el botón "Sugerir" para el rol publicador
+  // Usamos el userRole interno y, como respaldo, AuthApp.getRole si existiera
+  const roleFromAuth = (typeof AuthApp !== "undefined" && AuthApp.getRole) ? AuthApp.getRole() : "";
+  const isPublicador = (userRole === "publicador") || (roleFromAuth === "publicador" || roleFromAuth === "Publicador");
+  const visible = isPublicador && noVisitarVisible;
   fab.style.display = visible ? "flex" : "none";
 }
+
 
 
   function injectExtraStyles(){
@@ -1229,6 +1285,7 @@ function enableRevisitasMode(on){
     // Predicación semanal
     getWeeklyPoints,
     showWeeklyLayerWithRoutingOnClick,
+    clearWeeklyLayer,
     showSingleWeeklyPoint,
     clearWeeklyPoint,
     setWeeklyRoutingEnabled,
