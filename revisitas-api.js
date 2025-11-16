@@ -1,321 +1,565 @@
-// revisitas-api.js
-// Frontend helper for "Revisitas / Estudios" backed by Apps Script Web App.
-// Requires window.APP_CONFIG.REVISITAS_API_URL and (optionally) REVISITAS_CSV_URL.
-// Exposes: window.RevisitasApi = { listByUser, save, remove, formatLatLng6Grouped, normalizeLatLngToFloat }
+// revisitas.app.js
+// Módulo central para Revisitas / Estudios: lista + mapa + alta/edición/eliminación
+(function (global) {
+  const $ = (s) => document.querySelector(s);
 
-(function () {
-  const CFG = (window.APP_CONFIG || {});
-
-function formatLatLng6Grouped(value) {
-  const n = Number(value);
-  if (!isFinite(n)) return "";
-  // Ej: -34.778231
-  return n.toFixed(6);
-}
+  const APP = {};
+  let map = null;
+  let layer = null;
+  let data = [];
+  let picking = false;
+  let pickMarker = null;
+  let pickMode = null; // "form" | "new"
 
 
-function normalizeLatLngToFloat(s, maxAbs) {
-  if (s === null || s === undefined || s === "") return 0;
-
-  let n;
-
-  if (typeof s === "number") {
-    n = s;
-  } else {
-    let str = String(s).trim();
-
-    // Formato tipo "-34.778.231" → "-34.778231"
-    const m = str.match(/^(-?\d+)\.(\d{3})\.(\d{3})$/);
-    if (m) {
-      str = m[1] + "." + m[2] + m[3];
-    }
-
-    // "-34,778231" → "-34.778231"
-    str = str.replace(",", ".");
-
-    n = parseFloat(str);
-  }
-
-  if (!isFinite(n)) return 0;
-
-  let abs = Math.abs(n);
-
-  // Si se pasó del rango (ej: -34778231) intentamos interpretarlo como microgrados
-  if (maxAbs && abs > maxAbs) {
-    const scaled = n / 1e6;           // -34778231 → -34.778231
-    if (Math.abs(scaled) <= maxAbs) {
-      n = scaled;
-      abs = Math.abs(n);
-    } else {
-      // está totalmente fuera de rango, lo descartamos
-      return 0;
-    }
-  }
-
-  if (maxAbs && abs > maxAbs) return 0;
-  return n;
-}
-
-
-
-
-  function normalizeLat(s) { return normalizeLatLngToFloat(s, 90); }
-  function normalizeLng(s) { return normalizeLatLngToFloat(s, 180); }
-
-  // ===== CSV parser simple =====
-  function parseCSV(text) {
-    const rows = [];
-    let cur = "", row = [], inQ = false;
-    for (let i = 0; i < text.length; i++) {
-      const c = text[i], n = text[i + 1];
-      if (inQ) {
-        if (c === '"' && n === '"') { cur += '"'; i++; }
-        else if (c === '"') { inQ = false; }
-        else { cur += c; }
-      } else {
-        if (c === '"') inQ = true;
-        else if (c === ",") { row.push(cur); cur = ""; }
-        else if (c === "\r") { /* ignore */ }
-        else if (c === "\n") { row.push(cur); rows.push(row); row = []; cur = ""; }
-        else { cur += c; }
-      }
-    }
-    if (cur.length || row.length) { row.push(cur); rows.push(row); }
-    if (rows.length === 0) return [];
-    const headers = rows.shift().map(h => String(h || "").trim());
-    const headersLC = headers.map(h => h.toLowerCase());
-    return rows
-      .filter(r => r.some(x => String(x || "").trim() !== ""))
-      .map(r => {
-        const o = {};
-        headersLC.forEach((h, i) => o[h] = r[i] ?? "");
-        return o;
-      });
-  }
-
-  // ===== Mapear fila a modelo =====
-  function mapRowToModel(x, userFilter) {
-    const get = (obj, keys, def = "") => {
-      for (const k of keys) {
-        if (Object.prototype.hasOwnProperty.call(obj, k) &&
-            obj[k] != null &&
-            String(obj[k]).trim() !== "") {
-          return String(obj[k]).trim();
-        }
-      }
-      return def;
-    };
-
-    const user = get(x, ["user", "usuario", "username", "uname", "mail", "email"], "").trim();
-    if (userFilter && user && user !== userFilter) return null;
-    if (userFilter && !user) x.user = userFilter;
-
-    const id         = get(x, ["id", "codigo", "cod", "id_revisita", "idrev"], "");
-    const nombre     = get(x, ["nombre", "name", "persona", "familia"], "");
-    const fecha      = get(x, ["fecha", "date", "fch"], "");
-    const direccion  = get(x, ["direccion", "dirección", "address", "addr", "dir"], "");
-    const tema       = get(x, ["tema", "notas", "nota", "observaciones", "obs", "comentarios", "comentario"], "");
-    const prox       = get(x, ["prox", "proxima", "próxima", "next", "proximo", "próximo", "fch_prox"], "");
-    const tipo       = (get(x, ["tipo", "clase", "categoria", "categoría"], "revisita") || "revisita").toLowerCase();
-
-    const lat = normalizeLat(get(x, ["lat", "latitude", "latitud"], ""));
-    const lng = normalizeLng(get(x, ["lng", "long", "lon", "longitude", "longitud"], ""));
-
-    return {
-      id,
-      user: user || (userFilter || ""),
-      nombre,
-      fecha,
-      direccion,
-      tema,
-      prox,
-      tipo,
-      lat,
-      lng
-    };
-  }
-
-  // ===== listByUser: JSONP contra Apps Script + fallback CSV =====
-  function listByUser(user) {
-    return new Promise((resolve) => {
-      const API = CFG.REVISITAS_API_URL;
-      const CSV = CFG.REVISITAS_CSV_URL;
-
-      function done(arr) { resolve((arr || []).filter(Boolean)); }
-
-      function tryCSV() {
-        if (!CSV) {
-          console.warn("[RevisitasApi] No CSV fallback configured.");
-          return done([]);
-        }
-        fetch(CSV, { cache: "no-store" })
-          .then(r => r.text())
-          .then(text => {
-            const arr = parseCSV(text);
-            const mapped = arr.map(x => mapRowToModel(x, user)).filter(Boolean);
-            done(mapped);
-          })
-          .catch(() => done([]));
-      }
-
-      if (!API) { tryCSV(); return; }
-
-      const cbName = "jsonpListCb_" + Date.now();
-      let settled = false;
-      let script;
-
-      function cleanup() {
-        if (settled) return;
-        settled = true;
-        try { delete window[cbName]; } catch (_) {}
-        if (script && script.parentNode) {
-          try { document.body.removeChild(script); } catch (_) {}
-        }
-      }
-
-      window[cbName] = (data) => {
-        cleanup();
-
-        function normalizeId(o) {
-          if (!o) return o;
-          if (o.id != null && typeof o.id !== "string") {
-            o.id = String(o.id);
-          }
-          return o;
-        }
-
-        if (data && data.ok && Array.isArray(data.items)) {
-          const mapped = data.items
-            .map(x => mapRowToModel(normalizeId(x), user))
-            .filter(Boolean);
-          done(mapped);
-        } else if (Array.isArray(data)) {
-          const mapped = data
-            .map(x => mapRowToModel(normalizeId(x), user))
-            .filter(Boolean);
-          done(mapped);
-        } else {
-          done([]);
-        }
-      };
-
-
-      const params = new URLSearchParams({
-        action: "list",
-        user,
-        callback: cbName,
-        rnd: String(Date.now())
-      });
-      script = document.createElement("script");
-      script.src = API + "?" + params.toString();
-      script.referrerPolicy = "no-referrer";
-      script.async = true;
-      script.onerror = () => { cleanup(); tryCSV(); };
-      script.onload  = () => { if (!settled) { cleanup(); tryCSV(); } };
-      document.body.appendChild(script);
-
-      setTimeout(() => {
-        if (!settled) { cleanup(); tryCSV(); }
-      }, 5000);
-    });
-  }
-
-  // ===== Save (add/update) =====
-  async function save(nuevo) {
-    const API = CFG.REVISITAS_API_URL;
-    if (!API) throw new Error("REVISITAS_API_URL no configurado");
-
-    const username =
-      (window.AuthApp && window.AuthApp.getUsername && window.AuthApp.getUsername()) ||
-      nuevo.user ||
-      "";
-    if (!username) throw new Error("Usuario no logueado");
-
-    const isEdit = (nuevo && nuevo._mode === "edit") || (!!nuevo.id);
-
-    let id = "";
-    if (isEdit) {
-      // EDITAR: tiene que venir con id, si no, error
-      if (!nuevo.id) throw new Error("id requerido para editar revisita");
-      id = String(nuevo.id);
-    } else {
-      // ADD: si no vino id, lo generamos acá
-      id = nuevo.id ? String(nuevo.id) : String(Date.now());
-    }
-
-
-    const latOut = formatLatLng6Grouped(nuevo.lat);
-    const longOut = formatLatLng6Grouped(nuevo.long ?? nuevo.lng);
-
-    const body = new URLSearchParams();
-    body.append("action", isEdit ? "update" : "add");
-    if (id) body.append("id", id);    // 👈 ahora SIEMPRE va a tener id
-    body.append("user", username);
-    body.append("nombre", nuevo.nombre || "");
-    body.append("fecha", nuevo.fecha || "");
-    body.append("direccion", nuevo.direccion || "");
-    body.append("tema", nuevo.tema || "");
-    body.append("prox", nuevo.prox || "");
-    body.append("tipo", nuevo.tipo || "revisita");
-    body.append("lat", latOut);
-    body.append("long", longOut);
-
-    const res = await fetch(API, {
-      method: "POST",
-      body
-    });
-    const data = await res.json();
-    if (!data || !data.ok) {
-      throw new Error("Guardar revisita falló: " + JSON.stringify(data));
-    }
-    return data;
-  }
-
-  // ===== Delete =====
-  async function remove(id) {
-    const API = CFG.REVISITAS_API_URL;
-    if (!API) throw new Error("REVISITAS_API_URL no configurado");
-    if (!id) throw new Error("Id requerido para eliminar");
-
-    const username =
-      (window.AuthApp && window.AuthApp.getUsername && window.AuthApp.getUsername()) ||
-      "";
-
-    if (!username) throw new Error("Usuario no logueado");
-
-    const body = new URLSearchParams();
-    body.append("action", "delete");
-    body.append("id", String(id));
-    body.append("user", username);
-
-    const res = await fetch(API, {
-      method: "POST",
-      body
-    });
-
-    if (res.status === 429) {
-      throw new Error("HTTP 429: Too Many Requests (Apps Script limit)");
-    }
-
-    let data = null;
+  function resolveMap() {
     try {
-      data = await res.json();
-    } catch (_) {
-      if (!res.ok) throw new Error("Eliminar revisita falló (sin JSON de respuesta)");
-      return {};
-    }
-    if (!data || !data.ok) {
-      throw new Error("Eliminar revisita falló: " + JSON.stringify(data));
-    }
-    return data;
+      if (global.MapApp && typeof global.MapApp.getMap === "function") return global.MapApp.getMap();
+      if (global.map) return global.map;
+    } catch (e) {}
+    return null;
   }
 
-  // Expose
-  window.RevisitasApi = {
-    listByUser,
-    save,
-    remove,
-    formatLatLng6Grouped,
-    normalizeLatLngToFloat
-  };
-})();
+  function ensureLayer() {
+    if (!map) map = resolveMap();
+    if (!map) return null;
+
+    if (!layer) {
+      if (global.MapApp && typeof global.MapApp.getRevisitasLayer === "function") {
+        layer = global.MapApp.getRevisitasLayer();
+      }
+      if (!layer) {
+        layer = L.layerGroup();
+      }
+    }
+
+    if (layer && map && !map.hasLayer(layer)) {
+      layer.addTo(map);
+    }
+
+    return layer;
+  }
+
+  function clearMarkers() {
+    const lyr = ensureLayer();
+    if (!lyr) return;
+    lyr.clearLayers();
+  }
+
+  function buildPopupHtml(rv) {
+    const partes = [];
+    partes.push("<strong>" + (rv.nombre || "(sin nombre)") + "</strong>");
+    if (rv.fecha) partes.push("<br><small>Fecha: " + rv.fecha + "</small>");
+    if (rv.direccion) partes.push("<br><small>Dir: " + rv.direccion + "</small>");
+    if (rv.tema) partes.push("<br><small>Tema: " + rv.tema + "</small>");
+    if (rv.prox) partes.push("<br><small>Próxima: " + rv.prox + "</small>");
+    if (rv.tipo) partes.push("<br><small>Tipo: " + rv.tipo + "</small>");
+    return partes.join("");
+  }
+
+  function buildMarkerIcon(rv) {
+    const tipo = (rv.tipo || "").toLowerCase();
+    const emoji = tipo === "estudio" ? "📘" : "📰";
+
+    const bgVar = tipo === "estudio" ? "var(--success)" : "var(--primary)";
+    const fg = "#0b1220";
+
+    const html =
+      '<div style="' +
+      "display:inline-flex;" +
+      "align-items:center;" +
+      "justify-content:center;" +
+      "width:32px;" +
+      "height:32px;" +
+      "border-radius:50%;" +
+      "background:" + bgVar + ";" +
+      "color:" + fg + ";" +
+      "border:2px solid var(--border);" +
+      "box-shadow:var(--shadow);" +
+      "font-size:18px;" +
+      '">' +
+      emoji +
+      "</div>";
+
+    return L.divIcon({
+      className: "",
+      html: html,
+      iconSize: [32, 32],
+      iconAnchor: [16, 16]
+    });
+  }
+
+  function addMarker(rv) {
+    const lyr = ensureLayer();
+    if (!lyr) return;
+    const lat = parseFloat(rv.lat);
+    const lng = parseFloat(rv.lng);
+    if (!isFinite(lat) || !isFinite(lng)) return;
+    const marker = L.marker([lat, lng], { icon: buildMarkerIcon(rv) });
+    marker.bindPopup(buildPopupHtml(rv));
+    marker.addTo(lyr);
+  }
+
+  function renderMarkers() {
+    clearMarkers();
+    data.forEach(addMarker);
+  }
+
+  function renderList() {
+    const listEl = $("#revisita-list");
+    if (!listEl) return;
+    listEl.innerHTML = "";
+
+    if (!data.length) {
+      listEl.innerHTML = '<div class="empty-state">No hay revisitas todavía.</div>';
+      return;
+    }
+
+    data.forEach((rv, idx) => {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "revisita-item";
+
+      const tipoEmoji = (rv.tipo || "").toLowerCase() === "estudio" ? "📘" : "📒";
+      const proxTxt = rv.prox ? " · Próx: " + rv.prox : "";
+      const fechaTxt = rv.fecha ? rv.fecha : "";
+
+      if ((rv.tipo || "").toLowerCase() === "estudio"){
+         item.innerHTML =
+        '<div class="revisita-item revisita">' +
+        '<div class="rev-icon">E</div>' +
+        '<div class="rev-main">' +
+        '<div class="rev-title">' + (rv.nombre || "(sin nombre)") + '</div>' +
+        '<div class="rev-meta"> Tema: ' + rv.tema + "</div>" +
+        '<div class="rev-meta"> Próx: ' + rv.prox + "</div>" +
+        '</div>' +
+        '</div>';
+
+      }else{
+         item.innerHTML =
+        '<div class="revisita-item revisita">' +
+        '<div class="rev-icon">R</div>' +
+        '<div class="rev-main">' +
+         '<div class="rev-title">' + (rv.nombre || "(sin nombre)") + '</div>' +
+        '<div class="rev-meta"> Tema: ' + rv.tema + "</div>" +
+        '<div class="rev-meta"> Próx: ' + rv.prox + "</div>" +
+        '</div>' +
+        '</div>';
+      }
+
+      item.addEventListener("click", function () {
+        focusOnMap(rv);
+        openFormModal(rv, idx);
+      });
+
+      listEl.appendChild(item);
+    });
+  }
+
+  function focusOnMap(rv) {
+    const lat = parseFloat(rv.lat);
+    const lng = parseFloat(rv.lng);
+    if (!map || !isFinite(lat) || !isFinite(lng)) return;
+    map.setView([lat, lng], Math.max(map.getZoom() || 14, 17));
+  }
+
+  async function loadFromServer() {
+    const user = global.AuthApp && global.AuthApp.getUsername && global.AuthApp.getUsername();
+    if (!user) {
+      global.showToast && global.showToast("Primero iniciá sesión");
+      return;
+    }
+    if (!global.RevisitasApi || typeof global.RevisitasApi.listByUser !== "function") {
+      console.warn("[Revisitas] RevisitasApi.listByUser no disponible");
+      global.showToast && global.showToast("RevisitasApi no está inicializado");
+      return;
+    }
+    try {
+      const arr = await global.RevisitasApi.listByUser(user);
+      data = Array.isArray(arr) ? arr : [];
+      APP._data = data;
+      renderList();
+      renderMarkers();
+    } catch (err) {
+      console.error(err);
+      global.showToast && global.showToast("Error cargando revisitas");
+    }
+  }
+
+  function todayISO() {
+    const d = new Date();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return d.getFullYear() + "-" + mm + "-" + dd;
+  }
+
+  function buildFormHTML(rv) {
+  const isEdit = !!rv.id; // true si estamos editando una revisita existente
+
+  // Bloque Lat/Lng:
+  // - En ALTA: se ve y permite elegir en el mapa / usar mi posición.
+  // - En EDICIÓN: no se ve, pero se mandan como hidden (no modificable).
+  const latLngSection = isEdit
+    ? (
+        // EDIT: coords ocultas, solo para que se mantengan al guardar
+        '<input type="hidden" id="rvf-lat" value="' + (rv.lat || "") + '">' +
+        '<input type="hidden" id="rvf-lng" value="' + (rv.lng || "") + '">'
+      )
+    : (
+        // ADD: se muestra fila Lat/Lng + botones de mapa
+        '<div class="row">' +
+        "</div>"
+      );
+
+  return (
+    '<form id="rv-form" class="rv-form">' +
+      // ID + índice en la lista
+      '<input type="hidden" id="rv-id" value="' + (rv.id || "") + '">' +
+      '<input type="hidden" id="rv-idx" value="' + (rv._idx != null ? rv._idx : "") + '">' +
+
+      // Nombre
+      '<div class="row">' +
+        "<label>Nombre</label>" +
+        '<input id="rvf-nombre" value="' + (rv.nombre || "") + '">' +
+      "</div>" +
+
+      // Fecha
+      '<div class="row">' +
+        "<label>Fecha</label>" +
+        '<input id="rvf-fecha" type="date" value="' + (rv.fecha || todayISO()) + '">' +
+      "</div>" +
+
+      // Dirección
+      '<div class="row">' +
+        "<label>Dirección</label>" +
+        '<input id="rvf-direccion" value="' + (rv.direccion || "") + '">' +
+      "</div>" +
+
+      // Tema
+      '<div class="row">' +
+        "<label>Tema</label>" +
+        '<input id="rvf-tema" value="' + (rv.tema || "") + '">' +
+      "</div>" +
+
+      // Próxima
+      '<div class="row">' +
+        "<label>Próxima</label>" +
+        '<select id="rvf-prox">' +
+          '<option value=""></option>' +
+          '<option value="1semana"' + (rv.prox === "1semana" ? " selected" : "") + ">1 semana</option>" +
+          '<option value="2semanas"' + (rv.prox === "2semanas" ? " selected" : "") + ">2 semanas</option>" +
+          '<option value="1mes"' + (rv.prox === "1mes" ? " selected" : "") + ">1 mes</option>" +
+        "</select>" +
+      "</div>" +
+
+      // Tipo
+      '<div class="row">' +
+        "<label>Tipo</label>" +
+        '<select id="rvf-tipo">' +
+          '<option value="revisita"' + ((rv.tipo || "").toLowerCase() === "revisita" ? " selected" : "") + ">Revisita</option>" +
+          '<option value="estudio"' + ((rv.tipo || "").toLowerCase() === "estudio" ? " selected" : "") + ">Estudio</option>" +
+          '<option value="visita"' + ((rv.tipo || "").toLowerCase() === "visita" ? " selected" : "") + ">Visita</option>" +
+          '<option value="otro"' + ((rv.tipo || "").toLowerCase() === "otro" ? " selected" : "") + ">Otro</option>" +
+        "</select>" +
+      "</div>" +
+
+      // Notas
+      '<div class="row">' +
+        "<label>Notas</label>" +
+        '<textarea id="rvf-notas" rows="3">' + (rv.notas || "") + "</textarea>" +
+      "</div>" +
+
+      // Lat/Lng (visible solo en alta, hidden en edición)
+      latLngSection +
+
+      // Acciones
+      '<div class="row actions">' +
+        '<button type="button" id="rvf-cancel" class="btn-cancel">Cancelar</button>' +
+        '<div style="flex:1"></div>' +
+        '<button type="button" id="rvf-delete" class="btn-danger"' + (rv.id ? "" : ' style="display:none"') + ">Eliminar</button>" +
+        '<button type="submit" id="rvf-save" class="btn-primary">Guardar</button>' +
+      "</div>" +
+    "</form>"
+  );
+}
+
+
+  function openFormModal(rv, idx) {
+    const overlay = $("#revisita-overlay");
+    const body = $("#revisita-body");
+    if (!overlay || !body) return;
+
+    const model = {};
+    for (var k in rv) if (Object.prototype.hasOwnProperty.call(rv, k)) model[k] = rv[k];
+    model._idx = typeof idx === "number" ? idx : "";
+
+    body.innerHTML = buildFormHTML(model);
+    overlay.style.display = "flex";
+
+    const form = $("#rv-form");
+    const btnCancel = $("#rvf-cancel");
+    const btnDelete = $("#rvf-delete");
+    const btnPick = $("#rvf-pick");
+    const btnPos = $("#rvf-pos");
+
+    form.addEventListener("submit", onFormSubmit);
+    if (btnCancel) btnCancel.addEventListener("click", closeFormModal);
+    overlay.addEventListener("click", function (ev) {
+      if (ev.target === overlay) closeFormModal();
+    });
+
+    if (btnPick) btnPick.addEventListener("click", enablePickMode);
+    if (btnPos) btnPos.addEventListener("click", useMyPos);
+    if (btnDelete) btnDelete.addEventListener("click", onDeleteClick);
+  }
+
+  function closeFormModal() {
+    const overlay = $("#revisita-overlay");
+    if (overlay) overlay.style.display = "none";
+    disablePickMode();
+  }
+
+  function getFormModel() {
+    return {
+      id: $("#rv-id") && $("#rv-id").value || "",
+      idx: $("#rv-idx") && $("#rv-idx").value || "",
+      nombre: $("#rvf-nombre") && $("#rvf-nombre").value.trim() || "",
+      fecha: $("#rvf-fecha") && $("#rvf-fecha").value || "",
+      direccion: $("#rvf-direccion") && $("#rvf-direccion").value.trim() || "",
+      tema: $("#rvf-tema") && $("#rvf-tema").value.trim() || "",
+      prox: $("#rvf-prox") && $("#rvf-prox").value || "",
+      tipo: $("#rvf-tipo") && $("#rvf-tipo").value || "",
+      notas: $("#rvf-notas") && $("#rvf-notas").value.trim() || "",
+      lat: $("#rvf-lat") && $("#rvf-lat").value || "",
+      lng: $("#rvf-lng") && $("#rvf-lng").value || ""
+    };
+  }
+
+  async function onFormSubmit(ev) {
+    ev.preventDefault();
+
+    if (!global.RevisitasApi || typeof global.RevisitasApi.save !== "function") {
+      global.showToast && global.showToast("RevisitasApi.save no está disponible");
+      return;
+    }
+
+    const user = global.AuthApp && global.AuthApp.getUsername && global.AuthApp.getUsername();
+    if (!user) {
+      global.showToast && global.showToast("Primero iniciá sesión");
+      return;
+    }
+
+    const model = getFormModel();
+    if (!model.lat || !model.lng) {
+      global.showToast && global.showToast("Seleccioná la ubicación en el mapa");
+      return;
+    }
+
+    const isNew = !model.id;
+    const payload = {
+      _mode: isNew ? "add" : "edit",
+      id: model.id,
+      user: user,
+      nombre: model.nombre,
+      fecha: model.fecha,
+      direccion: model.direccion,
+      tema: model.tema,
+      prox: model.prox,
+      tipo: model.tipo || "revisita",
+      lat: model.lat,
+      lng: model.lng
+    };
+
+    try {
+      await global.RevisitasApi.save(payload);
+      global.showToast && global.showToast("Revisita guardada");
+      closeFormModal();
+      await loadFromServer();
+    } catch (err) {
+      console.error(err);
+      global.showToast && global.showToast("No se pudo guardar: " + (err.message || err));
+    }
+  }
+
+  async function onDeleteClick() {
+    if (!global.RevisitasApi || typeof global.RevisitasApi.remove !== "function") {
+      global.showToast && global.showToast("Eliminar todavía no está disponible");
+      return;
+    }
+
+    const user = global.AuthApp && global.AuthApp.getUsername && global.AuthApp.getUsername();
+    if (!user) {
+      global.showToast && global.showToast("Primero iniciá sesión");
+      return;
+    }
+
+    const model = getFormModel();
+    if (!model.id) return;
+    if (!confirm("¿Eliminar esta revisita?")) return;
+
+    try {
+      await global.RevisitasApi.remove(model.id);
+      global.showToast && global.showToast("Revisita eliminada");
+      closeFormModal();
+      await loadFromServer();
+    } catch (err) {
+      console.error(err);
+      var msg = String(err && err.message || err);
+      if (msg.indexOf("429") >= 0) {
+        global.showToast && global.showToast("Google Apps Script devolvió 429 (Too Many Requests). Probá de nuevo en unos segundos.");
+      } else {
+        global.showToast && global.showToast("No se pudo eliminar: " + msg);
+      }
+    }
+  }
+
+  function enablePickMode() {
+    if (!map) map = resolveMap();
+    if (!map) return;
+    picking = true;
+    pickMode = "form";
+    map.getContainer().classList.add("crosshair");
+    map.once("click", onPickClick);
+    global.showToast && global.showToast("Hacé click en el mapa para elegir ubicación");
+  }
+
+  function enablePickNewRevisita() {
+    if (!map) map = resolveMap();
+    if (!map) return;
+    picking = true;
+    pickMode = "new";
+    map.getContainer().classList.add("crosshair");
+    map.once("click", onPickClick);
+    global.showToast && global.showToast("Hacé click en el mapa para crear una revisita");
+  }
+
+  function disablePickMode() {
+    picking = false;
+    pickMode = null;
+    if (map) {
+      map.getContainer().classList.remove("crosshair");
+    }
+  }
+
+
+
+  function onPickClick(ev) {
+    if (!picking) return;
+    if (!map) map = resolveMap();
+
+    const lat = ev.latlng.lat;
+    const lng = ev.latlng.lng;
+
+    if (pickMarker) pickMarker.remove();
+    if (map) {
+      pickMarker = L.marker([lat, lng], { title: "Ubicación revisita" }).addTo(map);
+      map.setView([lat, lng], Math.max(map.getZoom() || 14, 17));
+    }
+
+    const latFixed = lat.toFixed(6);
+    const lngFixed = lng.toFixed(6);
+
+    if (pickMode === "form") {
+      // Modo original: solo actualizar campos del formulario abierto
+      const latEl = $("#rvf-lat");
+      const lngEl = $("#rvf-lng");
+      if (latEl) latEl.value = latFixed;
+      if (lngEl) lngEl.value = lngFixed;
+    } else if (pickMode === "new") {
+      // Nuevo modo: crear una revisita NUEVA con estos coords
+      openFormModal(
+        {
+          fecha: todayISO(),
+          lat: latFixed,
+          lng: lngFixed,
+          tipo: "revisita"
+        },
+        -1
+      );
+    }
+
+    disablePickMode();
+  }
+
+  function bindNewFromMapButton() {
+    const btn = $("#btn-revisitas-new-map");
+    if (!btn) return;
+    btn.addEventListener("click", () => {
+      enablePickNewRevisita();
+    });
+  }
+
+
+
+  async function useMyPos() {
+    if (!map) map = resolveMap();
+    try {
+      const pos = await new Promise(function (res, rej) {
+        navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 10000 });
+      });
+      const latitude = pos.coords.latitude;
+      const longitude = pos.coords.longitude;
+      if (pickMarker) pickMarker.remove();
+      pickMarker = L.marker([latitude, longitude], { title: "Mi posición" }).addTo(map);
+      const latEl = $("#rvf-lat");
+      const lngEl = $("#rvf-lng");
+      if (latEl) latEl.value = latitude.toFixed(6);
+      if (lngEl) lngEl.value = longitude.toFixed(6);
+      if (map) {
+        map.setView([latitude, longitude], Math.max(map.getZoom() || 14, 17));
+      }
+      global.showToast && global.showToast("Usando tu posición actual");
+    } catch (e) {
+      console.warn(e);
+      global.showToast && global.showToast("No se pudo obtener tu posición");
+    }
+  }
+
+  function bindToggleButton() {
+    const btn = $("#btn-revisitas");
+    const icon = $("#icon-revisitas");
+    const panel = $("#revisita-panel");
+    if (!btn) return;
+
+    btn.addEventListener("click", async function () {
+      const isOn = btn.dataset.active === "on";
+      if (isOn) {
+        btn.dataset.active = "off";
+        if (icon) icon.textContent = "📒";
+        if (panel) panel.hidden = true;
+        clearMarkers();
+      } else {
+        btn.dataset.active = "on";
+        if (icon) icon.textContent = "✅";
+        if (panel) panel.hidden = false;
+        await loadFromServer();
+      }
+    });
+  }
+
+  function bindOverlayClose() {
+    const overlay = $("#revisita-overlay");
+    const btnClose = $("#revisita-close");
+    if (!overlay) return;
+    if (btnClose) btnClose.addEventListener("click", closeFormModal);
+  }
+
+  function init() {
+    map = resolveMap();
+    ensureLayer();
+    bindToggleButton();
+    bindOverlayClose();
+    bindNewFromMapButton();
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
+
+  APP.reload = loadFromServer;
+  APP.openNew = function () { openFormModal({ fecha: todayISO() }, -1); };
+  APP.getData = function () { return data.slice(); };
+  global.RevisitasApp = APP;
+})(window);
