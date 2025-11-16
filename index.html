@@ -58,19 +58,29 @@
       <span id="sheets-status-badge" class="status-badge disconnected" title="Google Sheets no conectado">Sheets OFF</span>
       Territorios
     </div>
-    <div id="topbar-actions">
-      <span id="auth-info" class="auth-hidden auth-user-label"></span>
+        <div id="topbar-actions">
+      <div id="auth-box" class="auth-box">
+        <span id="auth-info" class="auth-hidden auth-user-label"></span>
 
-      <!-- Botón abrir login -->
-      <button id="btnAuthOpen" class="icon-btn primary" title="Acceder">
-        <span class="icon">👤</span>
-      </button>
+        <!-- Botón abrir login -->
+        <button id="btnAuthOpen" class="icon-btn primary" title="Acceder">
+          <span class="icon">👤</span>
+        </button>
 
-      <!-- Botón logout -->
-      <button id="btnLogout" class="icon-btn auth-hidden" title="Salir">
-        <span class="icon">⏏</span>
-      </button>
+        <!-- Botón logout (se puede seguir usando internamente) -->
+        <button id="btnLogout" class="icon-btn auth-hidden" title="Salir">
+          <span class="icon">⏏</span>
+        </button>
+
+        <!-- Menú desplegable cuando está logueado -->
+        <div id="auth-menu" class="auth-menu">
+          <button class="auth-menu-item" data-view="territorio">Territorio</button>
+          <button class="auth-menu-item" data-view="horas">Horas</button>
+          <button class="auth-menu-item" data-action="logout">Salir</button>
+        </div>
+      </div>
     </div>
+
   </div>
 
   <!-- AVISO DISTANCIA -->
@@ -78,6 +88,53 @@
 
   <!-- MAPA -->
   <div id="map"></div>
+
+    <!-- PANEL DE HORAS -->
+  <div id="hours-panel" class="hours-panel" style="display:none">
+    <div class="hours-header">
+      <h2 class="hours-title">Horas del mes actual</h2>
+      <div id="hours-month-label" class="hours-month-label"></div>
+    </div>
+
+    <div id="hours-calendar" class="hours-calendar"></div>
+
+    <!-- Ventana de detalles del día -->
+    <div id="hours-day-details" class="hours-day-details" style="display:none">
+      <div class="hours-day-details-header">
+        <span id="hours-day-details-title" class="hours-day-details-title">Registros del día</span>
+        <button id="hours-day-details-close" class="hours-day-details-close" type="button">✕</button>
+      </div>
+      <div id="hours-day-details-body" class="hours-day-details-body">
+        <!-- acá se llenan los registros -->
+      </div>
+    </div>
+
+    <div class="hours-form">
+      <div id="hours-selected-date" class="hours-selected-date">
+        Seleccioná un día en el calendario
+      </div>
+
+      <label class="hours-label">
+        Horas
+        <input type="number" id="hours-input" min="0" step="0.25" placeholder="Ej: 1.5">
+      </label>
+
+      <label class="hours-label">
+        Observación
+        <textarea id="hours-note" rows="2" placeholder="Visitas, estudios, territorios..."></textarea>
+      </label>
+
+      <button id="hours-add-btn" class="btn-primary" type="button">
+        Agregar
+      </button>
+    </div>
+
+    <div class="hours-footer">
+      <span>Total del mes:</span>
+      <strong id="hours-total">0</strong> h
+    </div>
+  </div>
+
 
   <!-- FAB NÚMEROS (flotante, sobre el mapa, arriba de Ruta) -->
   <button id="btnToggleLabels" class="icon-btn fab-labels" title="Mostrar / ocultar números" style="display:none">
@@ -484,6 +541,280 @@
     panelEl.classList.remove("minimized");
   }
 
+    // ========= Helper: saber si hay usuario logueado =========
+  function isLogged(){
+    try {
+      return !!(window.AuthApp && typeof AuthApp.getUsername === "function" && AuthApp.getUsername());
+    } catch(e){
+      return false;
+    }
+  }
+
+  // ========= Cambiar vista Territorio / Horas =========
+  const mapEl = document.getElementById('map');
+  const hoursPanel = document.getElementById('hours-panel');
+
+  const calContainer = document.getElementById('hours-calendar');
+  const lblMonth     = document.getElementById('hours-month-label');
+  const lblSelected  = document.getElementById('hours-selected-date');
+  const inputHours   = document.getElementById('hours-input');
+  const inputNote    = document.getElementById('hours-note');
+  const btnAddHours  = document.getElementById('hours-add-btn');
+  const lblTotal     = document.getElementById('hours-total');
+  const detailsBox   = document.getElementById('hours-day-details');
+  const detailsTitle = document.getElementById('hours-day-details-title');
+  const detailsBody  = document.getElementById('hours-day-details-body');
+  const detailsClose = document.getElementById('hours-day-details-close');
+
+
+  const today = new Date();
+  let calYear = today.getFullYear();
+  let calMonth = today.getMonth(); // 0-11
+  let selectedDate = null; // "YYYY-MM-DD"
+
+  function getCurrentUser(){
+    try{
+      return (window.AuthApp && AuthApp.getUsername && AuthApp.getUsername()) || "";
+    }catch(e){
+      return "";
+    }
+  }
+
+  function getHoursKey(year, month){
+    const user = getCurrentUser() || "anon";
+    return `HORAS_${user}_${year}-${String(month+1).padStart(2,"0")}`;
+  }
+
+  function loadHoursData(year, month){
+    const key = getHoursKey(year, month);
+    try{
+      const raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : {};
+    }catch(e){
+      return {};
+    }
+  }
+
+  function saveHoursData(year, month, data){
+    const key = getHoursKey(year, month);
+    try{
+      localStorage.setItem(key, JSON.stringify(data));
+    }catch(e){}
+  }
+
+    function showDayDetails(dateStr){
+    if (!detailsBox || !detailsBody || !detailsTitle) return;
+    const data = loadHoursData(calYear, calMonth);
+    const entries = data[dateStr] || [];
+    const [y,m,d] = dateStr.split("-");
+
+    detailsTitle.textContent = `Registros del ${d}/${m}/${y}`;
+
+    if (!entries.length){
+      detailsBody.innerHTML = `<div class="hours-day-details-empty">Sin registros para este día.</div>`;
+    } else {
+      detailsBody.innerHTML = entries.map((e, idx) => {
+        const h = Number(e.hours || 0);
+        const note = (e.note || "").trim() || "<span class='hours-day-details-empty'>Sin observación</span>";
+        return `
+          <div class="hours-day-entry">
+            <div class="hours-day-entry-hours">${h.toLocaleString(undefined,{maximumFractionDigits:2})} h</div>
+            <div class="hours-day-entry-note">${note}</div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    detailsBox.style.display = "block";
+  }
+
+  if (detailsClose){
+    detailsClose.addEventListener('click', ()=>{
+      detailsBox.style.display = "none";
+    });
+  }
+
+
+  function buildHoursCalendar(){
+    if (!calContainer) return;
+    const data = loadHoursData(calYear, calMonth);
+    calContainer.innerHTML = "";
+
+    const dayNames = ["L","M","X","J","V","S","D"];
+    dayNames.forEach(d=>{
+      const h = document.createElement('div');
+      h.className = "hours-day-header";
+      h.textContent = d;
+      calContainer.appendChild(h);
+    });
+
+    const first = new Date(calYear, calMonth, 1);
+    // Lunes = 0
+    let startWeekday = (first.getDay() + 6) % 7;
+    const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+
+    for (let i=0; i<startWeekday; i++){
+      const empty = document.createElement('div');
+      calContainer.appendChild(empty);
+    }
+
+    let monthTotal = 0;
+
+    for (let day=1; day<=daysInMonth; day++){
+      const dateStr = `${calYear}-${String(calMonth+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
+      const entries = data[dateStr] || [];
+      const totalDay = entries.reduce((acc,e)=> acc + (Number(e.hours) || 0), 0);
+      monthTotal += totalDay;
+
+      const cell = document.createElement('div');
+      cell.className = "hours-day";
+      if (dateStr === selectedDate) cell.classList.add("selected");
+
+      const num = document.createElement('div');
+      num.className = "hours-day-number";
+      num.textContent = day;
+      cell.appendChild(num);
+
+      if (totalDay > 0){
+        const badge = document.createElement('div');
+        badge.className = "hours-day-total";
+        badge.textContent = totalDay.toLocaleString(undefined,{maximumFractionDigits:2});
+        cell.appendChild(badge);
+      }
+
+      cell.addEventListener('click', ()=>{
+        selectedDate = dateStr;
+        if (lblSelected){
+          const [y,m,d] = dateStr.split("-");
+          lblSelected.textContent = `Día seleccionado: ${d}/${m}/${y}`;
+        }
+        if (inputHours) inputHours.value = "";
+        if (inputNote)  inputNote.value  = "";
+
+        buildHoursCalendar();      // repinta calendario marcando seleccionado
+        showDayDetails(dateStr);   // muestra ventanita con registros del día
+      });
+
+
+      calContainer.appendChild(cell);
+    }
+
+    if (lblMonth){
+      const monthNames = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","setiembre","octubre","noviembre","diciembre"];
+      lblMonth.textContent = `${monthNames[calMonth]} ${calYear}`;
+    }
+    if (lblTotal){
+      lblTotal.textContent = monthTotal.toLocaleString(undefined,{maximumFractionDigits:2});
+    }
+  }
+
+  if (btnAddHours){
+    btnAddHours.addEventListener('click', ()=>{
+      if (!selectedDate){
+        window.showToast?.("Seleccioná primero un día en el calendario.");
+        return;
+      }
+      const h = Number(inputHours?.value || 0);
+      if (!h || h <= 0){
+        window.showToast?.("Ingresá una cantidad de horas mayor a 0.");
+        return;
+      }
+      const note = (inputNote?.value || "").trim();
+      const data = loadHoursData(calYear, calMonth);
+      if (!data[selectedDate]) data[selectedDate] = [];
+      data[selectedDate].push({ hours: h, note });
+       saveHoursData(calYear, calMonth, data);
+      if (inputHours) inputHours.value = "";
+      if (inputNote)  inputNote.value  = "";
+      buildHoursCalendar();
+      if (selectedDate){
+        showDayDetails(selectedDate);
+      }
+      window.showToast?.("Horas agregadas.");
+    });
+  }
+
+function setViewMode(mode){
+  if (!mapEl || !hoursPanel) return;
+
+  const btnRuta = document.getElementById("btnRoute"); // ← tu botón Ruta
+
+  if (mode === "horas"){
+    // Mostrar panel de horas
+    mapEl.style.display = "none";
+    hoursPanel.style.display = "flex";
+
+    // Ocultar botón Ruta
+    if (btn-route-toggle) btnRuta.style.display = "none";
+
+    selectedDate = null;
+    if (lblSelected){
+      lblSelected.textContent = "Seleccioná un día en el calendario";
+    }
+
+    buildHoursCalendar();
+  } 
+  else {
+    // Volver a mapa normal
+    mapEl.style.display = "";
+    hoursPanel.style.display = "none";
+
+    // Mostrar botón Ruta nuevamente
+    if (btnRuta) btnRuta.style.display = "";
+  }
+}
+
+
+  // ========= Menú hover sobre botón usuario =========
+  const authBox   = document.getElementById('auth-box');
+  const authMenu  = document.getElementById('auth-menu');
+
+  if (authBox && authMenu){
+    // Click en el área del usuario (icono + etiqueta)
+    authBox.addEventListener('click', (ev)=>{
+      // Si se hizo click dentro del propio submenú, dejamos que lo maneje el handler de abajo
+      if (ev.target.closest('#auth-menu')) return;
+
+      if (!isLogged()){
+        // Si no está logueado, abrir login
+        const btnAuthOpen = document.getElementById('btnAuthOpen');
+        btnAuthOpen && btnAuthOpen.click();
+        return;
+      }
+
+      // Si está logueado, toggle de visibilidad del submenú
+      const visible = authMenu.style.display === "flex";
+      authMenu.style.display = visible ? "none" : "flex";
+    });
+
+    // Clic fuera del auth-box => ocultar menú
+    document.addEventListener('click', (ev)=>{
+      if (!authBox.contains(ev.target)){
+        authMenu.style.display = "none";
+      }
+    });
+
+    // Click en opciones del submenú
+    authMenu.addEventListener('click', (ev)=>{
+      const btn = ev.target.closest('.auth-menu-item');
+      if (!btn) return;
+
+      const view   = btn.dataset.view;
+      const action = btn.dataset.action;
+
+      if (view === "territorio"){
+        setViewMode("territorio");
+      } else if (view === "horas"){
+        setViewMode("horas");
+      } else if (action === "logout"){
+        btnLogout && btnLogout.click();
+      }
+
+      authMenu.style.display = "none";
+    });
+  }
+
+
   // ====== Estado local ======
   let weeklyActive    = false;
 
@@ -695,38 +1026,22 @@
 </script>
 
 <!-- Modal No Visitar -->
-<div id="novistar-overlay" class="overlay" style="display:none;">
-  <div class="modal-card" id="novistar-modal">
+<div id="novistar-overlay">
+  <div class="modal-card">
     <div class="modal-header">
-      <h3 class="modal-title">Sugerir “No visitar”</h3>
-      <button id="novistar-close" class="modal-close-btn" type="button">✖</button>
+      <div class="modal-title">Sugerir "No visitar"</div>
+      <button id="novistar-close" class="modal-close-btn" type="button">✕</button>
     </div>
     <div class="modal-body">
       <form id="novistar-form">
         <input type="hidden" id="novistar-lat">
         <input type="hidden" id="novistar-lng">
-        <div class="form-field">
-          <label class="form-label" for="novistar-direccion">Dirección (opcional)</label>
-          <input id="novistar-direccion" class="form-input" placeholder="Ej: José Pedro Varela 1234" />
-        </div>
 
-        <div class="form-field">
-          <label class="form-label" for="novistar-motivo">Motivo</label>
-          <select id="novistar-motivo" class="form-select">
-            <option value="agresivo">Agresivo</option>
-            <option value="rechazo">Rechazo explícito</option>
-            <option value="otro">Otro</option>
-          </select>
-        </div>
-
-        <div class="form-field">
-          <label class="form-label" for="novistar-comentario">Comentario</label>
-          <input id="novistar-comentario" class="form-input" placeholder="Comentario breve..." />
-        </div>
+        <label for="novistar-comentario">Comentario</label>
+        <textarea id="novistar-comentario"></textarea>
 
         <div class="form-actions">
-          <button id="novistar-cancel" class="btn-cancel" type="button">Cancelar</button>
-          <button id="novistar-save" class="btn-primary" type="submit">Guardar</button>
+          <button id="novistar-save" class="btn-primary" type="button">Guardar</button>
         </div>
       </form>
     </div>
@@ -969,7 +1284,12 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('novistar:pick', (e) => {
     openNovistarModal(e.detail || {});
   });
+ document.addEventListener('novistar:pick', (e) => {
+    openNovistarModal(e.detail || {});
+  });
 });
+
+
 </script>
 
 </body>
