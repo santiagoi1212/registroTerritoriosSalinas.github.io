@@ -1266,3 +1266,275 @@ padding: 12px 16px;
   border: 1px solid #4b5563;
 }
 .fab-labels .icon{ font-size:16px; }
+
+  /* Modal "No visitar" */
+  #novistar-overlay{
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(15,23,42,0.65);
+    z-index: 950;
+  }
+  #novistar-overlay .modal-card{
+    width: 100%;
+    max-width: 420px;
+    background: #020617;
+    border-radius: 16px;
+    border: 1px solid rgba(148,163,184,0.5);
+    box-shadow:
+      0 20px 45px rgba(15,23,42,0.96),
+      0 0 0 1px rgba(15,23,42,0.9);
+  }
+  #novistar-overlay .modal-body{
+    padding: 16px 18px 18px;
+  }
+  #novistar-overlay .modal-title{
+    font-size: 16px;
+    font-weight: 600;
+  }
+  #novistar-overlay .modal-close-btn{
+    border-radius: 999px;
+    width: 28px;
+    height: 28px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  #novistar-overlay .form-actions{
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 12px;
+    gap: 8px;
+  }
+  #novistar-overlay .btn-primary{
+    min-width: 110px;
+  }
+  #novistar-overlay .novistar-pos{
+    font-size: 11px;
+    color: #94a3b8;
+    margin: 6px 0 2px;
+  }
+
+  /* ------ Menú usuario (Territorio / Horas / Salir) ------ */
+.auth-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.auth-menu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin-top: 6px;
+  display: none;
+  flex-direction: column;
+  background: #020617;
+  border-radius: 10px;
+  border: 1px solid rgba(148,163,184,0.6);
+  box-shadow: 0 12px 30px rgba(15,23,42,0.9);
+  min-width: 150px;
+  z-index: 900;
+}
+
+.auth-menu-item {
+  padding: 8px 12px;
+  font-size: 13px;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: #e5e7eb;
+  cursor: pointer;
+}
+
+.auth-menu-item:hover {
+  background: rgba(51,65,85,0.9);
+}
+
+/* ------ Panel de Horas ------ */
+.hours-panel {
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px 14px;
+  background: #020617;
+  color: #e5e7eb;
+}
+
+.hours-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.hours-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.hours-month-label {
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+.hours-calendar {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  padding: 6px 0;
+}
+
+.hours-day-header {
+  text-align: center;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.hours-day {
+  min-height: 40px;
+  border-radius: 8px;
+  border: 1px solid rgba(51,65,85,0.9);
+  padding: 4px 5px;
+  font-size: 11px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background: rgba(15,23,42,0.9);
+}
+
+.hours-day:hover {
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 1px rgba(56,189,248,0.4);
+}
+
+.hours-day-number {
+  font-weight: 600;
+}
+
+.hours-day-total {
+  align-self: flex-end;
+  font-size: 10px;
+  color: #22c55e;
+}
+
+.hours-day.selected {
+  border-color: #facc15;
+  box-shadow: 0 0 0 1px rgba(250,204,21,0.7);
+}
+
+.hours-form {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hours-selected-date {
+  font-size: 12px;
+  color: #e5e7eb;
+  margin-bottom: 4px;
+}
+
+.hours-label {
+  display: block;
+  font-size: 12px;
+}
+
+.hours-form input,
+.hours-form textarea {
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid rgba(51,65,85,0.9);
+  background: #020617;
+  color: #e5e7eb;
+  padding: 6px 8px;
+  font-size: 13px;
+}
+
+.hours-footer {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(51,65,85,0.9);
+  font-size: 13px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+/* ------- Detalle de registros por día ------- */
+.hours-day-details {
+  margin-top: 6px;
+  margin-bottom: 6px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(51,65,85,0.9);
+  background: rgba(15,23,42,0.98);
+  box-shadow: 0 6px 16px rgba(15,23,42,0.9);
+}
+
+.hours-day-details-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.hours-day-details-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.hours-day-details-close {
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: 14px;
+  border-radius: 999px;
+  width: 24px;
+  height: 24px;
+}
+
+.hours-day-details-close:hover {
+  background: rgba(51,65,85,0.9);
+  color: #e5e7eb;
+}
+
+.hours-day-details-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.hours-day-entry {
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: rgba(15,23,42,0.95);
+  border: 1px solid rgba(51,65,85,0.8);
+  font-size: 12px;
+}
+
+.hours-day-entry-hours {
+  font-weight: 600;
+  color: #22c55e;
+  margin-bottom: 2px;
+}
+
+.hours-day-entry-note {
+  font-size: 11px;
+  color: #cbd5e1;
+}
+
+.hours-day-details-empty {
+  font-size: 11px;
+  color: #9ca3af;
+  font-style: italic;
+}
