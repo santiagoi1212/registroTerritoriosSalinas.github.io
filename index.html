@@ -737,15 +737,15 @@
 function setViewMode(mode){
   if (!mapEl || !hoursPanel) return;
 
-  const btnRuta = document.getElementById("btnRoute"); // ← tu botón Ruta
+  const btnRuta = document.getElementById("btnRoute");
 
   if (mode === "horas"){
-    // Mostrar panel de horas
+    // Oculta mapa y muestra horas
     mapEl.style.display = "none";
     hoursPanel.style.display = "flex";
 
-    // Ocultar botón Ruta
-    if (btn-route-toggle) btnRuta.style.display = "none";
+    // Ocultar RUTA SIEMPRE
+    if (btnRuta) btnRuta.style.display = "none";
 
     selectedDate = null;
     if (lblSelected){
@@ -755,14 +755,26 @@ function setViewMode(mode){
     buildHoursCalendar();
   } 
   else {
-    // Volver a mapa normal
+    // Volver a territorio
     mapEl.style.display = "";
     hoursPanel.style.display = "none";
 
-    // Mostrar botón Ruta nuevamente
+    // Mostrar Ruta nuevamente en vista territorio
     if (btnRuta) btnRuta.style.display = "";
   }
 }
+
+function enforceHideRouteIfInHours(){
+  const btnRuta = document.getElementById("btnRoute");
+  if (!btnRuta) return;
+
+  if (hoursPanel.style.display === "flex"){
+    btnRuta.style.display = "none";
+  }
+}
+
+
+
 
 
   // ========= Menú hover sobre botón usuario =========
@@ -867,6 +879,8 @@ function setViewMode(mode){
 
       if (typeof updateLabelsFabVisibility === "function") updateLabelsFabVisibility();
       if (typeof updateInfoFabVisibility === "function") updateInfoFabVisibility();
+      enforceHideRouteIfInHours();
+
     });
   }
 
@@ -952,6 +966,9 @@ function setViewMode(mode){
 
       weeklyList.appendChild(div);
     });
+
+    enforceHideRouteIfInHours();
+
   });
 
  
