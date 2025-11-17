@@ -105,6 +105,14 @@
     data.forEach(addMarker);
   }
 
+  function toDateInputValue(dateIsoString){
+  const d = new Date(dateIsoString);
+  if (isNaN(d)) return "";
+  return d.toISOString().split("T")[0]; // → "2025-11-17"
+}
+
+
+
   function renderList() {
     const listEl = $("#revisita-list");
     if (!listEl) return;
@@ -131,7 +139,7 @@
         '<div class="rev-main">' +
         '<div class="rev-title">' + (rv.nombre || "(sin nombre)") + '</div>' +
         '<div class="rev-meta"> Tema: ' + rv.tema + "</div>" +
-        '<div class="rev-meta"> Próx: ' + rv.prox + "</div>" +
+        '<div class="rev-meta"> Próx: ' + toDateInputValue(rv.prox) + "</div>" +
         '</div>' +
         '</div>';
 
@@ -193,95 +201,86 @@
     return d.getFullYear() + "-" + mm + "-" + dd;
   }
 
-  function buildFormHTML(rv) {
-  const isEdit = !!rv.id; // true si estamos editando una revisita existente
+    function buildFormHTML(rv) {
+    const isEdit = !!rv.id; // true si estamos editando una revisita existente
 
-  // Bloque Lat/Lng:
-  // - En ALTA: se ve y permite elegir en el mapa / usar mi posición.
-  // - En EDICIÓN: no se ve, pero se mandan como hidden (no modificable).
-  const latLngSection = isEdit
-    ? (
-        // EDIT: coords ocultas, solo para que se mantengan al guardar
-        '<input type="hidden" id="rvf-lat" value="' + (rv.lat || "") + '">' +
-        '<input type="hidden" id="rvf-lng" value="' + (rv.lng || "") + '">'
-      )
-    : (
-        // ADD: se muestra fila Lat/Lng + botones de mapa
+    // Siempre usamos inputs hidden para lat/lng (no se muestran visualmente)
+    const latLngSection =
+      '<input type="hidden" id="rvf-lat" value="' + (rv.lat || "") + '">' +
+      '<input type="hidden" id="rvf-lng" value="' + (rv.lng || "") + '">';
+
+    // Normalizar fechas para <input type="date">
+    const valFecha = rv.fecha ? toDateInputValue(rv.fecha) : todayISO();
+    const valProx  = rv.prox  ? toDateInputValue(rv.prox)  : todayISO();
+
+    return (
+      '<form id="rv-form" class="rv-form">' +
+        // ID + índice en la lista
+        '<input type="hidden" id="rv-id" value="' + (rv.id || "") + '">' +
+        '<input type="hidden" id="rv-idx" value="' + (rv._idx != null ? rv._idx : "") + '">' +
+
+        // Nombre
         '<div class="row">' +
-        "</div>"
-      );
+          '<label for="rvf-nombre">Nombre</label>' +
+          '<input id="rvf-nombre" value="' + (rv.nombre || "") + '">' +
+        '</div>' +
 
-  return (
-    '<form id="rv-form" class="rv-form">' +
-      // ID + índice en la lista
-      '<input type="hidden" id="rv-id" value="' + (rv.id || "") + '">' +
-      '<input type="hidden" id="rv-idx" value="' + (rv._idx != null ? rv._idx : "") + '">' +
+        // Fecha
+        '<div class="row">' +
+          '<label for="rvf-fecha">Fecha</label>' +
+          '<input id="rvf-fecha" type="date" value="' + valFecha + '">' +
+        '</div>' +
 
-      // Nombre
-      '<div class="row">' +
-        "<label>Nombre</label>" +
-        '<input id="rvf-nombre" value="' + (rv.nombre || "") + '">' +
-      "</div>" +
+        // Dirección
+        '<div class="row">' +
+          '<label for="rvf-direccion">Dirección</label>' +
+          '<input id="rvf-direccion" value="' + (rv.direccion || "") + '">' +
+        '</div>' +
 
-      // Fecha
-      '<div class="row">' +
-        "<label>Fecha</label>" +
-        '<input id="rvf-fecha" type="date" value="' + (rv.fecha || todayISO()) + '">' +
-      "</div>" +
+        // Tema
+        '<div class="row">' +
+          '<label for="rvf-tema">Tema</label>' +
+          '<input id="rvf-tema" value="' + (rv.tema || "") + '">' +
+        '</div>' +
 
-      // Dirección
-      '<div class="row">' +
-        "<label>Dirección</label>" +
-        '<input id="rvf-direccion" value="' + (rv.direccion || "") + '">' +
-      "</div>" +
+        // Próxima
+        '<div class="row">' +
+          '<label for="rvf-prox">Próxima</label>' +
+          '<input id="rvf-prox" type="date" value="' + valProx + '">' +
+        '</div>' +
 
-      // Tema
-      '<div class="row">' +
-        "<label>Tema</label>" +
-        '<input id="rvf-tema" value="' + (rv.tema || "") + '">' +
-      "</div>" +
+        // Tipo
+        '<div class="row">' +
+          '<label for="rvf-tipo">Tipo</label>' +
+          '<select id="rvf-tipo">' +
+            '<option value="revisita"' + ((rv.tipo || "").toLowerCase() === "revisita" ? " selected" : "") + '>Revisita</option>' +
+            '<option value="estudio"'  + ((rv.tipo || "").toLowerCase() === "estudio"  ? " selected" : "") + '>Estudio</option>' +
+            '<option value="visita"'   + ((rv.tipo || "").toLowerCase() === "visita"   ? " selected" : "") + '>Visita</option>' +
+            '<option value="otro"'     + ((rv.tipo || "").toLowerCase() === "otro"     ? " selected" : "") + '>Otro</option>' +
+          '</select>' +
+        '</div>' +
 
-      // Próxima
-      '<div class="row">' +
-        "<label>Próxima</label>" +
-        '<select id="rvf-prox">' +
-          '<option value=""></option>' +
-          '<option value="1semana"' + (rv.prox === "1semana" ? " selected" : "") + ">1 semana</option>" +
-          '<option value="2semanas"' + (rv.prox === "2semanas" ? " selected" : "") + ">2 semanas</option>" +
-          '<option value="1mes"' + (rv.prox === "1mes" ? " selected" : "") + ">1 mes</option>" +
-        "</select>" +
-      "</div>" +
+        // Notas
+        '<div class="row">' +
+          '<label for="rvf-notas">Notas</label>' +
+          '<textarea id="rvf-notas" rows="3">' + (rv.notas || "") + '</textarea>' +
+        '</div>' +
 
-      // Tipo
-      '<div class="row">' +
-        "<label>Tipo</label>" +
-        '<select id="rvf-tipo">' +
-          '<option value="revisita"' + ((rv.tipo || "").toLowerCase() === "revisita" ? " selected" : "") + ">Revisita</option>" +
-          '<option value="estudio"' + ((rv.tipo || "").toLowerCase() === "estudio" ? " selected" : "") + ">Estudio</option>" +
-          '<option value="visita"' + ((rv.tipo || "").toLowerCase() === "visita" ? " selected" : "") + ">Visita</option>" +
-          '<option value="otro"' + ((rv.tipo || "").toLowerCase() === "otro" ? " selected" : "") + ">Otro</option>" +
-        "</select>" +
-      "</div>" +
+        // Lat/Lng (hidden)
+        latLngSection +
 
-      // Notas
-      '<div class="row">' +
-        "<label>Notas</label>" +
-        '<textarea id="rvf-notas" rows="3">' + (rv.notas || "") + "</textarea>" +
-      "</div>" +
+        // Acciones
+        '<div class="row actions">' +
+          '<button type="button" id="rvf-cancel" class="btn-cancel">Cancelar</button>' +
+          '<div style="flex:1"></div>' +
+          '<button type="button" id="rvf-delete" class="btn-danger"' + (rv.id ? '' : ' style="display:none"') + '>Eliminar</button>' +
+          '<button type="submit" id="rvf-save" class="btn-primary">Guardar</button>' +
+        '</div>' +
+      '</form>'
+    );
+  }
 
-      // Lat/Lng (visible solo en alta, hidden en edición)
-      latLngSection +
 
-      // Acciones
-      '<div class="row actions">' +
-        '<button type="button" id="rvf-cancel" class="btn-cancel">Cancelar</button>' +
-        '<div style="flex:1"></div>' +
-        '<button type="button" id="rvf-delete" class="btn-danger"' + (rv.id ? "" : ' style="display:none"') + ">Eliminar</button>" +
-        '<button type="submit" id="rvf-save" class="btn-primary">Guardar</button>' +
-      "</div>" +
-    "</form>"
-  );
-}
 
 
   function openFormModal(rv, idx) {
@@ -377,6 +376,7 @@
       await loadFromServer();
     } catch (err) {
       console.error(err);
+      console.log("No se pudo guardar: " + (err.message || err));
       global.showToast && global.showToast("No se pudo guardar: " + (err.message || err));
     }
   }
