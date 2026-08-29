@@ -1,1313 +1,1331 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Territorios</title>
 
-  <!-- Leaflet -->
+<style>
+  /* ===== Desktop login styling & global form fixes ===== */
+  /* Backdrop */
+  #login-overlay{
+    position: fixed;
+    inset: 0;
+    z-index: 4000;
+    background: rgba(0,0,0,.55);
+    display: none; /* toggled via JS */
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    backdrop-filter: blur(1.5px);
+  }
+  /* Modal container */
+  #login-modal{
+    background: #0f172a;           /* slate-900 */
+    color: #e5e7eb;                /* gray-200 */
+    width: 100%;
+    max-width: 480px;
+    border-radius: 14px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.35);
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,.06);
+  }
+  /* Header / Body */
+  #login-modal header{
+    display:flex; align-items:center; justify-content:space-between;
+    padding: 14px 16px;
+    border-bottom: 1px solid rgba(255,255,255,.06);
+    background: linear-gradient(180deg, rgba(255,255,255,.04), transparent);
+  }
+  #login-modal header h3{
+    margin:0; font: 600 16px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Arial;
+    letter-spacing: .2px;
+  }
+  #login-modal .modal-body{
+    padding: 16px;
+    display: grid;
+    gap: 10px;
+  }
+  #login-modal .form-field{ display:grid; gap:6px; }
+  #login-modal .form-label{ font-size: 13px; color: #cbd5e1; } /* slate-300 */
+  #login-modal .form-input{
+    width:100%;
+    border: 1px solid #334155;     /* slate-700 */
+    background: #0b1220;           /* deep slate */
+    color: #e5e7eb;
+    border-radius: 10px;
+    padding: 10px 12px;
+    outline: none;
+  }
+  #login-modal .form-input:focus{
+    border-color: #60a5fa;         /* blue-400 */
+    box-shadow: 0 0 0 3px rgba(96,165,250,.2);
+  }
+  #login-modal .form-actions{
+    display:flex; gap:8px; justify-content:flex-end; margin-top:8px;
+  }
+  #login-modal .btn-primary{
+    background:#2563eb; color:#fff; border:none; border-radius:10px; padding:10px 14px; cursor:pointer;
+  }
+  #login-modal .btn-cancel{
+    background:#1f2937; color:#e5e7eb; border:1px solid #334155; border-radius:10px; padding:10px 14px; cursor:pointer;
+  }
+  #login-modal .btn-primary:hover{ filter:brightness(1.06); }
+  #login-modal .btn-cancel:hover{ filter:brightness(1.05); }
+
+  /* Close button (if exists) */
+  #login-modal .modal-close-btn{
+    border:none; background:transparent; color:#94a3b8;
+    font-size:18px; cursor:pointer; line-height:1;
+  }
+  #login-modal .modal-close-btn:hover{ color:#e2e8f0; }
+
+  /* Leaflet controls sit below auth bar & modal */
+  .leaflet-top, .leaflet-bottom{ z-index: 2000; }
+  /* Floating refs button must be above Leaflet controls but below modal */
+  .refs-toggle{ z-index: 2500; }
+
+  /* ---- General form tidy for the registro modal to avoid clashing ---- */
+  .modal-card input, .modal-card select, .modal-card textarea,
+  #territorio-overlay input, #territorio-overlay select, #territorio-overlay textarea{
+    font: 500 14px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Arial;
+    border-radius: 10px;
+    border: 1px solid #334155;
+    background: #0b1220;
+    color: #e5e7eb;
+    padding: 10px 12px;
+    outline: none;
+  }
+  #territorio-overlay label{ color:#cbd5e1; font-size: 13px; }
+  #territorio-overlay footer button{
+    border-radius: 10px; padding:10px 14px;
+  }
+  #territorio-overlay footer .btn{ background:#2563eb; color:#fff; border:none; }
+  #territorio-overlay footer .btn.secondary{ background:#1f2937; color:#e5e7eb; border:1px solid #334155; }
+
+  /* Desktop layout polish for modal widths */
+  @media (min-width: 769px){
+    #login-modal{ max-width: 520px; }
+  }
+</style>
+
+
+
+<style>
+  /* Botón flotante "Referencias" (aparece en pantallas pequeñas) */
+  .refs-toggle{
+    position:fixed;
+    right:14px;
+    bottom:14px;
+    z-index:2500;
+    display:none; /* visible sólo en mobile via @media */
+    padding:10px 14px;
+    border:none;
+    border-radius:999px;
+    background:#111;
+    color:#fff;
+    font:600 14px/1 system-ui,-apple-system,Segoe UI,Roboto,Arial;
+    box-shadow:0 6px 20px rgba(0,0,0,.25);
+    cursor:pointer;
+  }
+  .refs-toggle:active{ transform:translateY(1px); }
+
+  /* Panel con animación de deslizado */
+  #referencias{
+    will-change: max-height, opacity;
+    transition: max-height 250ms ease, opacity 200ms ease;
+  }
+
+  /* Sólo en mobile mostramos el botón y colapsamos por defecto */
+  @media (max-width: 768px){
+    .refs-toggle{ display:inline-flex; align-items:center; gap:8px; }
+  }
+</style>
+
+
+
+<style>
+  /* Botón flotante "Mi ubicación" (geolocalización en tiempo real) */
+  .geo-toggle{
+    position:fixed;
+    left:14px;
+    bottom:14px;
+    z-index:2500;
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    padding:10px 14px;
+    border:none;
+    border-radius:999px;
+    background:#111;
+    color:#fff;
+    font:600 14px/1 system-ui,-apple-system,Segoe UI,Roboto,Arial;
+    box-shadow:0 6px 20px rgba(0,0,0,.25);
+    cursor:pointer;
+  }
+  .geo-toggle.active{
+    background:#2563eb;
+  }
+  .geo-toggle:active{ transform:translateY(1px); }
+</style>
+
+
+
+<!-- Auth + Config -->
+<script src="./app-config.js"></script>
+<script src="./app-auth.js"></script>
+
+<style>
+  /* ===== Login modal minimal styles (compatible con index.slim2.html) ===== */
+  .auth-hidden{ display:none !important; }
+  .overlay{ position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.45); z-index:3000; }
+  .modal-card{ width:92%; max-width:420px; background:#fff; color:#111; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,.25); overflow:hidden; }
+  .modal-header{ display:flex; align-items:center; justify-content:space-between; padding:12px 14px; border-bottom:1px solid #eee; }
+  .modal-title{ margin:0; font:600 16px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Arial; }
+  .modal-close-btn{ border:none; background:transparent; font-size:18px; cursor:pointer; }
+  .modal-body{ padding:14px; display:grid; gap:10px; }
+  .form-field{ display:grid; gap:4px; }
+  .form-label{ font-size:14px; }
+  .form-input{ width:100%; border:1px solid #ccc; border-radius:8px; padding:8px 10px; font-size:14px; }
+  .form-actions{ display:flex; gap:8px; justify-content:flex-end; margin-top:6px; }
+  .btn-primary{ background:#111; color:#fff; border:none; padding:8px 12px; border-radius:8px; cursor:pointer; }
+  .btn-cancel{ background:#e5e7eb; color:#111; border:none; padding:8px 12px; border-radius:8px; cursor:pointer; }
+  /* Barra simple arriba a la derecha */
+  #auth-bar{ position:fixed; right:10px; top:10px; z-index:3100; display:flex; gap:8px; align-items:center; }
+  #auth-bar .pill{ background:rgba(0,0,0,.75); color:#fff; padding:6px 10px; border-radius:999px; font:500 13px/1 system-ui, -apple-system, Segoe UI, Roboto, Arial; }
+  #btnAuthOpen, #btnLogout{ border:none; border-radius:8px; padding:6px 10px; cursor:pointer; }
+  #btnAuthOpen{ background:#2563eb; color:#fff; }
+  #btnLogout{ background:#ef4444; color:#fff; }
+  #btnRefresh{
+    background:rgba(0,0,0,.75);
+    color:#fff;
+    border:none;
+    border-radius:8px;
+    padding:6px 10px;
+    cursor:pointer;
+    min-width:38px;
+  }
+  #btnRefresh:hover{ filter:brightness(1.06); }
+  #btnRefresh:disabled{ opacity:.6; cursor:default; }
+
+  @keyframes spin{ from{ transform:rotate(0deg);} to{ transform:rotate(360deg);} }
+  #btnRefresh.loading{ animation: spin 0.9s linear infinite; }
+
+  @media (max-width: 768px){
+    #auth-bar{ right:8px; top:8px; gap:6px; }
+    #auth-bar .pill{ display:none; } /* en mobile gana espacio */
+    #btnAuthOpen, #btnLogout, #btnRefresh{ padding:8px 10px; border-radius:999px; }
+  }
+</style>
+
+
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Territorios Salinas</title>
+
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-<script>
-  // ====== No Visitar toggle ======
-  (function(){
-    const btnNov = document.getElementById('btn-novistar-toggle');
-    if (!btnNov) return;
-    btnNov.addEventListener('click', () => {
-      const currentlyOn = btnNov.getAttribute('data-active') === 'on';
-      if (currentlyOn){
-        btnNov.setAttribute('data-active','off');
-        // disable pick mode if MapApp supports it
-        if (window.MapApp?.setNoVisitarPickEnabled) window.MapApp.setNoVisitarPickEnabled(false);
-      } else {
-        btnNov.setAttribute('data-active','on');
-        if (window.MapApp?.setNoVisitarPickEnabled){
-          window.MapApp.setNoVisitarPickEnabled(true);
-        } else {
-          // fallback: dispara modal con el centro del mapa
-          const map = window.MapApp?.getMap?.();
-          const center = map ? map.getCenter() : {lat: -34.77, lng: -55.83};
-          const ev = new CustomEvent('novistar:pick', { detail: { lat: center.lat, lng: center.lng } });
-          document.dispatchEvent(ev);
-        }
-      }
-    });
-    try{ updateLabelsFabVisibility(); }catch(_){/*ignore*/}
-})();
-</script>
+  <style>
+    html, body { height: 100%; margin: 0; }
+    #map { height: 100%; }
 
-  <!-- Leaflet Routing Machine -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
-  <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
+    /* Cartel del número de POLÍGONO (p.id) */
+    
+.numero-cartel {
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: bold;
+  text-shadow: 0 0 6px rgba(0,0,0,0.6);
+  background-color: rgba(205, 212, 221, 0.45); /* azul translúcido */
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 2px solid rgba(255,255,255,0.4);
+  pointer-events: none;
+  user-select: none;
+  transform: translate(-50%, -50%);
+  line-height: 1;
+  white-space: nowrap;
+}
 
-  <link rel="stylesheet" href="./app.css" />
+.numero-cartel-fijo {
+  color: #fff;
+  font-size: 20px;
+  font-weight: bold;
+  text-shadow: 0 0 4px rgba(0, 0, 0, 0.7);
+  background-color: rgba(0, 128, 255, 0.45); /* azul translúcido */
+  padding: 3px 5px;
+  border-radius: 5px;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  pointer-events: none;
+  user-select: none;
+  transform: translate(-50%, -50%);
+  line-height: 1;
+}
 
-  <script src="./app-auth.js"></script>
-  <script src="./app-config.js"></script>
-  <script src="./revisitas-api.js"></script>
-  <script src="./revisitas.app.js"></script>
-  <script src="./helpers.js"></script>
-  <script src="./app-map.js"></script>
+
+
+    .modal input, .modal textarea, .modal select  {
+      width: 90% !important;
+    }
+
+    /* Panel de referencias */
+    #referencias {
+      position: fixed; top: 10px; left: 10px; z-index: 1000;
+      background: rgba(0,0,0,.8); color:#fff; padding: 12px 14px;
+      border-radius: 10px; font-family: Arial, sans-serif; box-shadow: 0 2px 10px rgba(0,0,0,.5);
+      width: 260px; max-height: 420px; overflow-y:auto;
+    }
+    .referencias { display:flex; flex-direction:column; gap:8px; margin:0; }
+    .referencia { display:flex; align-items:center; gap:10px; }
+    .color-box { width: 18px; height: 18px; border: 1px solid #000; }
+    .gris { background: #808080; }
+    .azul { background: rgb(9,0,128); }
+    .verde { background: green; }
+    .amarillo { background: #FFD700; }
+    .naranja { background: #FFA500; }
+    .darkorange { background: #FF8C00; }
+    .rojo { background: #ff0000; }
+    .maroon { background: #720303; }
+    .peru { background: #2b0101; }
+    .black { background: #160000; }
+    @media (max-width: 768px) { #referencias { display:none; } }
+
+    /* Modal simple */
+    .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: none; z-index: 2000; }
+    .modal {
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+      background: #fff; color:#111; border-radius: 12px; width: 92%; max-width: 520px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.25); display: none; z-index: 2001;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial;
+    }
+    .modal header { padding:14px 16px; border-bottom:1px solid #efefef; font-weight:600; }
+    .modal .content { padding:12px 16px; display:grid; gap:10px; }
+    .modal .row { display:grid; gap:6px; }
+    .modal input, .modal textarea, .modal select {
+      width:100%; border:1px solid #ccc; border-radius:8px; padding:8px 10px; font-size:14px;
+    }
+    .modal footer { display:flex; justify-content:flex-end; gap:10px; padding:12px 16px; border-top:1px solid #efefef; }
+    .btn { background:#111; color:#fff; border:none; padding:8px 12px; border-radius:8px; cursor:pointer; }
+    .btn.secondary { background:#e0e0e0; color:#111; }
+  </style>
+
+<style>
+  /* ===== Busy overlay (loading gif/spinner) ===== */
+  #busy-overlay{
+    position: fixed;
+    inset: 0;
+    z-index: 4500;
+    background: rgba(0,0,0,.45);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(1.5px);
+  }
+  #busy-overlay .busy-card{
+    background: rgba(15,23,42,.92);
+    color: #e5e7eb;
+    border: 1px solid rgba(255,255,255,.10);
+    border-radius: 14px;
+    padding: 18px 20px;
+    display:flex;
+    gap:12px;
+    align-items:center;
+    box-shadow: 0 20px 60px rgba(0,0,0,.35);
+    font: 600 14px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Arial;
+  }
+  #busy-overlay .spinner{
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 3px solid rgba(255,255,255,.25);
+    border-top-color: rgba(255,255,255,.95);
+    animation: spin 0.9s linear infinite;
+  }
+  #modal footer .btn.danger {
+    background: #dc2626;
+    color: #fff;
+    border: none;
+    margin-right: auto;
+  }
+  #modal footer .btn.danger:hover { background: #b91c1c; }
+</style>
+
 </head>
 
+
 <body>
-  <!-- TOP BAR -->
-  <div id="topbar">
-    <div class="brand">
-      <span id="sheets-status-badge" class="status-badge disconnected" title="Google Sheets no conectado">Sheets OFF</span>
-      Territorios
-    </div>
-        <div id="topbar-actions">
-      <div id="auth-box" class="auth-box">
-        <span id="auth-info" class="auth-hidden auth-user-label"></span>
 
-        <!-- Botón abrir login -->
-        <button id="btnAuthOpen" class="icon-btn primary" title="Acceder">
-          <span class="icon">👤</span>
-        </button>
+<!-- Botón flotante para mostrar/ocultar referencias en mobile -->
+<button id="btnReferencias" class="refs-toggle" aria-controls="referencias" aria-expanded="false" type="button">
+  Referencias
+</button>
 
-        <!-- Botón logout (se puede seguir usando internamente) -->
-        <button id="btnLogout" class="icon-btn auth-hidden" title="Salir">
-          <span class="icon">⏏</span>
-        </button>
+<!-- Botón flotante para activar/desactivar mi ubicación en tiempo real -->
+<button id="btnGeoToggle" class="geo-toggle" type="button" aria-pressed="false" title="Activar/Desactivar mi ubicación en tiempo real">
+  📍 Mi ubicación
+</button>
 
-        <!-- Menú desplegable cuando está logueado -->
-        <div id="auth-menu" class="auth-menu">
-          <button class="auth-menu-item" data-view="territorio">Territorio</button>
-          <button class="auth-menu-item" data-view="horas">Horas</button>
-          <button class="auth-menu-item" data-action="logout">Salir</button>
-        </div>
-      </div>
-    </div>
 
-  </div>
 
-  <!-- AVISO DISTANCIA -->
-  <div id="far-banner">⚠️ Estás a más de <strong>8 km</strong> del territorio. Las acciones quedaron desactivadas.</div>
+<div id="auth-bar">
+  <span id="auth-info" class="pill auth-hidden"></span>
+  <button id="btnAuthOpen" type="button">Acceder</button>
+  <button id="btnLogout" class="auth-hidden" type="button">Salir</button>
+  <button id="btnRefresh" type="button" title="Refrescar datos" aria-label="Refrescar datos">↻</button>
+</div>
 
-  <!-- MAPA -->
+
   <div id="map"></div>
 
-    <!-- PANEL DE HORAS -->
-  <div id="hours-panel" class="hours-panel" style="display:none">
-    <div class="hours-header">
-      <h2 class="hours-title">Horas del mes actual</h2>
-      <div id="hours-month-label" class="hours-month-label"></div>
-    </div>
-
-    <div id="hours-calendar" class="hours-calendar"></div>
-
-    <!-- Ventana de detalles del día -->
-    <div id="hours-day-details" class="hours-day-details" style="display:none">
-      <div class="hours-day-details-header">
-        <span id="hours-day-details-title" class="hours-day-details-title">Registros del día</span>
-        <button id="hours-day-details-close" class="hours-day-details-close" type="button">✕</button>
-      </div>
-      <div id="hours-day-details-body" class="hours-day-details-body">
-        <!-- acá se llenan los registros -->
-      </div>
-    </div>
-
-    <div class="hours-form">
-      <div id="hours-selected-date" class="hours-selected-date">
-        Seleccioná un día en el calendario
-      </div>
-
-      <label class="hours-label">
-        Horas
-        <input type="number" id="hours-input" min="0" step="0.25" placeholder="Ej: 1.5">
-      </label>
-
-      <label class="hours-label">
-        Observación
-        <textarea id="hours-note" rows="2" placeholder="Visitas, estudios, territorios..."></textarea>
-      </label>
-
-      <button id="hours-add-btn" class="btn-primary" type="button">
-        Agregar
-      </button>
-    </div>
-
-    <div class="hours-footer">
-      <span>Total del mes:</span>
-      <strong id="hours-total">0</strong> h
-    </div>
-  </div>
-
-
-  <!-- FAB NÚMEROS (flotante, sobre el mapa, arriba de Ruta) -->
-  <button id="btnToggleLabels" class="icon-btn fab-labels" title="Mostrar / ocultar números" style="display:none">
-    <span class="icon">🔢</span>
-  </button>
-
-  <!-- Botón Info flotante (solo territorios) -->
-  <button id="btn-info-toggle" class="icon-btn fab-info" data-active="off" title="Información de colores" style="display:none">
-    <span class="icon" id="icon-info">ℹ️</span>
-  </button>
-
-  <!-- BOTTOM BAR -->
-  <div id="bottombar">
-    <!-- GPS -->
-    <button id="btn-geo" class="bb-item" data-active="off" title="Mi posición">
-      <div class="bb-icon" id="icon-geo">📍</div>
-      <div class="bb-label">Posición</div>
-    </button>
-
-    <!-- Predicación semanal -->
-    <button id="btn-weekly-panel" class="bb-item" data-active="off" title="Predicación semanal">
-      <div class="bb-icon" id="icon-weekly">📅</div>
-      <div class="bb-label">Predicar</div>
-    </button>
-
-    <!-- Casas de familias -->
-    <button id="btn-houses-toggle" class="bb-item" data-active="off" title="Casas de familias">
-      <div class="bb-icon" id="icon-houses">🏠</div>
-      <div class="bb-label">Casas</div>
-    </button>
-
-    <!-- Revisitas / Estudios (solo logueado) -->
-    <button id="btn-revisitas" class="bb-item" data-active="off" title="Revisitas y Estudios" style="display:none">
-      <div class="bb-icon" id="icon-revisitas">📒</div>
-      <div class="bb-label">Revisitas</div>
-    </button>
-
-    <!-- Territorios ON/OFF (solo logueado) -->
-    <button id="btn-territorios-toggle" class="bb-item" data-active="on" title="Mostrar/Ocultar territorios" style="display:none">
-      <div class="bb-icon" id="icon-territorios">🗺️</div>
-      <div class="bb-label">Territorios</div>
-    </button>
-
-    <!-- Indicaciones / ruta -->
-    <button id="btn-route-toggle" class="bb-item" data-active="off" title="Indicaciones">
-      <div class="bb-icon" id="icon-route">🚗</div>
-      <div class="bb-label">Ruta</div>
-    </button>
-
-    <!-- Referencias / info colores (solo logueado) -->
-    <button id="btn-info-toggle" class="bb-item" data-active="off" title="Información de colores" style="display:none">
-      <div class="bb-icon" id="icon-info">ℹ️</div>
-      <div class="bb-label">Info</div>
-    </button>
-
-    <!-- No visitar: toggle visible para todos -->
-    <button id="btn-novistar-toggle" class="bb-item" data-active="off" title="Mostrar/Ocultar No visitar">
-      <div class="bb-icon" id="icon-novistar">⛔</div>
-      <div class="bb-label">No visitar</div>
-    </button>
-  </div>
-
-  <!-- PANEL SEMANAL flotante -->
-  <div id="weekly-panel" class="weekly-panel" hidden>
-    <div class="panel-actions">
-      <button id="weekly-minimize" class="panel-action" type="button" title="Minimizar">➖</button>
-    </div>
-    <div class="weekly-title">Predicación Semanal</div>
-    <div class="weekly-hint">Elegí una salida para verla en el mapa, o mostrarlas todas:</div>
-
-    <button id="weekly-show-all" class="weekly-item weekly-item-all" type="button">
-      👥 Mostrar todas las salidas
-    </button>
-
-    <div id="weekly-list" class="weekly-list"></div>
-  </div>
-
-  <!-- Panel flotante para Revisitas / Estudios -->
-  <div id="revisita-panel" class="side-panel" hidden>
-    <div class="side-panel-header">
-      <div class="side-panel-title">Revisitas / Estudios</div>
-      <button id="btn-revisitas-new-map" class="btn-sub" type="button">
-        ➕ Nueva en mapa
-      </button>
-    </div>
-    <div id="revisita-list" class="side-panel-body">
-      <!-- acá van las revisitas en forma de lista -->
-    </div>
-  </div>
-
-
-  <!-- REFERENCIAS -->
   <div id="referencias">
-    <h3>Referencias</h3>
-    <div class="referencia"><span class="color-box azul"></span>Se está trabajando</div>
-    <div class="referencia"><span class="color-box verde"></span>Finalizado &lt; 2 meses</div>
-    <div class="referencia"><span class="color-box amarillo"></span>Finalizado 2-3 meses</div>
-    <div class="referencia"><span class="color-box rojo"></span>Finalizado 3+ meses</div>
-  </div>
-
-  <!-- LOGIN MODAL -->
-  <div id="login-overlay" class="overlay">
-    <div id="login-modal" class="modal-card" role="dialog" aria-modal="true" aria-labelledby="login-title">
-      <header class="modal-header">
-        <h3 id="login-title" class="modal-title">Iniciar sesión</h3>
-        <button id="login-close" class="modal-close-btn" title="Cerrar">✕</button>
-      </header>
-
-      <div class="modal-body">
-        <div class="form-field">
-          <label for="inUser" class="form-label">Usuario</label>
-          <input id="inUser" class="form-input" autocomplete="username" />
-        </div>
-
-        <div class="form-field">
-          <label for="inPass" class="form-label">Contraseña</label>
-          <input id="inPass" class="form-input" type="password" autocomplete="current-password" />
-        </div>
-
-        <div class="form-actions">
-          <button id="login-cancel" class="btn-cancel" type="button">Cancelar</button>
-          <button id="btnLogin" class="btn-primary" type="button">Ingresar</button>
-        </div>
-      </div>
+    <h3 style="margin:0 0 8px 0">Referencias</h3>
+    <div class="referencias">
+      <div class="referencia"><div class="color-box gris"></div><span>Sin registros</span></div>
+      <div class="referencia"><div class="color-box verde"></div><span>Registrado hace menos de 2 meses</span></div>
+      <div class="referencia"><div class="color-box amarillo"></div><span>Registrado entre 2 y 3 meses</span></div>
+      <div class="referencia"><div class="color-box rojo"></div><span>Registrado hace más de 3 meses</span></div>
     </div>
   </div>
 
-  <!-- MODAL REGISTRAR TERRITORIO -->
-  <div id="territorio-overlay" class="overlay">
-    <div id="territorio-modal" class="modal-card" role="dialog" aria-modal="true" aria-labelledby="territorio-title">
-      <header class="modal-header">
-        <h3 id="territorio-title" class="modal-title">Registrar territorio</h3>
-        <button id="territorio-close" class="modal-close-btn" title="Cerrar">✕</button>
-      </header>
-      <div id="territorio-body" class="modal-body">
-        <!-- dinámico -->
+  <!-- Modal de registro -->
+  <div id="backdrop" class="modal-backdrop"></div>
+  <div id="modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <header><span id="modal-title">Registrar territorio</span></header>
+    <div class="content">
+      <div class="row">
+        <label for="campoTerritorio">Territorio</label>
+        <input id="campoTerritorio" type="text" readonly />
+      </div>
+      <div class="row">
+        <label for="campoPoligono">Manzana</label>
+        <input id="campoPoligono" type="text" readonly />
+      </div>
+      <div class="row">
+        <label for="campoCapitan">Capitán</label>
+        <input id="campoCapitan" type="text" readonly />
+      </div>
+      <div class="row">
+        <label for="campoFecha">Fecha</label>
+        <input id="campoFecha" type="date" />
+      </div>
+      <div class="row">
+        <label for="campoEstado">¿Finalizó?</label>
+        <select id="campoEstado">
+          <option value="Si">Si</option>
+          <option value="No">No</option>
+        </select>
+      </div>
+      <div class="row">
+        <label for="campoNotas">Comentario</label>
+        <textarea id="campoNotas" rows="3" placeholder="Observaciones opcionales"></textarea>
       </div>
     </div>
+    <footer>
+      <button class="btn secondary" id="btnCancelar">Cancelar</button>
+      <button class="btn" id="btnGuardar">Guardar registro</button>
+    </footer>
   </div>
 
-  <!-- MODAL Revisita / Estudio -->
-  <div id="revisita-overlay" class="overlay" style="display:none;">
-    <div class="overlay-box small-box">
-      <div class="overlay-header">
-        <div class="overlay-title">Revisita / Estudio</div>
-        <button id="revisita-close" class="overlay-close-btn">✖</button>
-      </div>
-      <div id="revisita-body" class="overlay-body">
-        <!-- acá inyectamos el formulario dinámicamente con buildRevisitaFormHTML(...) -->
-      </div>
-    </div>
-  </div>
-
-  <!-- TOAST -->
-  <div id="territorio-toast" class="toast"></div>
-
-<script>
-  // ====== Toast ======
-  function showToast(msg){
-    const t = document.getElementById("territorio-toast");
-    t.textContent = msg || "";
-    t.style.display = msg ? "block" : "none";
-    if(msg){
-      clearTimeout(showToast._t);
-      showToast._t = setTimeout(()=>t.style.display="none", 3000);
+  
+  <script>
+    // Lista editable de capitanes (podés cambiar estos nombres cuando quieras)
+    const CAPITANES = [
+      "Christian Mermot","Esteban Longo","Oscar Alcalde","Sebastian Barbiel","Juan Toyos",
+      "Leonardo De Los Santos","Pablo Andrade","Gilberto Andrade","Richard Guzmán","Federico Callorda",
+      "Nicolás Rodriguez","Ernesto dos Santos","Santiago Varaldo","Guillermo Lobato","Rubén Álvarez"];
+    function renderCapitanes() {
+      const dl = document.getElementById("listaCapitanes");
+      if (!dl) return;
+      dl.innerHTML = "";
+      for (const nombre of CAPITANES) {
+        const opt = document.createElement("option");
+        opt.value = nombre;
+        dl.appendChild(opt);
+      }
     }
-  }
-  window.showToast = showToast;
+    document.addEventListener("DOMContentLoaded", renderCapitanes);
+  </script>
 
-  // ====== DOM refs ======
-  const btnAuthOpen    = document.getElementById('btnAuthOpen');
-  const btnLogout      = document.getElementById('btnLogout');
-  const overlayLogin   = document.getElementById('login-overlay');
-  const btnLogin       = document.getElementById('btnLogin');
-  const inUser         = document.getElementById('inUser');
-  const inPass         = document.getElementById('inPass');
-  const btnCloseLogin  = document.getElementById('login-close');
-  const btnCancelLogin = document.getElementById('login-cancel');
+  <script src="poligonos_salinas.js"></script>
 
-  const btnGeo         = document.getElementById('btn-geo');
-  const iconGeo        = document.getElementById('icon-geo');
-
-  const btnWeekly      = document.getElementById('btn-weekly-panel');
-  const iconWeekly     = document.getElementById('icon-weekly');
-  const weeklyPanel    = document.getElementById('weekly-panel');
-  const weeklyList     = document.getElementById('weekly-list');
-  const weeklyMinimize = document.getElementById('weekly-minimize');
-
-  const btnAllWeekly   = document.getElementById('weekly-show-all');
-
-  const btnHouses      = document.getElementById('btn-houses-toggle');
-  const iconHouses     = document.getElementById('icon-houses');
-
-  const btnRevisitas   = document.getElementById('btn-revisitas');
-  const iconRevisitas  = document.getElementById('icon-revisitas');
-  const panelRevisitas = document.getElementById("revisita-panel");
-  const revisitaPanel  = document.getElementById('revisita-panel');
-  const revisitaList   = document.getElementById('revisita-list');
-  const revisitaShowAll= document.getElementById('revisita-show-all');
-
-  const btnTerritorios = document.getElementById('btn-territorios-toggle');
-  const iconTerritorios= document.getElementById('icon-territorios');
-
-  const btnLabels      = document.getElementById('btnToggleLabels');
-  const iconLabels     = document.getElementById('icon-labels');
-
-  const btnRoute       = document.getElementById('btn-route-toggle');
-  const iconRoute      = document.getElementById('icon-route');
-
-  const btnInfo        = document.getElementById('btn-info-toggle');
-  const iconInfo       = document.getElementById('icon-info');
-  const referenciasBox = document.getElementById('referencias');
-
-  const territorioOverlay = document.getElementById('territorio-overlay');
-  const territorioClose   = document.getElementById('territorio-close');
-
-  const loginOverlay      = document.getElementById('login-overlay');
-
-  const revisitaOverlay = document.getElementById('revisita-overlay');
-  const revisitaClose   = document.getElementById('revisita-close');
-  const revisitaBody    = document.getElementById('revisita-body');
-
-  const novOverlay   = document.getElementById('novistar-overlay');
-  const novModal     = document.getElementById('novistar-modal');
-  const novCloseBtn  = document.getElementById('novistar-close');
-  const novCancelBtn = document.getElementById('novistar-cancel');
-  const novSaveBtn   = document.getElementById('novistar-save');
-  const novForm      = document.getElementById('novistar-form');
-
-  const novLat = document.getElementById('novistar-lat');
-  const novLng = document.getElementById('novistar-lng');
-  const novDir = document.getElementById('novistar-direccion');
-  const novMot = document.getElementById('novistar-motivo');
-  const novCom = document.getElementById('novistar-comentario');
-
-  // ====== Modal cerrar ======
-  if (territorioClose){
-    territorioClose.addEventListener('click', ()=>{
-      territorioOverlay.style.display='none';
-    });
-  }
-  if (territorioOverlay){
-    territorioOverlay.addEventListener('click',(e)=>{
-      if (e.target===territorioOverlay) territorioOverlay.style.display='none';
-    });
-  }
-  if (loginOverlay){
-    loginOverlay.addEventListener('click',(e)=>{
-      if (e.target===loginOverlay) loginOverlay.style.display='none';
-    });
-  }
-  if (revisitaClose){
-    revisitaClose.addEventListener('click', ()=>{
-      revisitaOverlay.style.display='none';
-    });
-  }
-  if (revisitaOverlay){
-    revisitaOverlay.addEventListener('click',(e)=>{
-      if (e.target===revisitaOverlay) revisitaOverlay.style.display='none';
-    });
-  }
-
-  // Minimizar con el botón
-  if (weeklyMinimize) {
-    weeklyMinimize.addEventListener('click', () => minimizePanel(weeklyPanel));
-  }
-
-  // Restaurar al tocar el "chip" (cuando está minimizado)
-  weeklyPanel.addEventListener('click', (e) => {
-    if (weeklyPanel.classList.contains('minimized')) {
-      if (e.target && e.target.id === 'weekly-minimize') return;
-      restorePanel(weeklyPanel);
-    }
-  });
-
-  // ===== No visitar modal =====
-  function openNovistarModal({ lat, lng }) {
-    const novOverlay = document.getElementById('novistar-overlay');
-    const novLat     = document.getElementById('novistar-lat');
-    const novLng     = document.getElementById('novistar-lng');
-    const novDir     = document.getElementById('novistar-direccion');
-    const novMot     = document.getElementById('novistar-motivo');
-    const novCom     = document.getElementById('novistar-comentario');
-
-    if (!novOverlay || !novLat || !novLng || !novDir || !novMot || !novCom) {
-      console.error('Modal No Visitar no está inicializado en el DOM.');
-      window.showToast?.('Error: el modal no está listo. Recargá la página.');
-      return;
+  <script>
+    // ===== Helpers de ID =====
+    // canonId: normaliza espacios alrededor de | y - pero conserva el ID completo
+    function canonId(x) {
+      return String(x ?? '')
+        .trim()
+        .replace(/\s*\|\s*/g, '|')
+        .replace(/\s*-\s*/g, '-')
+        .replace(/\s+/g, ' ');
     }
 
-    novLat.value = lat ?? '';
-    novLng.value = lng ?? '';
-    novDir.value = '';
-    novMot.value = 'agresivo';
-    novCom.value = '';
-
-    novOverlay.style.display = 'flex';
-  }
-
-  function closeNovistarModal(){
-    const overlay = document.getElementById('novistar-overlay');
-    const modal   = document.getElementById('novistar-modal');
-    if (overlay) overlay.style.display = 'none';
-    if (modal)   modal.style.display   = 'none';
-    const btn = document.getElementById('btn-novistar-toggle');
-    if (btn) btn.setAttribute('data-active','off');
-  }
-
-  function updateLabelsFabVisibility(){
-    const role = window.AuthApp?.getRole?.() || "";
-    const logged = !!(window.AuthApp?.getUsername?.());
-    const territoriosOn = (window.MapApp?.areTerritoriosVisible?.() ?? (document.getElementById('btn-territorios-toggle')?.getAttribute('data-active')==='on'));
-    const show = logged && territoriosOn && (role === "admin" || role === "capitan");
-    if (btnLabels) btnLabels.style.display = show ? "" : "none";
-  }
-
-    function updateInfoFabVisibility(){
-    if (!btnInfo) return;
-    const role = window.AuthApp?.getRole?.() || "";
-    const logged = !!(window.AuthApp?.getUsername?.());
-    const territoriosOn = (window.MapApp?.areTerritoriosVisible?.()
-          ?? (document.getElementById('btn-territorios-toggle')?.getAttribute('data-active')==='on'));
-    const show = logged && territoriosOn && (role === "admin" || role === "capitan");
-    btnInfo.style.display = show ? "" : "none";
-    if (!show){
-      btnInfo.setAttribute("data-active","off");
-      if (iconInfo) iconInfo.textContent = "ℹ️";
-      if (referenciasBox) referenciasBox.style.display = "none";
+    // idKey: la key del Map ES el ID canónico completo (ej: "1007|142", "304-A")
+    // Debe ser IDÉNTICA a la función canonId_ del backend (Apps Script)
+    function idKey(x) {
+      return canonId(x);
     }
-  }
 
-
-  // Cerrar clic fuera de la tarjeta
-  novOverlay?.addEventListener('click', (e) => {
-    if (e.target === novOverlay) closeNovistarModal();
-  });
-
-  // Cerrar con ESC
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && novOverlay && novOverlay.style.display === 'flex') {
-      closeNovistarModal();
+    // Exponer globalmente (usado por repintarTerritorio y otros)
+    window.idKey = idKey;
+    window.normalizarId = idKey; // alias para compatibilidad
+    // ===== Centroide por área (definir ANTES de usar) =====
+    function centroidArea(coords) {
+      // coords: [[lat,lng], ...]
+      if (!Array.isArray(coords) || coords.length < 3) return null;
+      // Convertimos a (x=lng, y=lat) para fórmula planar
+      const pts = coords.map(c => [c[1], c[0]]);
+      const n = pts.length;
+      let area = 0, cx = 0, cy = 0;
+      for (let i=0; i<n; i++) {
+        const [x0,y0] = pts[i];
+        const [x1,y1] = pts[(i+1)%n];
+        const a = x0*y1 - x1*y0;
+        area += a;
+        cx += (x0 + x1) * a;
+        cy += (y0 + y1) * a;
+      }
+      area *= 0.5;
+      if (Math.abs(area) < 1e-12) return null;
+      cx /= (6*area); cy /= (6*area);
+      return [cy, cx]; // [lat,lng]
     }
-  });
 
-  // Guardar No Visitar
-  novForm?.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const payload = {
-      lat: parseFloat(novLat.value),
-      lng: parseFloat(novLng.value),
-      direccion: novDir.value.trim(),
-      motivo: novMot.value,
-      comentario: novCom.value.trim(),
-      fecha: new Date().toISOString(),
-      user: (typeof AuthApp !== "undefined" && AuthApp.getUsername ? (AuthApp.getUsername() || "anon") : "anon")
+    // ===== Vistas =====
+    const centrado = [-34.77621131806037, -55.848931306524335];
+    const centrosPorVista = {
+      0: [-34.81, -55.93],
+1: [-34.81336542548195, -55.94933026500102],
+      2: [-34.82008935931963, -55.93356006777914],
+      3: [-34.81338539561594, -55.932902226529094],
+      4: [-34.81235461487246, -55.920060714757625],
+      5: [-34.80399990239286, -55.916780479198835],
+      6: [-34.80905521388421, -55.916027280722815],
+      7: [-34.80517799529366, -55.90668192039635],
+    };
+    const territoriosPorVista = {
+      1: [1,2,3],
+      2: [4,6,8],
+      3: [5,7,9],
+      4: [10,11,12],
+      5: [13,14,15],
+      6: [13,14,15,10,11,12],
+      7: [16,17,18,19,20,21,22],
+    };
+    function getVistaFromURL() {
+      const p = new URLSearchParams(location.search);
+      const n = parseInt(p.get('vista'), 10);
+      return (n >= 0 && n <= 7) ? n : 1;
+    }
+    function toNumeroTerritorio(t) {
+      const s = window.idKey ? window.idKey(t) : String(t ?? "").trim();
+      const n = parseInt(s, 10);
+      return Number.isFinite(n) ? n : null;
+    }
+    function centroide(coords) {
+      // centroide "spherical" aproximado (fallback)
+      let x=0, y=0, z=0, n=coords.length;
+      for (const c of coords) {
+        const lat = c[0] * Math.PI/180;
+        const lon = c[1] * Math.PI/180;
+        x += Math.cos(lat) * Math.cos(lon);
+        y += Math.cos(lat) * Math.sin(lon);
+        z += Math.sin(lat);
+      }
+      x/=n; y/=n; z/=n;
+      const lon = Math.atan2(y, x);
+      const hyp = Math.sqrt(x*x + y*y);
+      const lat = Math.atan2(z, hyp);
+      return [lat*180/Math.PI, lon*180/Math.PI];
+    }
+
+    // ===== Fuente de datos (JSON desde Apps Script, sin CSV) =====
+// Apps Script redirige (302) y la URL final pierde los query params cuando se usa fetch().
+// Por eso usamos JSONP como método principal: el parámetro "callback" sobrevive la redirección
+// porque va embebido en la URL del <script>, no en headers.
+async function cargarDatosDesdeBackend() {
+  const base = (typeof WEBHOOK_URL === 'string' && WEBHOOK_URL) ? WEBHOOK_URL : '';
+  if (!base) return [];
+
+  // La URL base ya tiene la ruta del script; añadimos read=stats_rt
+  const url = base + (base.includes('?') ? '&' : '?') + 'read=stats_rt';
+
+  // 1) JSONP primero (sobrevive redirecciones de Apps Script)
+  try {
+    const items = await cargarDatosJSONP(url);
+    if (Array.isArray(items) && items.length > 0) return items;
+  } catch(_){}
+
+  // 2) Fallback: fetch directo (funciona si se despliega sin redirección)
+  try{
+    const r = await fetch(url, { cache: 'no-store', headers: { 'Accept': 'application/json' } });
+    if (r.ok) {
+      const data = await r.json();
+      return Array.isArray(data.items) ? data.items : [];
+    }
+  }catch(_){}
+
+  return [];
+}
+
+function cargarDatosJSONP(urlBase) {
+  return new Promise((resolve) => {
+    const cb = '__cbStats_' + Math.random().toString(36).slice(2);
+    const s = document.createElement('script');
+
+    const cleanup = () => {
+      try{ delete window[cb]; }catch(_){ window[cb]=undefined; }
+      if (s && s.parentNode) s.parentNode.removeChild(s);
     };
 
-    if (window.MapApp && typeof window.MapApp.saveNoVisitarSuggestion === "function") {
-      window.MapApp.saveNoVisitarSuggestion(payload);
-    } else {
-      window.showToast?.("Sugerencia enviada (mock).");
-      console.log("NoVisitar payload:", payload);
-    }
+    window[cb] = (payload) => {
+      cleanup();
+      try{
+        const items = (payload && Array.isArray(payload.items)) ? payload.items : [];
+        resolve(items);
+      }catch(_){
+        resolve([]);
+      }
+    };
 
-    closeNovistarModal();
+    const sep = urlBase.includes('?') ? '&' : '?';
+    s.src = urlBase + sep + 'callback=' + encodeURIComponent(cb);
+    s.async = true;
+    s.onerror = () => { cleanup(); resolve([]); };
+    document.head.appendChild(s);
   });
-
-  // ====== Login modal ======
-  function openLogin(){
-    overlayLogin.style.display='flex';
-    inUser.focus();
-  }
-  function closeLogin(){
-    overlayLogin.style.display='none';
-  }
-
-  btnAuthOpen.addEventListener('click', openLogin);
-  btnCloseLogin.addEventListener('click', closeLogin);
-  btnCancelLogin.addEventListener('click', closeLogin);
-
-  btnLogin.addEventListener('click', () => {
-    const u = (inUser.value||'').trim();
-    const p = (inPass.value||'').trim();
-    if (!u || !p){
-      showToast('Ingresá usuario y contraseña');
-      return;
-    }
-    window.AuthApp.doLogin(u,p);
-    closeLogin();
-  });
-
-  btnLogout.addEventListener('click', () => {
-    window.AuthApp.logout();
-  });
-
-  // ====== Helpers responsive paneles ======
-  function isMobileViewport() {
-    return window.matchMedia("(max-width: 767px)").matches;
-  }
-  function minimizePanel(panelEl) {
-    panelEl.classList.add("minimized");
-  }
-  function restorePanel(panelEl) {
-    panelEl.classList.remove("minimized");
-  }
-
-    // ========= Helper: saber si hay usuario logueado =========
-  function isLogged(){
-    try {
-      return !!(window.AuthApp && typeof AuthApp.getUsername === "function" && AuthApp.getUsername());
-    } catch(e){
-      return false;
-    }
-  }
-
-  // ========= Cambiar vista Territorio / Horas =========
-  const mapEl = document.getElementById('map');
-  const hoursPanel = document.getElementById('hours-panel');
-
-  const calContainer = document.getElementById('hours-calendar');
-  const lblMonth     = document.getElementById('hours-month-label');
-  const lblSelected  = document.getElementById('hours-selected-date');
-  const inputHours   = document.getElementById('hours-input');
-  const inputNote    = document.getElementById('hours-note');
-  const btnAddHours  = document.getElementById('hours-add-btn');
-  const lblTotal     = document.getElementById('hours-total');
-  const detailsBox   = document.getElementById('hours-day-details');
-  const detailsTitle = document.getElementById('hours-day-details-title');
-  const detailsBody  = document.getElementById('hours-day-details-body');
-  const detailsClose = document.getElementById('hours-day-details-close');
-
-
-  const today = new Date();
-  let calYear = today.getFullYear();
-  let calMonth = today.getMonth(); // 0-11
-  let selectedDate = null; // "YYYY-MM-DD"
-
-  function getCurrentUser(){
-    try{
-      return (window.AuthApp && AuthApp.getUsername && AuthApp.getUsername()) || "";
-    }catch(e){
-      return "";
-    }
-  }
-
-  function getHoursKey(year, month){
-    const user = getCurrentUser() || "anon";
-    return `HORAS_${user}_${year}-${String(month+1).padStart(2,"0")}`;
-  }
-
-  function loadHoursData(year, month){
-    const key = getHoursKey(year, month);
-    try{
-      const raw = localStorage.getItem(key);
-      return raw ? JSON.parse(raw) : {};
-    }catch(e){
-      return {};
-    }
-  }
-
-  function saveHoursData(year, month, data){
-    const key = getHoursKey(year, month);
-    try{
-      localStorage.setItem(key, JSON.stringify(data));
-    }catch(e){}
-  }
-
-    function showDayDetails(dateStr){
-    if (!detailsBox || !detailsBody || !detailsTitle) return;
-    const data = loadHoursData(calYear, calMonth);
-    const entries = data[dateStr] || [];
-    const [y,m,d] = dateStr.split("-");
-
-    detailsTitle.textContent = `Registros del ${d}/${m}/${y}`;
-
-    if (!entries.length){
-      detailsBody.innerHTML = `<div class="hours-day-details-empty">Sin registros para este día.</div>`;
-    } else {
-      detailsBody.innerHTML = entries.map((e, idx) => {
-        const h = Number(e.hours || 0);
-        const note = (e.note || "").trim() || "<span class='hours-day-details-empty'>Sin observación</span>";
-        return `
-          <div class="hours-day-entry">
-            <div class="hours-day-entry-hours">${h.toLocaleString(undefined,{maximumFractionDigits:2})} h</div>
-            <div class="hours-day-entry-note">${note}</div>
-          </div>
-        `;
-      }).join("");
-    }
-
-    detailsBox.style.display = "block";
-  }
-
-  if (detailsClose){
-    detailsClose.addEventListener('click', ()=>{
-      detailsBox.style.display = "none";
-    });
-  }
-
-
-  function buildHoursCalendar(){
-    if (!calContainer) return;
-    const data = loadHoursData(calYear, calMonth);
-    calContainer.innerHTML = "";
-
-    const dayNames = ["L","M","X","J","V","S","D"];
-    dayNames.forEach(d=>{
-      const h = document.createElement('div');
-      h.className = "hours-day-header";
-      h.textContent = d;
-      calContainer.appendChild(h);
-    });
-
-    const first = new Date(calYear, calMonth, 1);
-    // Lunes = 0
-    let startWeekday = (first.getDay() + 6) % 7;
-    const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
-
-    for (let i=0; i<startWeekday; i++){
-      const empty = document.createElement('div');
-      calContainer.appendChild(empty);
-    }
-
-    let monthTotal = 0;
-
-    for (let day=1; day<=daysInMonth; day++){
-      const dateStr = `${calYear}-${String(calMonth+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
-      const entries = data[dateStr] || [];
-      const totalDay = entries.reduce((acc,e)=> acc + (Number(e.hours) || 0), 0);
-      monthTotal += totalDay;
-
-      const cell = document.createElement('div');
-      cell.className = "hours-day";
-      if (dateStr === selectedDate) cell.classList.add("selected");
-
-      const num = document.createElement('div');
-      num.className = "hours-day-number";
-      num.textContent = day;
-      cell.appendChild(num);
-
-      if (totalDay > 0){
-        const badge = document.createElement('div');
-        badge.className = "hours-day-total";
-        badge.textContent = totalDay.toLocaleString(undefined,{maximumFractionDigits:2});
-        cell.appendChild(badge);
-      }
-
-      cell.addEventListener('click', ()=>{
-        selectedDate = dateStr;
-        if (lblSelected){
-          const [y,m,d] = dateStr.split("-");
-          lblSelected.textContent = `Día seleccionado: ${d}/${m}/${y}`;
-        }
-        if (inputHours) inputHours.value = "";
-        if (inputNote)  inputNote.value  = "";
-
-        buildHoursCalendar();      // repinta calendario marcando seleccionado
-        showDayDetails(dateStr);   // muestra ventanita con registros del día
-      });
-
-
-      calContainer.appendChild(cell);
-    }
-
-    if (lblMonth){
-      const monthNames = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","setiembre","octubre","noviembre","diciembre"];
-      lblMonth.textContent = `${monthNames[calMonth]} ${calYear}`;
-    }
-    if (lblTotal){
-      lblTotal.textContent = monthTotal.toLocaleString(undefined,{maximumFractionDigits:2});
-    }
-  }
-
-  if (btnAddHours){
-    btnAddHours.addEventListener('click', ()=>{
-      if (!selectedDate){
-        window.showToast?.("Seleccioná primero un día en el calendario.");
-        return;
-      }
-      const h = Number(inputHours?.value || 0);
-      if (!h || h <= 0){
-        window.showToast?.("Ingresá una cantidad de horas mayor a 0.");
-        return;
-      }
-      const note = (inputNote?.value || "").trim();
-      const data = loadHoursData(calYear, calMonth);
-      if (!data[selectedDate]) data[selectedDate] = [];
-      data[selectedDate].push({ hours: h, note });
-       saveHoursData(calYear, calMonth, data);
-      if (inputHours) inputHours.value = "";
-      if (inputNote)  inputNote.value  = "";
-      buildHoursCalendar();
-      if (selectedDate){
-        showDayDetails(selectedDate);
-      }
-      window.showToast?.("Horas agregadas.");
-    });
-  }
-
-function setViewMode(mode){
-  if (!mapEl || !hoursPanel) return;
-
-  const btnRuta = document.getElementById("btnRoute");
-
-  if (mode === "horas"){
-    // Oculta mapa y muestra horas
-    mapEl.style.display = "none";
-    hoursPanel.style.display = "flex";
-
-    // Ocultar RUTA SIEMPRE
-    if (btnRuta) btnRuta.style.display = "none";
-
-    selectedDate = null;
-    if (lblSelected){
-      lblSelected.textContent = "Seleccioná un día en el calendario";
-    }
-
-    buildHoursCalendar();
-  } 
-  else {
-    // Volver a territorio
-    mapEl.style.display = "";
-    hoursPanel.style.display = "none";
-
-    // Mostrar Ruta nuevamente en vista territorio
-    if (btnRuta) btnRuta.style.display = "";
-  }
-}
-
-function enforceHideRouteIfInHours(){
-  const btnRuta = document.getElementById("btnRoute");
-  if (!btnRuta) return;
-
-  if (hoursPanel.style.display === "flex"){
-    btnRuta.style.display = "none";
-  }
 }
 
 
+    // ===== Modal / envío =====
+    const $modal = document.getElementById('modal');
+    const $backdrop = document.getElementById('backdrop');
+    const $campoTerritorio = document.getElementById('campoTerritorio');
+    const $campoPoligono = document.getElementById('campoPoligono');
+    const $campoCapitan = document.getElementById('campoCapitan');
+    const $campoFecha = document.getElementById('campoFecha');
+    const $campoEstado = document.getElementById('campoEstado');
+    const $campoNotas = document.getElementById('campoNotas');
+    const $btnCancelar = document.getElementById('btnCancelar');
+    const $btnGuardar = document.getElementById('btnGuardar');
+    function isAdmin(){
+      if (!window.AuthApp) return false;
+      const role = AuthApp.getRole && AuthApp.getRole();
+      const user = AuthApp.getUsername && AuthApp.getUsername();
+      const ADMINS = ['sinchausti','santiagoi1212','santiago'];
+      return role === 'admin' || ADMINS.includes(String(user||'').trim().toLowerCase());
+    }
 
+    function abrirModal(terr, polyId) {
+      $campoTerritorio.value = terr;
+      $campoPoligono.value   = polyId;
+      $campoCapitan.value    = (window.AuthApp && AuthApp.getUsername && AuthApp.getUsername()) || '';
+      $campoFecha.value      = new Date().toISOString().slice(0,10);
+      $campoEstado.value     = 'Si';
+      $campoNotas.value      = '';
 
+      // Mostrar/ocultar botón borrar según rol admin
+      let $btnBorrar = document.getElementById('btnBorrarUltimo');
+      if (!$btnBorrar) {
+        $btnBorrar = document.createElement('button');
+        $btnBorrar.id = 'btnBorrarUltimo';
+        $btnBorrar.className = 'btn danger';
+        $btnBorrar.textContent = '🗑 Borrar último registro';
+        $btnBorrar.type = 'button';
+        $modal.querySelector('footer').prepend($btnBorrar);
 
-  // ========= Menú hover sobre botón usuario =========
-  const authBox   = document.getElementById('auth-box');
-  const authMenu  = document.getElementById('auth-menu');
-
-  if (authBox && authMenu){
-    // Click en el área del usuario (icono + etiqueta)
-    authBox.addEventListener('click', (ev)=>{
-      // Si se hizo click dentro del propio submenú, dejamos que lo maneje el handler de abajo
-      if (ev.target.closest('#auth-menu')) return;
-
-      if (!isLogged()){
-        // Si no está logueado, abrir login
-        const btnAuthOpen = document.getElementById('btnAuthOpen');
-        btnAuthOpen && btnAuthOpen.click();
-        return;
+        $btnBorrar.addEventListener('click', async () => {
+          const id = $campoPoligono.value;
+          if (!confirm(`¿Borrar el último registro de la manzana "${id}"?`)) return;
+          try {
+            $btnBorrar.disabled = true;
+            showBusy('Borrando…');
+            const payload = JSON.stringify({
+              op: 'delete_last',
+              id,
+              user: AuthApp.getUsername(),
+              role: AuthApp.getRole()
+            });
+            const r = await fetch(WEBHOOK_URL, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8' },
+              body: new URLSearchParams({ payload })
+            });
+            const data = await r.json();
+            if (data.ok && data.deleted) {
+              (window.showToast || console.log)('Registro borrado ✅');
+              cerrarModal();
+              await init();
+            } else if (data.ok && !data.deleted) {
+              (window.showToast || console.log)('No había registro para borrar');
+              cerrarModal();
+            } else {
+              alert('Error: ' + (data.error || 'desconocido'));
+            }
+          } catch(e) {
+            alert('Error de red: ' + e.message);
+          } finally {
+            hideBusy();
+            $btnBorrar.disabled = false;
+          }
+        });
       }
+      $btnBorrar.style.display = isAdmin() ? 'inline-block' : 'none';
 
-      // Si está logueado, toggle de visibilidad del submenú
-      const visible = authMenu.style.display === "flex";
-      authMenu.style.display = visible ? "none" : "flex";
-    });
+      $backdrop.style.display = 'block';
+      $modal.style.display    = 'block';
+    }
+    function cerrarModal(){ $modal.style.display='none'; $backdrop.style.display='none'; }
+    $btnCancelar.addEventListener('click', cerrarModal);
+    $backdrop.addEventListener('click', (e)=>{ if(e.target===$backdrop) cerrarModal(); });
+    const WEBHOOK_URL = (window.APP_CONFIG && window.APP_CONFIG.WEBHOOK_URL) || "https://script.google.com/macros/s/AKfycbz3t0e03wMw6uJ-IsIIHmnvizMBRxeBF2Y7Et2uiTL-5d8L7di8uFA3HWkdw0xMLj0/exec";
 
-    // Clic fuera del auth-box => ocultar menú
-    document.addEventListener('click', (ev)=>{
-      if (!authBox.contains(ev.target)){
-        authMenu.style.display = "none";
-      }
-    });
+function showBusy(msg){
+  const ov = document.getElementById('busy-overlay');
+  const tx = document.getElementById('busy-text');
+  if (tx) tx.textContent = msg || 'Procesando…';
+  if (ov) ov.style.display = 'flex';
+}
+function hideBusy(){
+  const ov = document.getElementById('busy-overlay');
+  if (ov) ov.style.display = 'none';
+}
 
-    // Click en opciones del submenú
-    authMenu.addEventListener('click', (ev)=>{
-      const btn = ev.target.closest('.auth-menu-item');
-      if (!btn) return;
-
-      const view   = btn.dataset.view;
-      const action = btn.dataset.action;
-
-      if (view === "territorio"){
-        setViewMode("territorio");
-      } else if (view === "horas"){
-        setViewMode("horas");
-      } else if (action === "logout"){
-        btnLogout && btnLogout.click();
-      }
-
-      authMenu.style.display = "none";
-    });
+async function enviarAlSheet(rec) {
+  if (!WEBHOOK_URL) {
+    console.log("Registro simulado:", rec);
+    return { ok: true, simulated: true, territorio: String(rec.id || rec.territorio || ''), cantidad: null };
   }
 
+  const payloadStr = JSON.stringify(rec);
 
-  // ====== Estado local ======
-  let weeklyActive    = false;
+  // helper: JSONP
+  function fetchJsonp(url, cbParam = "callback", timeoutMs = 12000) {
+    return new Promise((resolve, reject) => {
+      const cbName = "cb_" + Math.random().toString(36).slice(2);
+      const sep = url.includes("?") ? "&" : "?";
+      const full = url + sep + new URLSearchParams({ [cbParam]: cbName });
 
+      let done = false;
+      const t = setTimeout(() => {
+        if (done) return;
+        done = true;
+        try { delete window[cbName]; } catch (_) {}
+        script.remove();
+        reject(new Error("JSONP timeout"));
+      }, timeoutMs);
 
-  // ====== Geolocalización ======
-  btnGeo.addEventListener('click', async () => {
-    const active = window.MapApp.isGeoActive();
-    if (active) {
-      window.MapApp.stopGeo();
-      btnGeo.setAttribute("data-active","off");
-      iconGeo.textContent = "📍";
-    } else {
-      window.MapApp.setWeeklyRoutingEnabled(weeklyActive);
-      const ok = await window.MapApp.startGeo();
-      if (ok){
-        btnGeo.setAttribute("data-active","on");
-        iconGeo.textContent = "📡";
-      }
-    }
-  });
-
-  document.addEventListener('geo:state', (e)=>{
-    const active = !!(e.detail && e.detail.active);
-    btnGeo.setAttribute("data-active", active ? "on" : "off");
-    iconGeo.textContent = active ? "📡" : "📍";
-  });
-
-  // ====== Mostrar / Ocultar Números ======
-  btnLabels.addEventListener('click', () => {
-    if (btnLabels.disabled) return;
-    const nowOn = window.MapApp.toggleLabels();
-    if (nowOn){
-      btnLabels.setAttribute("data-active","on");
-      if (iconLabels) iconLabels.textContent = "👁️";
-    } else {
-      btnLabels.setAttribute("data-active","off");
-      if (iconLabels) iconLabels.textContent = "👁️";
-    }
-  });
-
-  // ====== Mostrar / Ocultar Territorios ======
-  if (btnTerritorios){
-    btnTerritorios.addEventListener('click', () => {
-      const visibleNow = (window.MapApp && window.MapApp.toggleTerritoriosLayer)
-        ? !!window.MapApp.toggleTerritoriosLayer()
-        : false;
-
-      btnTerritorios.setAttribute("data-active", visibleNow ? "on" : "off");
-      if (iconTerritorios) iconTerritorios.textContent = visibleNow ? "🗺️" : "❌";
-
-      if (typeof updateLabelsFabVisibility === "function") updateLabelsFabVisibility();
-      if (typeof updateInfoFabVisibility === "function") updateInfoFabVisibility();
-      enforceHideRouteIfInHours();
-
-    });
-  }
-
-  // ====== Mostrar / Ocultar Casas ======
-  btnHouses.addEventListener('click', () => {
-    const visibleNow = window.MapApp.toggleHouses();
-    if (visibleNow){
-      btnHouses.setAttribute("data-active","on");
-      iconHouses.textContent = "🏠";
-    } else {
-      btnHouses.setAttribute("data-active","off");
-      iconHouses.textContent = "🏠";
-    }
-  });
-
-  // Inicializar visibilidad botón "Números"
-  updateLabelsFabVisibility();
-
-  // ====== Predicación Semanal ======
-  btnWeekly.addEventListener('click', async () => {
-    weeklyActive = !weeklyActive;
-    window.MapApp.setWeeklyRoutingEnabled(weeklyActive);
-
-    if (!weeklyActive){
-      btnWeekly.setAttribute("data-active","off");
-      iconWeekly.textContent = "📅";
-
-      weeklyPanel.hidden = true;
-      restorePanel(weeklyPanel);
-
-      if (window.MapApp.clearWeeklyLayer) {
-        window.MapApp.clearWeeklyLayer();
-      }
-      window.MapApp.clearWeeklyPoint();
-      window.MapApp.clearRoute();
-
-      btnRoute.setAttribute("data-active","off");
-      iconRoute.textContent = "🚗";
-      return;
-    }
-
-    btnWeekly.setAttribute("data-active","on");
-    iconWeekly.textContent = "✅";
-
-    restorePanel(weeklyPanel);
-    weeklyPanel.hidden = false;
-
-    window.MapApp.clearWeeklyPoint();
-    window.MapApp.clearRoute();
-    btnRoute.setAttribute("data-active","off");
-    iconRoute.textContent = "🚗";
-
-    weeklyList.innerHTML = "";
-    const items = window.MapApp.getWeeklyPoints();
-
-    if (btnAllWeekly){
-      btnAllWeekly.onclick = () => {
-        window.MapApp.showWeeklyLayerWithRoutingOnClick();
-        window.MapApp.clearWeeklyPoint();
-        window.MapApp.clearRoute();
-        btnRoute.setAttribute("data-active","off");
-        iconRoute.textContent = "🚗";
-        minimizePanel(weeklyPanel);
+      window[cbName] = (data) => {
+        if (done) return;
+        done = true;
+        clearTimeout(t);
+        try { delete window[cbName]; } catch (_) {}
+        script.remove();
+        resolve(data);
       };
-    }
 
-    items.forEach((it, idx) => {
-      const div = document.createElement('div');
-      div.className = 'weekly-item';
-      div.textContent = it.dia + ' ' + it.hora + ' | ' + it.label ;
-
-      div.addEventListener('click', async () => {
-        await window.MapApp.showSingleWeeklyPoint(idx);
-        if (weeklyActive && window.MapApp.isGeoActive()){
-          btnRoute.setAttribute("data-active","on");
-          iconRoute.textContent = "🛣️";
-        } else {
-          btnRoute.setAttribute("data-active","off");
-          iconRoute.textContent = "🚗";
-        }
-        minimizePanel(weeklyPanel);
-      });
-
-      weeklyList.appendChild(div);
-    });
-
-    enforceHideRouteIfInHours();
-
-  });
-
- 
-  // ====== Botón Ruta ======
-  btnRoute.addEventListener('click', async () => {
-    const isOn = btnRoute.getAttribute("data-active") === "on";
-
-    if (isOn) {
-      window.MapApp.clearRoute();
-      btnRoute.setAttribute("data-active","off");
-      iconRoute.textContent = "🚗";
-      return;
-    }
-
-    const ok = await window.MapApp.ensureRouteWithGeo();
-
-    if (ok) {
-      btnRoute.setAttribute("data-active","on");
-      iconRoute.textContent = "🛣️";
-    } else {
-      btnRoute.setAttribute("data-active","off");
-      iconRoute.textContent = "🚗";
-    }
-  });
-
-  // ====== Info colores toggle ======
-  btnInfo.addEventListener('click', ()=>{
-    const active = btnInfo.getAttribute("data-active") === "on";
-    if (active){
-      btnInfo.setAttribute("data-active","off");
-      iconInfo.textContent = "ℹ️";
-      referenciasBox.style.display = "none";
-    } else {
-      btnInfo.setAttribute("data-active","on");
-      iconInfo.textContent = "❌";
-      referenciasBox.style.display = "block";
-    }
-  });
-
-  // ====== Init ======
-  (async function boot(){
-    const ok = await (async function waitFor(cond, timeoutMs){
-      const start = Date.now();
-      return new Promise((resolve)=>{
-        (function loop(){
-          if (cond()) return resolve(true);
-          if (Date.now() - start > timeoutMs) return resolve(false);
-          requestAnimationFrame(loop);
-        })();
-      });
-    })(() => !!window.MapApp, 4000);
-
-    if (!ok || !window.MapApp){
-      console.error('MapApp no está disponible. Revisá errores de app-map.js.');
-      showToast('No se pudo inicializar el mapa.');
-      return;
-    }
-
-    await window.MapApp.init();
-    await window.MapApp.ready;
-
-    if (typeof btnLabels !== 'undefined' && btnLabels) {
-      btnLabels.disabled = false;
-      btnLabels.classList.remove("bb-disabled");
-    }
-
-        // restaurar sesión (esto ajusta UI según rol)
-    await window.AuthApp.restore();
-    updateLabelsFabVisibility();
-
-  })();
-</script>
-
-<!-- Modal No Visitar -->
-<div id="novistar-overlay">
-  <div class="modal-card">
-    <div class="modal-header">
-      <div class="modal-title">Sugerir "No visitar"</div>
-      <button id="novistar-close" class="modal-close-btn" type="button">✕</button>
-    </div>
-    <div class="modal-body">
-      <form id="novistar-form">
-        <input type="hidden" id="novistar-lat">
-        <input type="hidden" id="novistar-lng">
-
-        <label for="novistar-comentario">Comentario</label>
-        <textarea id="novistar-comentario"></textarea>
-
-        <div class="form-actions">
-          <button id="novistar-save" class="btn-primary" type="button">Guardar</button>
-        </div>
-      </form>
-    </div>
-  </div>
-</div>
-
-<script>
-(function(){
-  function qs(id){ return document.getElementById(id); }
-  function setSheetsCsvStatus(ok){
-    const el = qs('sheets-status-badge');
-    if(!el) return;
-    el.classList.remove('ok','disconnected');
-    if(ok){
-      el.classList.add('ok');
-      el.textContent = 'Sheets ON';
-      el.title = 'Google Sheets conectado';
-    } else {
-      el.classList.add('disconnected');
-      el.textContent = 'Sheets OFF';
-      el.title = 'Google Sheets no conectado o no publicado';
-    }
-  }
-  window.setSheetsCsvStatus = setSheetsCsvStatus;
-
-  async function checkOnce(){
-    try{
-      const cfg = window.APP_CONFIG || {};
-      const url = cfg.SHEETS_TERRITORIOS_CSV_URL;
-      if(!url){ setSheetsCsvStatus(false); return; }
-      const res = await fetch(url, { cache: 'no-store', redirect: 'follow' });
-      setSheetsCsvStatus(res && res.ok);
-    }catch(e){
-      setSheetsCsvStatus(false);
-    }
-  }
-
-  function monitorSheetsCsv(){
-    checkOnce();
-    setInterval(checkOnce, 5 * 60 * 1000);
-  }
-
-  if(document.readyState === 'loading'){
-    document.addEventListener('DOMContentLoaded', monitorSheetsCsv);
-  }else{
-    monitorSheetsCsv();
-  }
-})();
-</script>
-
-<!-- Sheets help overlay -->
-<div id="sheets-help-overlay" class="overlay" style="display:none">
-  <div class="overlay-box">
-    <div class="overlay-header">
-      <h3 class="overlay-title">Conectar Google Sheets (CSV)</h3>
-      <button class="overlay-close-btn" onclick="closeSheetsHelp()">Cerrar</button>
-    </div>
-    <div class="overlay-body">
-      <ol style="margin:0; padding-left:18px">
-        <li>En tu Google Sheet, ve a <strong>Archivo → Publicar en la web</strong>.</li>
-        <li>Seleccioná la <strong>pestaña</strong> que usa el mapa (la que contiene los datos).</li>
-        <li>Formato: <strong>CSV</strong> y publicá. Copiá el enlace generado.</li>
-        <li>Verificá que el enlace contenga <code>gid=&lt;número&gt;</code> de esa pestaña.</li>
-        <li>Pegá ese enlace en <code>APP_CONFIG.SHEETS_TERRITORIOS_CSV_URL</code> o debajo para probar.</li>
-      </ol>
-      <hr style="border:none; border-top:1px solid #e5e7eb; margin:12px 0">
-      <div style="display:grid; gap:10px">
-        <label>GID de la pestaña (opcional para construir URL rápidamente)
-          <input id="sheets-gid-input" placeholder="Ej: 1217453780" style="width:100%">
-        </label>
-        <button class="btn" onclick="buildCsvUrlFromGid()">Construir URL CSV desde GID</button>
-        <label>URL CSV construida / actual
-          <input id="sheets-url-output" style="width:100%" readonly>
-        </label>
-        <div style="display:flex; gap:8px; flex-wrap:wrap">
-          <button class="btn" onclick="saveSheetsUrlToConfig()">Usar esta URL ahora</button>
-          <button class="btn" onclick="copyCurrentSheetsUrl()">Copiar URL actual</button>
-          <button class="btn" onclick="recheckSheetsStatus()">Revisar estado</button>
-          <a id="sheets-open-url" class="btn" target="_blank" href="#">Abrir URL</a>
-        </div>
-        <p class="hint">Si la URL devuelve 404/403, asegurate de que el Sheet esté <em>publicado</em> y que el GID sea el de la pestaña correcta.</p>
-      </div>
-    </div>
-  </div>
-</div>
-
-<script>
-(function(){
-  function qs(id){ return document.getElementById(id); }
-  function getAppCfg(){ return window.APP_CONFIG || {}; }
-
-  window.openSheetsHelp = function(){
-    const o = qs('sheets-help-overlay');
-    if(!o) return;
-    const url = (getAppCfg().SHEETS_TERRITORIOS_CSV_URL || "").trim();
-    const out = qs('sheets-url-output');
-    if (out) out.value = url;
-    const link = qs('sheets-open-url');
-    if (link) link.href = url || "#";
-    o.style.display = "flex";
-  };
-
-  window.closeSheetsHelp = function(){
-    const o = qs('sheets-help-overlay');
-    if(!o) return;
-    o.style.display = "none";
-  };
-
-  window.buildCsvUrlFromGid = function(){
-    const gid = (qs('sheets-gid-input')?.value || "").trim();
-    if(!gid){ alert("Ingresá un GID numérico de la pestaña"); return; }
-    const url = "https://docs.google.com/spreadsheets/d/e/2PACX-<TU_ID_PUBLICACION>/pub?gid=" + encodeURIComponent(gid) + "&single=true&output=csv";
-    const out = qs('sheets-url-output');
-    if(out){ out.value = url; }
-    const link = qs('sheets-open-url');
-    if(link){ link.href = url; }
-  };
-
-  window.copyCurrentSheetsUrl = async function(){
-    const out = qs('sheets-url-output');
-    const v = (out?.value || "").trim();
-    if(!v){ alert("No hay URL para copiar"); return; }
-    try{
-      await navigator.clipboard.writeText(v);
-      alert("URL copiada al portapapeles");
-    }catch(e){
-      console.warn(e);
-      out.select(); document.execCommand("copy");
-      alert("URL copiada (fallback)");
-    }
-  };
-
-  window.recheckSheetsStatus = async function(){
-    try{
-      const url = (qs('sheets-url-output')?.value || "").trim() || (getAppCfg().SHEETS_TERRITORIOS_CSV_URL || "").trim();
-      if(!url){ window.setSheetsCsvStatus?.(false); return; }
-      const res = await fetch(url, { cache: 'no-store', redirect: 'follow' });
-      const ok = !!(res && res.ok);
-      window.setSheetsCsvStatus?.(ok);
-      if(ok){ alert("Conexión OK"); } else { alert("Sigue sin conectar"); }
-    }catch(e){
-      window.setSheetsCsvStatus?.(false);
-      alert("Error al chequear");
-    }
-  };
-
-  function initBadgeClick(){
-    const badge = qs('sheets-status-badge');
-    if(!badge) return;
-    badge.style.cursor = "pointer";
-    badge.addEventListener('click', ()=>{
-      const isOff = badge.classList.contains('disconnected');
-      if(isOff){ openSheetsHelp(); }
-      else {
-        const url = getAppCfg().SHEETS_TERRITORIOS_CSV_URL || "";
-        if(url){
-          navigator.clipboard?.writeText(url).then(()=>{
-            badge.title = "URL copiada";
-          }).catch(()=>{ badge.title = "No se pudo copiar"; });
-        } else {
-          openSheetsHelp();
-        }
-      }
+      const script = document.createElement("script");
+      script.src = full;
+      script.onerror = () => {
+        if (done) return;
+        done = true;
+        clearTimeout(t);
+        try { delete window[cbName]; } catch (_) {}
+        script.remove();
+        reject(new Error("JSONP error"));
+      };
+      document.head.appendChild(script);
     });
   }
 
-  if(document.readyState === 'loading'){
-    document.addEventListener('DOMContentLoaded', initBadgeClick);
-  }else{
-    initBadgeClick();
-  }
-})();
-</script>
+  try {
+    // 1) POST (preferido)
+    const body = new URLSearchParams({ payload: payloadStr });
+    const r = await fetch(WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded;charset=utf-8" },
+      body
+    });
 
-<script>
-(function(){
-  function qs(id){ return document.getElementById(id); }
-  function getAppCfg(){ return window.APP_CONFIG || (window.APP_CONFIG = {}); }
-
-  window.saveSheetsUrlToConfig = async function(){
-    const inp = qs('sheets-url-output');
-    const v = (inp?.value || "").trim();
-    if(!v){ alert("Ingresá una URL CSV válida primero."); return; }
-    const cfg = getAppCfg();
-    cfg.SHEETS_TERRITORIOS_CSV_URL = v;
-    try { localStorage.setItem('APP_CONFIG.SHEETS_TERRITORIOS_CSV_URL', v); } catch(e) {}
-    try{
-      if (typeof window.cargarDatosDesdeSheets === 'function'){
-        await window.cargarDatosDesdeSheets();
-        alert("URL aplicada y datos recargados.");
-      } else {
-        alert("URL aplicada. Recargá los datos desde el panel o refrescá la página.");
-      }
-    }catch(e){
-      console.warn(e);
-      alert("URL aplicada. Si no ves cambios, refrescá la página.");
+    // Si el navegador bloqueó CORS, r.ok puede ser false o incluso lanzar excepción arriba.
+    // Pero si llegó y es OK, leemos JSON:
+    if (r.ok) {
+      const data = await r.json().catch(() => ({}));
+      // data esperado: { ok:true, territorio, cantidad }
+      return { ...data, via: "POST" };
     }
-  };
+
+    // 2) GET normal (intentamos leer JSON)
+    const urlGet = WEBHOOK_URL + "?" + new URLSearchParams({ payload: payloadStr });
+    const r2 = await fetch(urlGet, { method: "GET" });
+    if (r2.ok) {
+      const data2 = await r2.json().catch(() => ({}));
+      return { ...data2, via: "GET" };
+    }
+
+    // 3) JSONP final (si CORS molesta)
+    const urlJsonp = WEBHOOK_URL + "?" + new URLSearchParams({ payload: payloadStr });
+    const data3 = await fetchJsonp(urlJsonp);
+    return { ...data3, via: "JSONP" };
+
+  } catch (e) {
+    // 3b) si tiró excepción (probable CORS), probamos JSONP
+    try {
+      const urlJsonp = WEBHOOK_URL + "?" + new URLSearchParams({ payload: payloadStr });
+      const data3 = await fetchJsonp(urlJsonp);
+      return { ...data3, via: "JSONP" };
+    } catch (e2) {
+      return { ok: false, reason: String(e2 || e) };
+    }
+  }
+}
+
+    $btnGuardar.addEventListener('click', async () => {
+  const territorio = $campoTerritorio.value;
+  const poligonoId = $campoPoligono.value;
+  const capitan    = $campoCapitan.value.trim();
+  const fecha      = $campoFecha.value;
+  const finalizado = $campoEstado.value;
+  const comentario = $campoNotas.value.trim();
+  const sincronizado = "";
+
+  // IMPORTANTE: id = territorio (para conteo por territorio)
+  const comentarioFinal = (comentario ? comentario : '') + (poligonoId ? (' | Manzana: ' + poligonoId) : '');
+  const rec = { id: poligonoId, territorio, poligonoId, fecha, finalizado, capitan, comentario: comentarioFinal, sincronizado };
 
   try{
-    const stored = localStorage.getItem('APP_CONFIG.SHEETS_TERRITORIOS_CSV_URL');
-    if (stored && (!getAppCfg().SHEETS_TERRITORIOS_CSV_URL)){
-      getAppCfg().SHEETS_TERRITORIOS_CSV_URL = stored;
+    $btnGuardar.disabled = true;
+    showBusy('Guardando…');
+
+    const r = await enviarAlSheet(rec);
+    if (r.ok) {
+      const key = String(r.id || poligonoId).trim();
+      // La fecha recién guardada pasa a ser la "última fecha" de ese id
+      __datosMap.set(key, { id: key, cantidad: Number(r.cantidad || 0), ultimaFecha: fecha });
+
+      // repintar esa manzana puntual (si tenés layer guardado), o repintar todo:
+      await init();
     }
-  }catch(e){}
-})();
 
-document.addEventListener('DOMContentLoaded', () => {
-  const novOverlay   = document.getElementById('novistar-overlay');
-  const novForm      = document.getElementById('novistar-form');
+    // ✅ Actualizar conteo local y repintar SOLO ese territorio
+    const terKey = idKey(r.territorio || territorio);
+    const cant   = Number(r.cantidad || 0);
+    window.__datosMap = window.__datosMap || new Map();
+    window.__datosMap.set(terKey, { id: terKey, cantidad: cant, finalizado: finalizado, ultimaFecha: fecha });
 
-  novOverlay?.addEventListener('click', (e) => {
-    if (e.target === novOverlay) closeNovistarModal();
-  });
-
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closeNovistarModal();
-  });
-
-  novForm?.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const payload = {
-      lat: parseFloat(document.getElementById('novistar-lat').value),
-      lng: parseFloat(document.getElementById('novistar-lng').value),
-      direccion: (document.getElementById('novistar-direccion').value || '').trim(),
-      motivo: document.getElementById('novistar-motivo').value,
-      comentario: (document.getElementById('novistar-comentario').value || '').trim(),
-      fecha: new Date().toISOString(),
-      user: (typeof AuthApp !== "undefined" && AuthApp.getUsername ? (AuthApp.getUsername() || "anon") : "anon")
-    };
-    if (window.MapApp?.saveNoVisitarSuggestion) {
-      window.MapApp.saveNoVisitarSuggestion(payload);
+    if (typeof repintarTerritorio === 'function'){
+      repintarTerritorio(territorio);
     } else {
-      window.showToast?.('Sugerencia enviada (mock)');
-      console.log('NoVisitar payload:', payload);
+      // fallback: repintar todo
+      await init();
     }
-    closeNovistarModal();
-  });
 
-  document.addEventListener('novistar:pick', (e) => {
-    openNovistarModal(e.detail || {});
-  });
- document.addEventListener('novistar:pick', (e) => {
-    openNovistarModal(e.detail || {});
-  });
+    cerrarModal();
+    (window.showToast || console.log)('Registro guardado. Total del territorio: ' + cant);
+  }catch(e){
+    console.error(e);
+    alert(String(e.message || e));
+  }finally{
+    hideBusy();
+    $btnGuardar.disabled = false;
+  }
 });
 
+    // ===== Mapa =====
+    const vista = getVistaFromURL();
+    const map = L.map('map', { zoomControl: true }).setView(centrado, 19);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {  attribution: '&copy; OpenStreetMap contributors' , maxZoom: 19 }).addTo(map);
+
+    const polygonsLayer = L.featureGroup().addTo(map);
+    const cartelesLayer = L.featureGroup().addTo(map);
+const labelsLayer   = L.featureGroup().addTo(map);
+
+    function indexarPorTerritorio(arr) {
+      const mapa = new Map();
+      for (const p of (arr||[])) {
+        if (!Array.isArray(p.coords) || !p.coords.length) continue;
+        const terrNum = toNumeroTerritorio(p.territorio);
+        if (!terrNum) continue;
+        if (!mapa.has(terrNum)) mapa.set(terrNum, []);
+        mapa.get(terrNum).push(p);
+      }
+      return mapa;
+    }
+
+    function getFillHexFromDatos(id) {
+      const key = idKey(id);
+      const d = __datosMap.get(key);
+
+      if (d) {
+        const claseAHex = {
+          gray:'#808080', green:'green', yellow:'#FFD700', red:'#ff0000'
+        };
+        console.log(id + " : " + d.ultimaFecha);
+        const c = obtenerColorPorTiempo(d.ultimaFecha);
+        return claseAHex[c] || '#808080';
+      }else{
+        return '#808080';
+      }
+    }
+
+  // Umbrales de tiempo (en días) para el semáforo de color
+  const DIAS_LIMITE_VERDE    = 60; // menos de 2 meses
+  const DIAS_LIMITE_AMARILLO = 90; // hasta 3 meses
+
+  function parsearFecha_(fechaStr) {
+    if (!fechaStr) return null;
+    // Acepta "YYYY-MM-DD" o cualquier string parseable por Date().
+    const s = String(fechaStr).trim();
+    const f = /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(s + 'T00:00:00') : new Date(s);
+    return isNaN(f.getTime()) ? null : f;
+  }
+
+  function obtenerColorPorTiempo(ultimaFechaStr) {
+      const fecha = parsearFecha_(ultimaFechaStr);
+      if (!fecha) return "gray";       // nunca se registró / fecha inválida
+
+      const hoy = new Date();
+      const msPorDia = 1000 * 60 * 60 * 24;
+      const diasTranscurridos = Math.floor((hoy - fecha) / msPorDia);
+
+      if (diasTranscurridos < 0) return "green";               // fecha futura (raro), la tratamos como reciente
+      if (diasTranscurridos < DIAS_LIMITE_VERDE) return "green";
+      if (diasTranscurridos <= DIAS_LIMITE_AMARILLO) return "yellow";
+      return "red";
+}
+
+
+function repintarTerritorio(territorio){
+  const terrKey = window.idKey ? window.idKey(territorio) : String(territorio ?? '');
+  polygonsLayer.eachLayer(layer => {
+    // layer carries no terr prop; we reconstruct from closure? Instead read from stored options if attached.
+    // We'll attach __terr on creation below; if not, fallback via feature props.
+    const t = layer && layer.__terr != null ? layer.__terr : null;
+    if (String(t) === String(territorio)) {
+      const hex = getFillHexFromDatos(layer.__polyId);
+      layer.setStyle({ fillColor: hex });
+    }
+  });
+}
+
+
+async function init() {
+  if (!Array.isArray(window.poligonos) || !window.poligonos.length) {
+    alert('poligonos_salinas.js no definió window.poligonos o está vacío'); return;
+  }
+
+  // Datos JSON (stats_rt)
+  const datos = await cargarDatosDesdeBackend();
+  // Normalizamos las claves para asegurar match con p.id
+  window.__datosMap = new Map(datos.map(d => [window.idKey ? window.idKey(d.id) : String(d.id), d]));
+
+  // Pintar: SIEMPRE se muestran todos los polígonos a todos los usuarios
+  // (filtro por "vista" deshabilitado a pedido)
+  polygonsLayer.clearLayers(); labelsLayer.clearLayers(); cartelesLayer.clearLayers();
+  let bounds = null;
+
+  const listaAll = Array.isArray(window.poligonos) ? window.poligonos : [];
+  for (const p of listaAll) {
+    const hex = getFillHexFromDatos(p.id);
+    const poly = L.polygon(p.coords, { color:'#000', weight:1, fillColor:hex, fillOpacity:0.5 }).addTo(polygonsLayer);
+    poly.__terr = p.territorio;
+    poly.__polyId = p.id;
+    poly.on('click', () => abrirModalSiLogueado(p.territorio, p.id));
+    const labelPt = centroidArea(p.coords) || centroide(p.coords) || poly.getBounds().getCenter();
+    const icon = L.divIcon({ className:'numero-cartel', html:String(p.id), iconSize: null, iconAnchor: [0,0] });
+    L.marker(labelPt, { icon, interactive:false, zIndexOffset: 1000 }).addTo(labelsLayer);
+    if (!bounds) bounds = L.latLngBounds(p.coords); else bounds.extend(p.coords);
+  }
+
+  if (bounds && bounds.isValid()) {
+    map.fitBounds(bounds, { padding: [10,10], maxZoom: 18 });
+    const center = bounds.getCenter();
+    map.setView(center, 19, { animate: false });
+  } else {
+    map.setView(centrado, 19, { animate: false });
+  }
+}
+
+
+init();
+
+// ===== Botón "Refrescar datos" (recalcula cantidades y repinta polígonos) =====
+(function(){
+  const btn = document.getElementById('btnRefresh');
+  if (!btn) return;
+
+  async function refrescar(){
+    try{
+      btn.disabled = true;
+      btn.classList.add('loading');
+      showBusy('Refrescando…');
+      await init(); // vuelve a pedir stats_rt y repinta
+      (window.showToast || console.log)('Datos actualizados');
+    }catch(e){
+      console.error(e);
+      (window.showToast || console.log)('No se pudieron refrescar los datos');
+    }finally{
+      btn.classList.remove('loading');
+      btn.disabled = false;
+      hideBusy();
+    }
+  }
+
+  btn.addEventListener('click', refrescar);
+
+  // TIP: Shift+R también refresca
+  window.addEventListener('keydown', (ev) => {
+    if ((ev.key === 'R' || ev.key === 'r') && ev.shiftKey) {
+      ev.preventDefault();
+      refrescar();
+    }
+  });
+})();
+
+// ===== Botón "Mi ubicación" (geolocalización en tiempo real) =====
+(function(){
+  const btn = document.getElementById('btnGeoToggle');
+  if (!btn) return;
+
+  let geoWatchId = null;
+  let geoMarker = null;
+  let geoAccuracyCircle = null;
+  let geoActive = false;
+  let centeredOnce = false;
+
+  function onGeoSuccess(pos){
+    const { latitude, longitude, accuracy } = pos.coords;
+    const latlng = [latitude, longitude];
+
+    if (!geoMarker){
+      geoMarker = L.marker(latlng, { title: 'Mi ubicación' }).addTo(map);
+    } else {
+      geoMarker.setLatLng(latlng);
+    }
+
+    if (!geoAccuracyCircle){
+      geoAccuracyCircle = L.circle(latlng, {
+        radius: accuracy,
+        weight: 1,
+        color: '#2563eb',
+        fillOpacity: 0.1
+      }).addTo(map);
+    } else {
+      geoAccuracyCircle.setLatLng(latlng);
+      geoAccuracyCircle.setRadius(accuracy);
+    }
+
+    if (!centeredOnce){
+      map.setView(latlng, Math.max(map.getZoom(), 18));
+      centeredOnce = true;
+    }
+  }
+
+  function onGeoError(err){
+    (window.showToast || console.log)('No se pudo obtener tu ubicación: ' + err.message);
+    stopGeo();
+  }
+
+  function startGeo(){
+    if (!('geolocation' in navigator)){
+      (window.showToast || console.log)('Geolocalización no soportada en este navegador');
+      return;
+    }
+    if (geoWatchId != null) return;
+    centeredOnce = false;
+    geoWatchId = navigator.geolocation.watchPosition(onGeoSuccess, onGeoError, {
+      enableHighAccuracy: true,
+      maximumAge: 5000,
+      timeout: 10000
+    });
+    geoActive = true;
+    btn.setAttribute('aria-pressed', 'true');
+    btn.classList.add('active');
+    btn.textContent = '📍 Ubicación (ON)';
+    (window.showToast || console.log)('Ubicación en tiempo real activada');
+  }
+
+  function stopGeo(){
+    if (geoWatchId != null){
+      navigator.geolocation.clearWatch(geoWatchId);
+      geoWatchId = null;
+    }
+    if (geoMarker){ map.removeLayer(geoMarker); geoMarker = null; }
+    if (geoAccuracyCircle){ map.removeLayer(geoAccuracyCircle); geoAccuracyCircle = null; }
+    geoActive = false;
+    btn.setAttribute('aria-pressed', 'false');
+    btn.classList.remove('active');
+    btn.textContent = '📍 Mi ubicación';
+    (window.showToast || console.log)('Ubicación en tiempo real desactivada');
+  }
+
+  btn.addEventListener('click', () => {
+    if (geoActive) stopGeo(); else startGeo();
+  });
+
+  window.addEventListener('beforeunload', stopGeo);
+})();
 
 </script>
+
+  <script>
+    // Evitar ingresar un Capitán que no esté en la lista
+    document.addEventListener("DOMContentLoaded", () => {
+      const inputCap = document.getElementById("campoCapitan");
+      if (!inputCap) return;
+      inputCap.addEventListener("change", () => {
+        const val = inputCap.value.trim();
+        const found = CAPITANES.some(n => n.toLowerCase() === val.toLowerCase());
+        if (!found) {
+          alert("Por favor, seleccioná un Capitán de la lista disponible.");
+          inputCap.value = "";
+        }
+      });
+    });
+  </script>
+
+
+  
+  <script>
+    // Coordenadas fijas para carteles por TERRITORIO (1..22)
+    const coordsByTerr = new Map([
+      [1,  [-34.81336542548195, -55.94933026500102]],
+      [2,  [-34.811286582180394, -55.94544642620604]],
+      [3,  [-34.81657188632685, -55.942062667848774]],
+      [4,  [-34.82223477650662, -55.94038877194424]],
+      [5,  [-34.81527508555718, -55.93809954150837]],
+      [6,  [-34.82008935931963, -55.93356006777914]],
+      [7,  [-34.81338539561594, -55.932902226529094]],
+      [8,  [-34.81728165653415, -55.93010626853567]],
+      [9,  [-34.81119372960812, -55.92738340680523]],
+      [10, [-34.8153728400786,  -55.92574621955909]],
+      [11, [-34.80692886323752, -55.923469040934265]],
+      [12, [-34.81235461487246, -55.920060714757625]],
+      [13, [-34.80905521388421, -55.916027280722815]],
+      [14, [-34.80399990239286, -55.916780479198835]],
+      [15, [-34.79955924683334, -55.91118856321308]],
+      [16, [-34.80960324530219, -55.91052636263731]],
+      [17, [-34.80643158858064, -55.90936751162679]],
+      [18, [-34.808515833887576,-55.90841099968181]],
+      [19, [-34.80153793586342, -55.905798986293206]],
+      [20, [-34.80700551639037, -55.904529768519666]],
+      [21, [-34.80517799529366, -55.90668192039635]],
+      [22, [-34.804629251764304,-55.902662737758725]]
+    ]);
+  </script>
+
+<!--script>
+    function renderCarteles(territorios) {
+      if (!Array.isArray(territorios)) return;
+      territorios.forEach(t => {
+        const ll = coordsByTerr.get(Number(t));
+        if (!ll) return;
+        const numeroIcon = L.divIcon({
+          className: "numero-cartel-fijo",
+          html: "&nbsp;" + String(t),
+          iconSize: [35,35],
+          iconAnchor: [15,15]
+        });
+        L.marker(ll, { icon: numeroIcon, interactive: false }).addTo(cartelesLayer);
+      });
+    }
+  </script-->
+
+
+<!-- ===== LOGIN MODAL (idéntico a index.slim2.html en estructura/IDs) ===== -->
+<div id="login-overlay" class="overlay">
+  <div id="login-modal" class="modal-card" role="dialog" aria-modal="true" aria-labelledby="login-title">
+    <header class="modal-header">
+      <h3 id="login-title" class="modal-title">Iniciar sesión</h3>
+      <button id="login-close" class="modal-close-btn" title="Cerrar">✕</button>
+    </header>
+    <div class="modal-body">
+      <div class="form-field">
+        <label for="inUser" class="form-label">Usuario</label>
+        <input id="inUser" class="form-input" autocomplete="username" />
+      </div>
+      <div class="form-field">
+        <label for="inPass" class="form-label">Contraseña</label>
+        <input id="inPass" class="form-input" type="password" autocomplete="current-password" />
+      </div>
+      <div class="form-actions">
+        <button id="login-cancel" class="btn-cancel" type="button">Cancelar</button>
+        <button id="btnLogin" class="btn-primary" type="button">Ingresar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+// ===== Toast fallback (si no existe) =====
+window.showToast = window.showToast || function(msg){
+  if (!msg) return;
+  try { console.log("[toast]", msg); } catch(_){}
+};
+
+// ====== DOM refs ======
+const btnAuthOpen    = document.getElementById('btnAuthOpen');
+const btnLogout      = document.getElementById('btnLogout');
+const overlayLogin   = document.getElementById('login-overlay');
+const btnLogin       = document.getElementById('btnLogin');
+const inUser         = document.getElementById('inUser');
+const inPass         = document.getElementById('inPass');
+const btnCloseLogin  = document.getElementById('login-close');
+const btnCancelLogin = document.getElementById('login-cancel');
+
+function openLogin(){
+  overlayLogin.style.display='flex';
+  inUser && inUser.focus();
+}
+function closeLogin(){
+  overlayLogin.style.display='none';
+}
+
+btnAuthOpen && btnAuthOpen.addEventListener('click', openLogin);
+btnCloseLogin && btnCloseLogin.addEventListener('click', closeLogin);
+btnCancelLogin && btnCancelLogin.addEventListener('click', closeLogin);
+
+btnLogin && btnLogin.addEventListener('click', () => {
+  const u = (inUser.value||'').trim();
+  const p = (inPass.value||'').trim();
+  if (!u || !p){
+    window.showToast && window.showToast('Ingresá usuario y contraseña');
+    return;
+  }
+  if (window.AuthApp && typeof window.AuthApp.doLogin === "function"){
+    window.AuthApp.doLogin(u,p);
+  } else {
+    window.showToast && window.showToast('AuthApp no está disponible');
+  }
+  closeLogin();
+});
+
+btnLogout && btnLogout.addEventListener('click', () => {
+  if (window.AuthApp && typeof window.AuthApp.logout === "function"){
+    window.AuthApp.logout();
+  }
+});
+
+// Restaurar sesión al cargar
+document.addEventListener('DOMContentLoaded', () => {
+  if (window.AuthApp && typeof window.AuthApp.restore === "function"){
+    window.AuthApp.restore();
+  }
+});
+</script>
+
+<script>
+// === Gate de registro: sólo mostrar modal si hay sesión ===
+function __isLogged(){
+  try{
+    return !!(window.AuthApp && typeof AuthApp.isLogged === "function" && AuthApp.isLogged());
+  }catch(_){ return false; }
+}
+function __openLoginIfNeeded(){
+  try{
+    const overlay = document.getElementById('login-overlay');
+    if (overlay){ overlay.style.display = 'flex'; }
+  }catch(_){}
+}
+function abrirModalSiLogueado(terr, polyId){
+  if (!__isLogged()){
+    (window.showToast||console.log)("Necesitás iniciar sesión para registrar territorios");
+    __openLoginIfNeeded();
+    return;
+  }
+  if (typeof abrirModal === "function"){
+    abrirModal(terr, polyId);
+  }
+}
+</script>
+
+
+<script>
+(function(){
+  function setupReferenciasToggle(){
+    var btn = document.getElementById('btnReferencias');
+    var panel = document.getElementById('referencias');
+    if (!btn || !panel) return;
+
+    var mq = window.matchMedia('(max-width: 768px)');
+
+    function collapse(){
+      panel.style.overflow = 'hidden';
+      panel.style.maxHeight = '0px';
+      panel.style.opacity = '0';
+      panel.dataset.collapsed = 'true';
+      btn.setAttribute('aria-expanded','false');
+    }
+    function expand(){
+      panel.style.overflow = 'hidden';
+      panel.style.display = 'block';
+      // Medimos el contenido y aplicamos altura
+      var h = panel.scrollHeight;
+      panel.style.maxHeight = h + 'px';
+      panel.style.opacity = '1';
+      panel.dataset.collapsed = 'false';
+      btn.setAttribute('aria-expanded','true');
+    }
+    function resetDesktop(){
+      panel.style.removeProperty('overflow');
+      panel.style.removeProperty('max-height');
+      panel.style.removeProperty('opacity');
+      delete panel.dataset.collapsed;
+      btn.setAttribute('aria-expanded','true');
+    }
+    function applyByViewport(){
+      if (mq.matches){
+        collapse();
+        btn.style.display = 'inline-flex';
+      } else {
+        resetDesktop();
+        btn.style.display = 'none';
+      }
+    }
+    applyByViewport();
+    mq.addEventListener('change', applyByViewport);
+
+    btn.addEventListener('click', function(){
+      if (panel.dataset.collapsed === 'true'){
+        expand();
+      } else {
+        collapse();
+      }
+    });
+
+    // Mantener altura correcta si cambia el viewport o el contenido
+    window.addEventListener('resize', function(){
+      if (panel.dataset.collapsed === 'false'){
+        panel.style.maxHeight = panel.scrollHeight + 'px';
+      }
+    });
+  }
+
+  if (document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', setupReferenciasToggle);
+  } else {
+    setupReferenciasToggle();
+  }
+})();
+</script>
+
+
+<script>
+(function(){
+  var ov = document.getElementById('login-overlay');
+  var closeBtn = document.getElementById('login-close');
+  var cancelBtn = document.getElementById('login-cancel');
+  if (ov && closeBtn){ closeBtn.addEventListener('click', function(){ ov.style.display='none'; }); }
+  if (ov && cancelBtn){ cancelBtn.addEventListener('click', function(){ ov.style.display='none'; }); }
+})();
+</script>
+
+
+<!-- Busy overlay (se muestra al guardar/refrescar) -->
+<div id="busy-overlay" role="status" aria-live="polite" aria-label="Procesando">
+  <div class="busy-card">
+    <div class="spinner" aria-hidden="true"></div>
+    <div id="busy-text">Procesando…</div>
+  </div>
+</div>
 
 </body>
 </html>
