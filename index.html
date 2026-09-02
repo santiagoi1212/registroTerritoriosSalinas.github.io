@@ -205,13 +205,28 @@
   #btnRefresh:hover{ filter:brightness(1.06); }
   #btnRefresh:disabled{ opacity:.6; cursor:default; }
 
+  #btnToggleLimites{
+    background:rgba(0,0,0,.75);
+    color:#fff;
+    border:none;
+    border-radius:8px;
+    padding:6px 10px;
+    cursor:pointer;
+    font:500 13px/1 system-ui, -apple-system, Segoe UI, Roboto, Arial;
+    white-space:nowrap;
+  }
+  #btnToggleLimites:hover{ filter:brightness(1.06); }
+  #btnToggleLimites[aria-pressed="false"]{ background:rgba(0,0,0,.35); color:#cbd5e1; }
+
   @keyframes spin{ from{ transform:rotate(0deg);} to{ transform:rotate(360deg);} }
   #btnRefresh.loading{ animation: spin 0.9s linear infinite; }
 
   @media (max-width: 768px){
     #auth-bar{ right:8px; top:8px; gap:6px; }
     #auth-bar .pill{ display:none; } /* en mobile gana espacio */
-    #btnAuthOpen, #btnLogout, #btnRefresh{ padding:8px 10px; border-radius:999px; }
+    #btnAuthOpen, #btnLogout, #btnRefresh, #btnToggleLimites{ padding:8px 10px; border-radius:999px; }
+    #btnToggleLimites{ font-size:0; } /* en mobile solo el ícono, sin texto */
+    #btnToggleLimites::before{ content:"🗺️"; font-size:16px; }
   }
 </style>
 
@@ -246,18 +261,37 @@
 }
 
 .numero-cartel-fijo {
-  color: #fff;
-  font-size: 20px;
-  font-weight: bold;
-  text-shadow: 0 0 4px rgba(0, 0, 0, 0.7);
-  background-color: rgba(0, 128, 255, 0.45); /* azul translúcido */
-  padding: 3px 5px;
-  border-radius: 5px;
-  border: 2px solid rgba(255, 255, 255, 0.5);
   pointer-events: none;
   user-select: none;
   transform: translate(-50%, -50%);
   line-height: 1;
+}
+.numero-cartel-fijo span {
+  display: inline-block;
+  color: #fff;
+  font-size: 18px;
+  font-weight: bold;
+  text-shadow: 0 0 4px rgba(0, 0, 0, 0.55);
+  background-color: rgba(37, 99, 235, 0.88); /* fallback; se sobreescribe por grupo */
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 2px solid rgba(255, 255, 255, 0.75);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.35);
+}
+
+.numero-cartel-territorio {
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+  background-color: rgba(255,255,255,0.92);
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1.5px solid #64748b;
+  pointer-events: none;
+  user-select: none;
+  transform: translate(-50%, -50%);
+  line-height: 1.3;
+  white-space: nowrap;
 }
 
 
@@ -369,6 +403,7 @@
   <span id="auth-info" class="pill auth-hidden"></span>
   <button id="btnAuthOpen" type="button">Acceder</button>
   <button id="btnLogout" class="auth-hidden" type="button">Salir</button>
+  <button id="btnToggleLimites" type="button" title="Mostrar/ocultar límites de grupos y territorios" aria-pressed="true" aria-label="Mostrar/ocultar límites de grupos y territorios">🗺️ Límites</button>
   <button id="btnRefresh" type="button" title="Refrescar datos" aria-label="Refrescar datos">↻</button>
 </div>
 
@@ -445,6 +480,7 @@
   </script>
 
   <script src="poligonos_salinas.js"></script>
+  <script src="grupos_salinas.js?v=6"></script>
 
   <script>
     // ===== Helpers de ID =====
@@ -833,9 +869,103 @@ async function enviarAlSheet(rec) {
     const map = L.map('map', { zoomControl: true }).setView(centrado, 19);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {  attribution: '&copy; OpenStreetMap contributors' , maxZoom: 19 }).addTo(map);
 
-    const polygonsLayer = L.featureGroup().addTo(map);
-    const cartelesLayer = L.featureGroup().addTo(map);
+    const polygonsLayer   = L.featureGroup().addTo(map);
+    const territorioLayer = L.featureGroup().addTo(map);
+    const gruposLayer     = L.featureGroup().addTo(map);
+    const cartelesLayer   = L.featureGroup().addTo(map);
 const labelsLayer   = L.featureGroup().addTo(map);
+
+    // ===== Divisiones de GRUPO (1..5) =====
+    // Dibuja el contorno negro que agrupa los territorios de cada Grupo
+    // y el cartel con el número de Grupo, usando el mismo formato que
+    // los carteles fijos de territorio (.numero-cartel-fijo).
+    function geoJsonAlatLngs(geom) {
+      // Convierte coordenadas GeoJSON [lng,lat] a arreglos de LatLng de Leaflet,
+      // soportando tanto Polygon como MultiPolygon.
+      const ringToLatLngs = ring => ring.map(([lng, lat]) => L.latLng(lat, lng));
+      if (geom.type === 'Polygon') {
+        return geom.coordinates.map(ringToLatLngs);
+      } else if (geom.type === 'MultiPolygon') {
+        return geom.coordinates.map(poly => poly.map(ringToLatLngs));
+      }
+      return [];
+    }
+
+    // Un color propio por Grupo (evita el verde/amarillo/rojo del semáforo de registros
+    // para no confundirse con ese significado) para que se distingan entre sí de un vistazo.
+    const GRUPO_COLORES = {
+      1: '#2563eb', // azul
+      2: '#db2777', // magenta
+      3: '#0d9488', // teal
+      4: '#7c3aed', // violeta
+      5: '#ea580c'  // naranja
+    };
+    const COLOR_TERRITORIO = '#64748b'; // gris azulado neutro
+
+    function renderGrupos() {
+      gruposLayer.clearLayers();
+      const g = window.gruposSalinas;
+      if (!g || !g.boundaries) return;
+
+      for (const grupoNum of Object.keys(g.boundaries)) {
+        const geom = g.boundaries[grupoNum];
+        const latlngs = geoJsonAlatLngs(geom);
+        if (!latlngs.length) continue;
+        const color = GRUPO_COLORES[grupoNum] || '#000';
+
+        L.polygon(latlngs, {
+          color,
+          weight: 5,
+          opacity: 0.95,
+          fill: false,
+          interactive: false
+        }).addTo(gruposLayer);
+
+        const labelLatLng = g.labels && g.labels[grupoNum];
+        if (labelLatLng) {
+          const icon = L.divIcon({
+            className: 'numero-cartel-fijo',
+            html: `<span style="background-color:${color};">${grupoNum}</span>`,
+            iconSize: [35, 35],
+            iconAnchor: [15, 15]
+          });
+          L.marker(labelLatLng, { icon, interactive: false, zIndexOffset: 2000 }).addTo(gruposLayer);
+        }
+      }
+    }
+
+    // ===== Contorno de cada TERRITORIO (une las manzanas/polígonos que comparten =====
+    // el mismo número de territorio en un solo límite, con su cartel numerado.
+    function renderTerritorios() {
+      territorioLayer.clearLayers();
+      const g = window.gruposSalinas;
+      if (!g || !g.territorioBoundaries) return;
+
+      for (const terrNum of Object.keys(g.territorioBoundaries)) {
+        const geom = g.territorioBoundaries[terrNum];
+        const latlngs = geoJsonAlatLngs(geom);
+        if (!latlngs.length) continue;
+
+        L.polygon(latlngs, {
+          color: COLOR_TERRITORIO,
+          weight: 2.5,
+          opacity: 0.9,
+          fill: false,
+          interactive: false
+        }).addTo(territorioLayer);
+
+        const labelLatLng = g.territorioLabels && g.territorioLabels[terrNum];
+        if (labelLatLng) {
+          const icon = L.divIcon({
+            className: 'numero-cartel-territorio',
+            html: String(terrNum),
+            iconSize: null,
+            iconAnchor: [0, 0]
+          });
+          L.marker(labelLatLng, { icon, interactive: false, zIndexOffset: 1500 }).addTo(territorioLayer);
+        }
+      }
+    }
 
     function indexarPorTerritorio(arr) {
       const mapa = new Map();
@@ -918,13 +1048,13 @@ async function init() {
 
   // Pintar: SIEMPRE se muestran todos los polígonos a todos los usuarios
   // (filtro por "vista" deshabilitado a pedido)
-  polygonsLayer.clearLayers(); labelsLayer.clearLayers(); cartelesLayer.clearLayers();
+  polygonsLayer.clearLayers(); labelsLayer.clearLayers(); cartelesLayer.clearLayers(); territorioLayer.clearLayers();
   let bounds = null;
 
   const listaAll = Array.isArray(window.poligonos) ? window.poligonos : [];
   for (const p of listaAll) {
     const hex = getFillHexFromDatos(p.id);
-    const poly = L.polygon(p.coords, { color:'#000', weight:1, fillColor:hex, fillOpacity:0.5 }).addTo(polygonsLayer);
+    const poly = L.polygon(p.coords, { color:'#999', weight:0.6, opacity:0.4, fillColor:hex, fillOpacity:0.5 }).addTo(polygonsLayer);
     poly.__terr = p.territorio;
     poly.__polyId = p.id;
     poly.on('click', () => abrirModalSiLogueado(p.territorio, p.id));
@@ -933,6 +1063,11 @@ async function init() {
     L.marker(labelPt, { icon, interactive:false, zIndexOffset: 1000 }).addTo(labelsLayer);
     if (!bounds) bounds = L.latLngBounds(p.coords); else bounds.extend(p.coords);
   }
+
+  // Se dibujan DESPUÉS de las manzanas para que sus líneas queden por encima
+  // (si se dibujan antes, el relleno de las manzanas las tapa).
+  renderTerritorios();
+  renderGrupos();
 
   if (bounds && bounds.isValid()) {
     map.fitBounds(bounds, { padding: [10,10], maxZoom: 18 });
@@ -945,6 +1080,37 @@ async function init() {
 
 
 init();
+
+// ===== Botón "Límites" (mostrar/ocultar contornos de grupos y territorios) =====
+(function(){
+  const btn = document.getElementById('btnToggleLimites');
+  if (!btn) return;
+  const STORAGE_KEY = 'salinas_limites_visibles';
+
+  function aplicar(visible){
+    if (visible) {
+      if (!map.hasLayer(gruposLayer)) gruposLayer.addTo(map);
+      if (!map.hasLayer(territorioLayer)) territorioLayer.addTo(map);
+    } else {
+      if (map.hasLayer(gruposLayer)) map.removeLayer(gruposLayer);
+      if (map.hasLayer(territorioLayer)) map.removeLayer(territorioLayer);
+    }
+    btn.setAttribute('aria-pressed', String(visible));
+  }
+
+  let visible = true;
+  try {
+    const guardado = localStorage.getItem(STORAGE_KEY);
+    if (guardado !== null) visible = guardado === '1';
+  } catch(_){}
+  aplicar(visible);
+
+  btn.addEventListener('click', () => {
+    visible = !visible;
+    aplicar(visible);
+    try { localStorage.setItem(STORAGE_KEY, visible ? '1' : '0'); } catch(_){}
+  });
+})();
 
 // ===== Botón "Refrescar datos" (recalcula cantidades y repinta polígonos) =====
 (function(){
