@@ -205,7 +205,7 @@
   #btnRefresh:hover{ filter:brightness(1.06); }
   #btnRefresh:disabled{ opacity:.6; cursor:default; }
 
-  #btnToggleLimites{
+  #btnToggleLimites, #btnToggleIds{
     background:rgba(0,0,0,.75);
     color:#fff;
     border:none;
@@ -215,8 +215,8 @@
     font:500 13px/1 system-ui, -apple-system, Segoe UI, Roboto, Arial;
     white-space:nowrap;
   }
-  #btnToggleLimites:hover{ filter:brightness(1.06); }
-  #btnToggleLimites[aria-pressed="false"]{ background:rgba(0,0,0,.35); color:#cbd5e1; }
+  #btnToggleLimites:hover, #btnToggleIds:hover{ filter:brightness(1.06); }
+  #btnToggleLimites[aria-pressed="false"], #btnToggleIds[aria-pressed="false"]{ background:rgba(0,0,0,.35); color:#cbd5e1; }
 
   @keyframes spin{ from{ transform:rotate(0deg);} to{ transform:rotate(360deg);} }
   #btnRefresh.loading{ animation: spin 0.9s linear infinite; }
@@ -224,9 +224,10 @@
   @media (max-width: 768px){
     #auth-bar{ right:8px; top:8px; gap:6px; }
     #auth-bar .pill{ display:none; } /* en mobile gana espacio */
-    #btnAuthOpen, #btnLogout, #btnRefresh, #btnToggleLimites{ padding:8px 10px; border-radius:999px; }
-    #btnToggleLimites{ font-size:0; } /* en mobile solo el ícono, sin texto */
+    #btnAuthOpen, #btnLogout, #btnRefresh, #btnToggleLimites, #btnToggleIds{ padding:8px 10px; border-radius:999px; }
+    #btnToggleLimites, #btnToggleIds{ font-size:0; } /* en mobile solo el ícono, sin texto */
     #btnToggleLimites::before{ content:"🗺️"; font-size:16px; }
+    #btnToggleIds::before{ content:"🔢"; font-size:16px; }
   }
 </style>
 
@@ -404,6 +405,7 @@
   <button id="btnAuthOpen" type="button">Acceder</button>
   <button id="btnLogout" class="auth-hidden" type="button">Salir</button>
   <button id="btnToggleLimites" type="button" title="Mostrar/ocultar límites de grupos y territorios" aria-pressed="true" aria-label="Mostrar/ocultar límites de grupos y territorios">🗺️ Límites</button>
+  <button id="btnToggleIds" type="button" title="Mostrar/ocultar el número de cada polígono" aria-pressed="true" aria-label="Mostrar/ocultar el número de cada polígono">🔢 IDs</button>
   <button id="btnRefresh" type="button" title="Refrescar datos" aria-label="Refrescar datos">↻</button>
 </div>
 
@@ -1094,6 +1096,35 @@ init();
     } else {
       if (map.hasLayer(gruposLayer)) map.removeLayer(gruposLayer);
       if (map.hasLayer(territorioLayer)) map.removeLayer(territorioLayer);
+    }
+    btn.setAttribute('aria-pressed', String(visible));
+  }
+
+  let visible = true;
+  try {
+    const guardado = localStorage.getItem(STORAGE_KEY);
+    if (guardado !== null) visible = guardado === '1';
+  } catch(_){}
+  aplicar(visible);
+
+  btn.addEventListener('click', () => {
+    visible = !visible;
+    aplicar(visible);
+    try { localStorage.setItem(STORAGE_KEY, visible ? '1' : '0'); } catch(_){}
+  });
+})();
+
+// ===== Botón "IDs" (mostrar/ocultar el número de cada polígono/manzana) =====
+(function(){
+  const btn = document.getElementById('btnToggleIds');
+  if (!btn) return;
+  const STORAGE_KEY = 'salinas_ids_visibles';
+
+  function aplicar(visible){
+    if (visible) {
+      if (!map.hasLayer(labelsLayer)) labelsLayer.addTo(map);
+    } else {
+      if (map.hasLayer(labelsLayer)) map.removeLayer(labelsLayer);
     }
     btn.setAttribute('aria-pressed', String(visible));
   }
