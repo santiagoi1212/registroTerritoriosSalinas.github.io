@@ -438,6 +438,7 @@
       <div class="row">
         <label for="campoCapitan">Capitán</label>
         <input id="campoCapitan" type="text" readonly />
+        <select id="campoCapitanSelect" style="display:none"></select>
       </div>
       <div class="row">
         <label for="campoFecha">Fecha</label>
@@ -463,22 +464,14 @@
 
   
   <script>
-    // Lista editable de capitanes (podés cambiar estos nombres cuando quieras)
+    // Lista de capitanes seleccionable por un admin al registrar (podés cambiar estos nombres cuando quieras)
     const CAPITANES = [
-      "Christian Mermot","Esteban Longo","Oscar Alcalde","Sebastian Barbiel","Juan Toyos",
-      "Leonardo De Los Santos","Pablo Andrade","Gilberto Andrade","Richard Guzmán","Federico Callorda",
-      "Nicolás Rodriguez","Ernesto dos Santos","Santiago Varaldo","Guillermo Lobato","Rubén Álvarez"];
-    function renderCapitanes() {
-      const dl = document.getElementById("listaCapitanes");
-      if (!dl) return;
-      dl.innerHTML = "";
-      for (const nombre of CAPITANES) {
-        const opt = document.createElement("option");
-        opt.value = nombre;
-        dl.appendChild(opt);
-      }
-    }
-    document.addEventListener("DOMContentLoaded", renderCapitanes);
+      "AndresCruz","CamiloUrdiozola","CarlosCarminati","CarlosPena","CesarDeBrum",
+      "DanielAtrat","DelamarDeSouza","FernandoTaroco","GabrielCorrea","GastonGerschuni",
+      "GermanVarela","GonzaloValle","JavierMartinez","JuanCarlosHaristoy","JulioFernandez",
+      "JulioGalarza","LeonardoToloza","LucasAviles","LuisLopez","MartinKuzman",
+      "MateoDamele","NicolasGunaris","OrlandoCabrera","RafaelManente","RodrigoGomez",
+      "SantiagoInchausti","SebastianFernandez"];
   </script>
 
   <script src="poligonos_salinas.js"></script>
@@ -603,17 +596,28 @@ async function cargarDatosDesdeBackend() {
   return [];
 }
 
-function cargarDatosJSONP(urlBase) {
+function cargarDatosJSONP(urlBase, timeoutMs = 8000) {
   return new Promise((resolve) => {
     const cb = '__cbStats_' + Math.random().toString(36).slice(2);
     const s = document.createElement('script');
+    let done = false;
 
     const cleanup = () => {
       try{ delete window[cb]; }catch(_){ window[cb]=undefined; }
       if (s && s.parentNode) s.parentNode.removeChild(s);
     };
 
+    const t = setTimeout(() => {
+      if (done) return;
+      done = true;
+      cleanup();
+      resolve([]); // deja que cargarDatosDesdeBackend caiga al fallback fetch()
+    }, timeoutMs);
+
     window[cb] = (payload) => {
+      if (done) return;
+      done = true;
+      clearTimeout(t);
       cleanup();
       try{
         const items = (payload && Array.isArray(payload.items)) ? payload.items : [];
@@ -626,9 +630,61 @@ function cargarDatosJSONP(urlBase) {
     const sep = urlBase.includes('?') ? '&' : '?';
     s.src = urlBase + sep + 'callback=' + encodeURIComponent(cb);
     s.async = true;
-    s.onerror = () => { cleanup(); resolve([]); };
+    s.onerror = () => { if (done) return; done = true; clearTimeout(t); cleanup(); resolve([]); };
     document.head.appendChild(s);
   });
+}
+
+// ===== Refresco puntual de UN id (usa op=last) tras borrar, para repintar sin recargar todo =====
+function cargarUnoJSONP(urlBase, timeoutMs = 8000) {
+  return new Promise((resolve) => {
+    const cb = '__cbLast_' + Math.random().toString(36).slice(2);
+    const s = document.createElement('script');
+    let done = false;
+
+    const cleanup = () => {
+      try{ delete window[cb]; }catch(_){ window[cb]=undefined; }
+      if (s && s.parentNode) s.parentNode.removeChild(s);
+    };
+    const t = setTimeout(() => { if (done) return; done = true; cleanup(); resolve(null); }, timeoutMs);
+
+    window[cb] = (payload) => {
+      if (done) return;
+      done = true;
+      clearTimeout(t);
+      cleanup();
+      resolve(payload || null);
+    };
+
+    const sep = urlBase.includes('?') ? '&' : '?';
+    s.src = urlBase + sep + 'callback=' + encodeURIComponent(cb);
+    s.async = true;
+    s.onerror = () => { if (done) return; done = true; clearTimeout(t); cleanup(); resolve(null); };
+    document.head.appendChild(s);
+  });
+}
+
+async function refrescarUnoYRepintar(id, territorio) {
+  const key = idKey(id);
+  try {
+    const base = (typeof WEBHOOK_URL === 'string' && WEBHOOK_URL) ? WEBHOOK_URL : '';
+    if (base) {
+      const url = base + (base.includes('?') ? '&' : '?') + new URLSearchParams({ op: 'last', id });
+      const data = await cargarUnoJSONP(url);
+      if (data && data.ok && data.exists && data.record) {
+        const rec = data.record;
+        window.__datosMap.set(key, { id: key, ultimaFecha: rec.fecha || rec.ultimaFecha || null });
+      } else {
+        // no quedan registros para este id (o no se pudo confirmar): lo tratamos como "sin registro"
+        window.__datosMap.delete(key);
+      }
+    } else {
+      window.__datosMap.delete(key);
+    }
+  } catch (_) {
+    window.__datosMap.delete(key);
+  }
+  if (typeof repintarTerritorio === 'function') repintarTerritorio(territorio);
 }
 
 
@@ -638,6 +694,7 @@ function cargarDatosJSONP(urlBase) {
     const $campoTerritorio = document.getElementById('campoTerritorio');
     const $campoPoligono = document.getElementById('campoPoligono');
     const $campoCapitan = document.getElementById('campoCapitan');
+    const $campoCapitanSelect = document.getElementById('campoCapitanSelect');
     const $campoFecha = document.getElementById('campoFecha');
     const $campoEstado = document.getElementById('campoEstado');
     const $campoNotas = document.getElementById('campoNotas');
@@ -654,10 +711,36 @@ function cargarDatosJSONP(urlBase) {
     function abrirModal(terr, polyId) {
       $campoTerritorio.value = terr;
       $campoPoligono.value   = polyId;
-      $campoCapitan.value    = (window.AuthApp && AuthApp.getUsername && AuthApp.getUsername()) || '';
+      const usuarioActual = (window.AuthApp && AuthApp.getUsername && AuthApp.getUsername()) || '';
+      $campoCapitan.value    = usuarioActual;
       $campoFecha.value      = new Date().toISOString().slice(0,10);
       $campoEstado.value     = 'Si';
       $campoNotas.value      = '';
+
+      // Admin: puede elegir el Capitán de la lista. Resto de usuarios: queda fijo en su propio usuario.
+      if (isAdmin()) {
+        if (!$campoCapitanSelect.dataset.cargado) {
+          for (const nombre of CAPITANES) {
+            const opt = document.createElement('option');
+            opt.value = nombre;
+            opt.textContent = nombre;
+            $campoCapitanSelect.appendChild(opt);
+          }
+          $campoCapitanSelect.dataset.cargado = '1';
+          $campoCapitanSelect.addEventListener('change', () => {
+            $campoCapitan.value = $campoCapitanSelect.value;
+          });
+        }
+        // Preseleccionar el propio usuario si coincide con algún capitán de la lista; si no, el primero.
+        const coincide = CAPITANES.find(n => n.toLowerCase() === usuarioActual.trim().toLowerCase());
+        $campoCapitanSelect.value = coincide || CAPITANES[0] || '';
+        $campoCapitan.value = $campoCapitanSelect.value || usuarioActual;
+        $campoCapitan.style.display = 'none';
+        $campoCapitanSelect.style.display = '';
+      } else {
+        $campoCapitanSelect.style.display = 'none';
+        $campoCapitan.style.display = '';
+      }
 
       // Mostrar/ocultar botón borrar según rol admin
       let $btnBorrar = document.getElementById('btnBorrarUltimo');
@@ -690,7 +773,10 @@ function cargarDatosJSONP(urlBase) {
             if (data.ok && data.deleted) {
               (window.showToast || console.log)('Registro borrado ✅');
               cerrarModal();
-              await init();
+              // Repintar SOLO esta manzana/territorio (sin recargar todo el mapa):
+              // consultamos el estado real que queda para este id (op=last) y,
+              // si no hay nada, lo dejamos como "sin registro".
+              await refrescarUnoYRepintar(id, $campoTerritorio.value);
             } else if (data.ok && !data.deleted) {
               (window.showToast || console.log)('No había registro para borrar');
               cerrarModal();
@@ -837,12 +923,9 @@ async function enviarAlSheet(rec) {
       const key = String(r.id || poligonoId).trim();
       // La fecha recién guardada pasa a ser la "última fecha" de ese id
       __datosMap.set(key, { id: key, cantidad: Number(r.cantidad || 0), ultimaFecha: fecha });
-
-      // repintar esa manzana puntual (si tenés layer guardado), o repintar todo:
-      await init();
     }
 
-    // ✅ Actualizar conteo local y repintar SOLO ese territorio
+    // ✅ Actualizar conteo local y repintar SOLO ese territorio (sin recargar todo el mapa)
     const terKey = idKey(r.territorio || territorio);
     const cant   = Number(r.cantidad || 0);
     window.__datosMap = window.__datosMap || new Map();
