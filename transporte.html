@@ -270,20 +270,6 @@ async function agregarRegistro(registro){
   }
 }
 
-async function eliminarRegistroRemoto(id){
-  if(!urlConfigurada()) return false;
-  try{
-    await fetch(WEBAPP_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action: 'delete', id })
-    });
-    return true;
-  }catch(e){
-    return false;
-  }
-}
-
 // --- Choice buttons ---
 const choiceNecesita = document.getElementById('choice-necesita');
 const choiceTiene = document.getElementById('choice-tiene');
@@ -428,18 +414,8 @@ async function refrescarTodo(){
           <span class="tag ${r.tipo === 'transporte' ? 'necesita' : 'tiene'}">${r.tipo === 'transporte' ? `necesita ${r.asientos} asiento(s)` : `${r.asientos} asiento(s) disponible(s)`}</span>
         </div>
       </div>
-      <button class="del" data-id="${r.id}">Eliminar</button>
     </div>
   `).join('');
-
-  lista.querySelectorAll('.del').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const id = btn.getAttribute('data-id');
-      btn.disabled = true;
-      await eliminarRegistroRemoto(id);
-      refrescarTodo();
-    });
-  });
 }
 
 function escapeHtml(s){
