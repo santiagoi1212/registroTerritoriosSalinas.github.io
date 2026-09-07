@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Registro de Transporte</title>
+<style>
+  :root{
+    --ink:#12201c;
+    --paper:#f1f3ee;
+    --surface:#ffffff;
+    --line:#d9ddd2;
+    --amber:#e2872b;
+    --amber-dark:#b8641a;
+    --signal:#2f6b52;
+    --signal-bg:#e6efe8;
+    --danger:#b8483c;
+    --danger-bg:#f7e9e6;
+    --muted:#5b6660;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background:var(--paper);
+    color:var(--ink);
+    min-height:100vh;
+  }
+  .wrap{max-width:640px;margin:0 auto;padding:28px 20px 60px;}
+
+  header{margin-bottom:22px;}
+  .route-line{
+    height:6px;
+    background:repeating-linear-gradient(90deg,var(--amber) 0 22px, transparent 22px 34px);
+    border-radius:3px;
+    margin-bottom:18px;
+  }
+  h1{
+    font-size:1.7rem;
+    margin:0 0 4px;
+    letter-spacing:-0.01em;
+  }
+  .subtitle{color:var(--muted);margin:0;font-size:0.95rem;}
+
+  .summary-top{
+    display:flex;gap:14px;margin:22px 0;flex-wrap:wrap;
+  }
+  .summary-top .box{
+    flex:1;min-width:130px;
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:16px;
+  }
+  .summary-top .box .num{font-size:1.6rem;font-weight:700;}
+  .summary-top .box .lbl{font-size:0.8rem;color:var(--muted);margin-top:2px;}
+
+  .card{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:22px;
+    margin-bottom:18px;
+  }
+
+  label{display:block;font-size:0.85rem;font-weight:600;color:var(--ink);margin-bottom:6px;}
+  input[type=text], input[type=number], select{
+    width:100%;
+    padding:10px 12px;
+    border:1px solid var(--line);
+    border-radius:7px;
+    font-size:0.95rem;
+    background:var(--paper);
+    color:var(--ink);
+    margin-bottom:16px;
+  }
+  input:focus, select:focus, button:focus-visible{
+    outline:2px solid var(--amber);
+    outline-offset:1px;
+  }
+
+  .choice-group{display:flex;gap:10px;margin-bottom:16px;}
+  .choice{
+    flex:1;
+    border:1.5px solid var(--line);
+    border-radius:8px;
+    padding:12px;
+    cursor:pointer;
+    text-align:center;
+    font-size:0.9rem;
+    font-weight:600;
+    color:var(--muted);
+    background:var(--surface);
+    transition:border-color .15s, color .15s, background .15s;
+  }
+  .choice.selected{
+    border-color:var(--amber);
+    color:var(--amber-dark);
+    background:#fdf3e7;
+  }
+
+  .btn-primary{
+    width:100%;
+    padding:13px;
+    background:var(--ink);
+    color:var(--paper);
+    border:none;
+    border-radius:8px;
+    font-size:0.95rem;
+    font-weight:600;
+    cursor:pointer;
+    transition:background .15s;
+  }
+  .btn-primary:hover{background:#0a1512;}
+  .btn-primary:disabled{background:#a9afa8;cursor:not-allowed;}
+
+  .msg{
+    font-size:0.85rem;
+    margin-top:10px;
+    padding:10px 12px;
+    border-radius:7px;
+    display:none;
+  }
+  .msg.show{display:block;}
+  .msg.ok{background:var(--signal-bg);color:var(--signal);}
+  .msg.err{background:var(--danger-bg);color:var(--danger);}
+
+  .list-title{font-size:0.8rem;font-weight:700;text-transform:none;color:var(--muted);margin:26px 0 10px;display:flex;justify-content:space-between;align-items:center;}
+  .list-title a{color:var(--muted);font-size:0.78rem;font-weight:600;}
+  .entry{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding:11px 0;
+    border-bottom:1px solid var(--line);
+    font-size:0.9rem;
+  }
+  .entry:last-child{border-bottom:none;}
+  .entry .who{font-weight:600;}
+  .entry .meta{color:var(--muted);font-size:0.82rem;}
+  .entry .tag{
+    display:inline-block;margin-top:2px;font-size:0.75rem;font-weight:700;
+    padding:2px 8px;border-radius:20px;
+  }
+  .entry .tag.necesita{background:var(--danger-bg);color:var(--danger);}
+  .entry .tag.tiene{background:var(--signal-bg);color:var(--signal);}
+  .entry .del{
+    background:none;border:none;color:var(--muted);cursor:pointer;font-size:0.78rem;
+    padding:4px 8px;border-radius:5px;
+  }
+  .entry .del:hover{color:var(--danger);background:var(--danger-bg);}
+  .empty{color:var(--muted);font-size:0.88rem;padding:8px 0;}
+
+  .group-card{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:16px 18px;
+    margin-bottom:12px;
+  }
+  .group-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;}
+  .group-head .g-name{font-size:1rem;font-weight:700;}
+  .balance{font-size:0.82rem;font-weight:700;padding:3px 10px;border-radius:20px;}
+  .balance.pos{background:var(--signal-bg);color:var(--signal);}
+  .balance.neg{background:var(--danger-bg);color:var(--danger);}
+  .balance.zero{background:#eee;color:var(--muted);}
+  .stat-row{display:flex;gap:16px;font-size:0.82rem;color:var(--muted);flex-wrap:wrap;}
+  .stat-row b{color:var(--ink);font-size:0.9rem;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="route-line"></div>
+    <h1>Registro de transporte</h1>
+    <p class="subtitle">Registrá cuántos asientos necesitás o cuántos ofrecés, e indicá tu grupo.</p>
+  </header>
+
+  <div class="summary-top" id="resumen-top"></div>
+
+  <div class="card">
+    <label for="nombre">Nombre</label>
+    <input type="text" id="nombre" placeholder="Tu nombre">
+
+    <label>¿Qué necesitás registrar?</label>
+    <div class="choice-group">
+      <div class="choice" id="choice-necesita" data-tipo="necesita">Necesito transporte</div>
+      <div class="choice" id="choice-tiene" data-tipo="tiene">Tengo transporte</div>
+    </div>
+
+    <div id="campo-asientos" style="display:none;">
+      <label id="label-asientos" for="asientos">Asientos</label>
+      <input type="number" id="asientos" min="1" placeholder="Ej: 1">
+    </div>
+
+    <label for="grupo">Grupo</label>
+    <select id="grupo">
+      <option value="">Elegí un grupo</option>
+      <option value="1">Grupo 1</option>
+      <option value="2">Grupo 2</option>
+      <option value="3">Grupo 3</option>
+      <option value="4">Grupo 4</option>
+      <option value="5">Grupo 5</option>
+    </select>
+
+    <button class="btn-primary" id="btn-registrar">Registrar</button>
+    <div class="msg" id="msg-registro"></div>
+  </div>
+
+  <div class="list-title">
+    <span>Resumen por grupo</span>
+  </div>
+  <div id="resumen-grupos"></div>
+
+  <div class="list-title">
+    <span>Todos los registros</span>
+    <a href="#" id="btn-refrescar">actualizar</a>
+  </div>
+  <div class="card" id="lista-registros">
+    <div class="empty">Cargando registros…</div>
+  </div>
+</div>
+
+<script>
+// ⚠️ PEGÁ ACÁ LA URL DE TU GOOGLE APPS SCRIPT (paso "Implementar como aplicación web")
+// Es la misma URL y la misma hoja que usa traslado.html: ambos formularios
+// comparten un único listado de registros (tipo 'transporte' = necesita,
+// tipo 'vehiculo' = tiene lugares disponibles).
+const WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbxR_oIF9-XTlQMwUydFAAAhbho6jx0tmJBYhq47ARVRQSur6Rfa7s8LuFYRT0SL1bvX/exec';
+
+let tipoSeleccionado = null;
+let registros = [];
+
+function uid(){
+  return 'r' + Date.now() + Math.random().toString(36).slice(2,8);
+}
+
+function urlConfigurada(){
+  return WEBAPP_URL && WEBAPP_URL.indexOf('http') === 0;
+}
+
+async function cargarRegistros(){
+  if(!urlConfigurada()){
+    registros = [];
+    return registros;
+  }
+  try{
+    const res = await fetch(WEBAPP_URL + '?t=' + Date.now());
+    const data = await res.json();
+    registros = Array.isArray(data) ? data : [];
+  }catch(e){
+    registros = [];
+  }
+  return registros;
+}
+
+async function agregarRegistro(registro){
+  if(!urlConfigurada()){
+    return { ok:false, error:'Todavía no se configuró la URL del Google Apps Script en el código (WEBAPP_URL).' };
+  }
+  try{
+    await fetch(WEBAPP_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'add', ...registro })
+    });
+    return { ok:true };
+  }catch(e){
+    return { ok:false, error:(e && e.message) ? e.message : String(e) };
+  }
+}
+
+async function eliminarRegistroRemoto(id){
+  if(!urlConfigurada()) return false;
+  try{
+    await fetch(WEBAPP_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'delete', id })
+    });
+    return true;
+  }catch(e){
+    return false;
+  }
+}
+
+// --- Choice buttons ---
+const choiceNecesita = document.getElementById('choice-necesita');
+const choiceTiene = document.getElementById('choice-tiene');
+const campoAsientos = document.getElementById('campo-asientos');
+const labelAsientos = document.getElementById('label-asientos');
+const inputAsientos = document.getElementById('asientos');
+
+function seleccionarTipo(tipo){
+  tipoSeleccionado = tipo;
+  choiceNecesita.classList.toggle('selected', tipo === 'necesita');
+  choiceTiene.classList.toggle('selected', tipo === 'tiene');
+  campoAsientos.style.display = 'block';
+  if(tipo === 'necesita'){
+    labelAsientos.textContent = 'Asientos que necesitás';
+    inputAsientos.placeholder = 'Ej: 1';
+  } else {
+    labelAsientos.textContent = 'Asientos disponibles';
+    inputAsientos.placeholder = 'Ej: 3';
+  }
+}
+choiceNecesita.addEventListener('click', () => seleccionarTipo('necesita'));
+choiceTiene.addEventListener('click', () => seleccionarTipo('tiene'));
+
+// --- Registrar ---
+const msgRegistro = document.getElementById('msg-registro');
+function mostrarMsg(texto, ok){
+  msgRegistro.textContent = texto;
+  msgRegistro.className = 'msg show ' + (ok ? 'ok' : 'err');
+  setTimeout(() => msgRegistro.classList.remove('show'), 3500);
+}
+
+document.getElementById('btn-registrar').addEventListener('click', async () => {
+  const nombre = document.getElementById('nombre').value.trim();
+  const grupo = document.getElementById('grupo').value;
+  const asientos = parseInt(inputAsientos.value, 10);
+
+  if(!nombre){ mostrarMsg('Ingresá tu nombre.', false); return; }
+  if(!tipoSeleccionado){ mostrarMsg('Elegí si necesitás transporte o si tenés transporte.', false); return; }
+  if(!grupo){ mostrarMsg('Elegí tu grupo.', false); return; }
+  if(!asientos || asientos < 1){ mostrarMsg('Ingresá una cantidad de asientos válida.', false); return; }
+
+  const btn = document.getElementById('btn-registrar');
+  btn.disabled = true;
+
+  const resultado = await agregarRegistro({
+    id: uid(),
+    nombre,
+    tipo: tipoSeleccionado === 'necesita' ? 'transporte' : 'vehiculo',
+    asientos,
+    grupo
+  });
+  btn.disabled = false;
+
+  if(resultado.ok){
+    mostrarMsg('¡Registrado! Ya aparecés en la lista de abajo.', true);
+    document.getElementById('nombre').value = '';
+    inputAsientos.value = '';
+    document.getElementById('grupo').value = '';
+    tipoSeleccionado = null;
+    choiceNecesita.classList.remove('selected');
+    choiceTiene.classList.remove('selected');
+    campoAsientos.style.display = 'none';
+    refrescarTodo();
+  } else {
+    mostrarMsg('No se pudo guardar: ' + resultado.error, false);
+  }
+});
+
+// --- Lista + resumen ---
+async function refrescarTodo(){
+  const lista = document.getElementById('lista-registros');
+  if(!urlConfigurada()){
+    lista.innerHTML = '<div class="empty">Falta configurar WEBAPP_URL en el código con la URL de tu Google Apps Script.</div>';
+    document.getElementById('resumen-top').innerHTML = '';
+    document.getElementById('resumen-grupos').innerHTML = '';
+    return;
+  }
+
+  const datos = await cargarRegistros();
+
+  const grupos = {};
+  for(let g = 1; g <= 5; g++){
+    grupos[g] = { necesitan: 0, asientosNecesarios: 0, asientosDisponibles: 0, autos: 0 };
+  }
+  datos.forEach(r => {
+    const g = grupos[r.grupo];
+    if(!g) return;
+    if(r.tipo === 'transporte'){
+      g.necesitan += 1;
+      g.asientosNecesarios += r.asientos;
+    } else {
+      g.autos += 1;
+      g.asientosDisponibles += r.asientos;
+    }
+  });
+
+  let totalFaltan = 0, totalSobran = 0, totalPersonasEsperando = 0;
+  const cardsHtml = Object.keys(grupos).map(g => {
+    const d = grupos[g];
+    const saldo = d.asientosDisponibles - d.asientosNecesarios;
+    totalPersonasEsperando += d.necesitan;
+    if(saldo > 0) totalSobran += saldo;
+    if(saldo < 0) totalFaltan += Math.abs(saldo);
+
+    let balanceClass = 'zero', balanceTxt = 'Justo';
+    if(saldo > 0){ balanceClass = 'pos'; balanceTxt = `Sobran ${saldo}`; }
+    if(saldo < 0){ balanceClass = 'neg'; balanceTxt = `Faltan ${Math.abs(saldo)}`; }
+
+    return `
+      <div class="group-card">
+        <div class="group-head">
+          <span class="g-name">Grupo ${g}</span>
+          <span class="balance ${balanceClass}">${balanceTxt}</span>
+        </div>
+        <div class="stat-row">
+          <span><b>${d.necesitan}</b> necesitan transporte</span>
+          <span><b>${d.asientosNecesarios}</b> asientos pedidos</span>
+          <span><b>${d.asientosDisponibles}</b> asientos ofrecidos (${d.autos} vehículo${d.autos===1?'':'s'})</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  document.getElementById('resumen-grupos').innerHTML = cardsHtml;
+
+  document.getElementById('resumen-top').innerHTML = `
+    <div class="box"><div class="num">${totalPersonasEsperando}</div><div class="lbl">personas esperando transporte</div></div>
+    <div class="box"><div class="num">${totalSobran}</div><div class="lbl">asientos libres para prestar entre grupos</div></div>
+    <div class="box"><div class="num">${totalFaltan}</div><div class="lbl">asientos que aún faltan en total</div></div>
+  `;
+
+  if(datos.length === 0){
+    lista.innerHTML = '<div class="empty">Todavía no hay nadie registrado.</div>';
+    return;
+  }
+  const ordenados = [...datos].sort((a,b) => new Date(b.timestamp||0) - new Date(a.timestamp||0));
+  lista.innerHTML = ordenados.map(r => `
+    <div class="entry" data-id="${r.id}">
+      <div>
+        <div class="who">${escapeHtml(r.nombre)}</div>
+        <div class="meta">Grupo ${r.grupo} ·
+          <span class="tag ${r.tipo === 'transporte' ? 'necesita' : 'tiene'}">${r.tipo === 'transporte' ? `necesita ${r.asientos} asiento(s)` : `${r.asientos} asiento(s) disponible(s)`}</span>
+        </div>
+      </div>
+      <button class="del" data-id="${r.id}">Eliminar</button>
+    </div>
+  `).join('');
+
+  lista.querySelectorAll('.del').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.getAttribute('data-id');
+      btn.disabled = true;
+      await eliminarRegistroRemoto(id);
+      refrescarTodo();
+    });
+  });
+}
+
+function escapeHtml(s){
+  const div = document.createElement('div');
+  div.textContent = s;
+  return div.innerHTML;
+}
+
+document.getElementById('btn-refrescar').addEventListener('click', (e) => {
+  e.preventDefault();
+  refrescarTodo();
+});
+
+// Init
+refrescarTodo();
+</script>
+</body>
+</html>
