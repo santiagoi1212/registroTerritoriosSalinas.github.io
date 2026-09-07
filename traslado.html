@@ -265,11 +265,17 @@ async function cargarRegistros(){
 }
 
 async function guardarRegistros(arr){
+  if(!window.storage || typeof window.storage.set !== 'function'){
+    return { ok:false, error:'window.storage no está disponible en este visor.' };
+  }
   try{
-    await window.storage.set(KEY, JSON.stringify(arr), true);
-    return true;
+    const result = await window.storage.set(KEY, JSON.stringify(arr), true);
+    if(!result){
+      return { ok:false, error:'window.storage.set devolvió null.' };
+    }
+    return { ok:true };
   }catch(e){
-    return false;
+    return { ok:false, error:(e && e.message) ? e.message : String(e) };
   }
 }
 
@@ -359,10 +365,10 @@ document.getElementById('btn-registrar').addEventListener('click', async () => {
     grupo,
     ts: Date.now()
   });
-  const ok = await guardarRegistros(actuales);
+  const resultado = await guardarRegistros(actuales);
   btn.disabled = false;
 
-  if(ok){
+  if(resultado.ok){
     mostrarMsg('¡Registrado! Ya aparecés en la lista de abajo.', true);
     document.getElementById('nombre').value = '';
     inputAsientos.value = '';
@@ -373,7 +379,7 @@ document.getElementById('btn-registrar').addEventListener('click', async () => {
     campoAsientos.style.display = 'none';
     refrescarListaRegistros();
   } else {
-    mostrarMsg('No se pudo guardar. Probá de nuevo.', false);
+    mostrarMsg('No se pudo guardar: ' + resultado.error, false);
   }
 });
 
