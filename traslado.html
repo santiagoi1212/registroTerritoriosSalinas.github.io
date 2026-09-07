@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Coordinación de Transporte</title>
+<style>
+  :root{
+    --ink:#12201c;
+    --paper:#f1f3ee;
+    --surface:#ffffff;
+    --line:#d9ddd2;
+    --amber:#e2872b;
+    --amber-dark:#b8641a;
+    --signal:#2f6b52;
+    --signal-bg:#e6efe8;
+    --danger:#b8483c;
+    --danger-bg:#f7e9e6;
+    --muted:#5b6660;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background:var(--paper);
+    color:var(--ink);
+    min-height:100vh;
+  }
+  .wrap{max-width:760px;margin:0 auto;padding:28px 20px 60px;}
+
+  header{margin-bottom:22px;}
+  .route-line{
+    height:6px;
+    background:repeating-linear-gradient(90deg,var(--amber) 0 22px, transparent 22px 34px);
+    border-radius:3px;
+    margin-bottom:18px;
+  }
+  h1{
+    font-size:1.7rem;
+    margin:0 0 4px;
+    letter-spacing:-0.01em;
+  }
+  .subtitle{color:var(--muted);margin:0;font-size:0.95rem;}
+
+  nav{
+    display:flex;
+    gap:0;
+    margin:22px 0 26px;
+    border-bottom:2px solid var(--line);
+  }
+  nav button{
+    flex:1;
+    padding:12px 10px;
+    border:none;
+    background:none;
+    font-size:0.95rem;
+    font-weight:600;
+    color:var(--muted);
+    cursor:pointer;
+    border-bottom:3px solid transparent;
+    margin-bottom:-2px;
+    transition:color .15s, border-color .15s;
+  }
+  nav button.active{color:var(--ink);border-bottom-color:var(--amber);}
+  nav button:hover{color:var(--ink);}
+
+  .card{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:22px;
+    margin-bottom:18px;
+  }
+
+  label{display:block;font-size:0.85rem;font-weight:600;color:var(--ink);margin-bottom:6px;}
+  input[type=text], input[type=number], select{
+    width:100%;
+    padding:10px 12px;
+    border:1px solid var(--line);
+    border-radius:7px;
+    font-size:0.95rem;
+    background:var(--paper);
+    color:var(--ink);
+    margin-bottom:16px;
+  }
+  input:focus, select:focus, button:focus-visible{
+    outline:2px solid var(--amber);
+    outline-offset:1px;
+  }
+
+  .choice-group{display:flex;gap:10px;margin-bottom:16px;}
+  .choice{
+    flex:1;
+    border:1.5px solid var(--line);
+    border-radius:8px;
+    padding:12px;
+    cursor:pointer;
+    text-align:center;
+    font-size:0.9rem;
+    font-weight:600;
+    color:var(--muted);
+    background:var(--surface);
+    transition:border-color .15s, color .15s, background .15s;
+  }
+  .choice.selected{
+    border-color:var(--amber);
+    color:var(--amber-dark);
+    background:#fdf3e7;
+  }
+
+  .btn-primary{
+    width:100%;
+    padding:13px;
+    background:var(--ink);
+    color:var(--paper);
+    border:none;
+    border-radius:8px;
+    font-size:0.95rem;
+    font-weight:600;
+    cursor:pointer;
+    transition:background .15s;
+  }
+  .btn-primary:hover{background:#0a1512;}
+  .btn-primary:disabled{background:#a9afa8;cursor:not-allowed;}
+
+  .msg{
+    font-size:0.85rem;
+    margin-top:10px;
+    padding:10px 12px;
+    border-radius:7px;
+    display:none;
+  }
+  .msg.show{display:block;}
+  .msg.ok{background:var(--signal-bg);color:var(--signal);}
+  .msg.err{background:var(--danger-bg);color:var(--danger);}
+
+  .list-title{font-size:0.8rem;font-weight:700;text-transform:none;color:var(--muted);margin:26px 0 10px;}
+  .entry{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding:11px 0;
+    border-bottom:1px solid var(--line);
+    font-size:0.9rem;
+  }
+  .entry:last-child{border-bottom:none;}
+  .entry .who{font-weight:600;}
+  .entry .meta{color:var(--muted);font-size:0.82rem;}
+  .entry .del{
+    background:none;border:none;color:var(--muted);cursor:pointer;font-size:0.78rem;
+    padding:4px 8px;border-radius:5px;
+  }
+  .entry .del:hover{color:var(--danger);background:var(--danger-bg);}
+  .empty{color:var(--muted);font-size:0.88rem;padding:8px 0;}
+
+  .group-card{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:18px 20px;
+    margin-bottom:14px;
+  }
+  .group-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px;}
+  .group-head .g-name{font-size:1.05rem;font-weight:700;}
+  .balance{font-size:0.85rem;font-weight:700;padding:4px 10px;border-radius:20px;}
+  .balance.pos{background:var(--signal-bg);color:var(--signal);}
+  .balance.neg{background:var(--danger-bg);color:var(--danger);}
+  .balance.zero{background:#eee;color:var(--muted);}
+
+  .stat-row{display:flex;gap:18px;font-size:0.85rem;color:var(--muted);flex-wrap:wrap;}
+  .stat-row b{color:var(--ink);font-size:0.95rem;}
+
+  .summary-top{
+    display:flex;gap:14px;margin-bottom:20px;flex-wrap:wrap;
+  }
+  .summary-top .box{
+    flex:1;min-width:140px;
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:16px;
+  }
+  .summary-top .box .num{font-size:1.6rem;font-weight:700;}
+  .summary-top .box .lbl{font-size:0.8rem;color:var(--muted);margin-top:2px;}
+
+  .refresh-note{font-size:0.78rem;color:var(--muted);text-align:right;margin-top:-6px;margin-bottom:14px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="route-line"></div>
+    <h1>Coordinación de transporte</h1>
+    <p class="subtitle">Registrá si tenés vehículo o necesitás uno, y mirá cómo quedan los lugares por grupo.</p>
+  </header>
+
+  <nav>
+    <button id="tab-registro" class="active">Registrarme</button>
+    <button id="tab-resumen">Ver resumen</button>
+  </nav>
+
+  <!-- REGISTRO -->
+  <div id="view-registro">
+    <div class="card">
+      <label for="nombre">Nombre</label>
+      <input type="text" id="nombre" placeholder="Tu nombre">
+
+      <label>¿Tenés vehículo?</label>
+      <div class="choice-group">
+        <div class="choice" id="choice-vehiculo" data-tipo="vehiculo">Tengo vehículo</div>
+        <div class="choice" id="choice-transporte" data-tipo="transporte">Necesito transporte</div>
+      </div>
+
+      <div id="campo-asientos" style="display:none;">
+        <label id="label-asientos" for="asientos">Asientos disponibles</label>
+        <input type="number" id="asientos" min="1" placeholder="Ej: 3">
+      </div>
+
+      <label for="grupo">Grupo</label>
+      <select id="grupo">
+        <option value="">Elegí un grupo</option>
+        <option value="1">Grupo 1</option>
+        <option value="2">Grupo 2</option>
+        <option value="3">Grupo 3</option>
+        <option value="4">Grupo 4</option>
+        <option value="5">Grupo 5</option>
+      </select>
+
+      <button class="btn-primary" id="btn-registrar">Registrar</button>
+      <div class="msg" id="msg-registro"></div>
+    </div>
+
+    <div class="list-title">Todos los registros</div>
+    <div class="card" id="lista-registros">
+      <div class="empty">Cargando registros…</div>
+    </div>
+  </div>
+
+  <!-- RESUMEN -->
+  <div id="view-resumen" style="display:none;">
+    <div class="summary-top" id="resumen-top"></div>
+    <div class="refresh-note">Se actualiza solo cada pocos segundos · <a href="#" id="btn-refrescar" style="color:var(--muted);">actualizar ahora</a></div>
+    <div id="resumen-grupos"></div>
+  </div>
+</div>
+
+<script>
+const KEY = 'registros';
+let tipoSeleccionado = null;
+let registros = [];
+let pollInterval = null;
+
+function uid(){
+  return 'r' + Date.now() + Math.random().toString(36).slice(2,8);
+}
+
+async function cargarRegistros(){
+  try{
+    const res = await window.storage.get(KEY, true);
+    registros = res ? JSON.parse(res.value) : [];
+  }catch(e){
+    registros = [];
+  }
+  return registros;
+}
+
+async function guardarRegistros(arr){
+  try{
+    await window.storage.set(KEY, JSON.stringify(arr), true);
+    return true;
+  }catch(e){
+    return false;
+  }
+}
+
+// --- Tabs ---
+const tabRegistro = document.getElementById('tab-registro');
+const tabResumen = document.getElementById('tab-resumen');
+const viewRegistro = document.getElementById('view-registro');
+const viewResumen = document.getElementById('view-resumen');
+
+tabRegistro.addEventListener('click', () => {
+  tabRegistro.classList.add('active');
+  tabResumen.classList.remove('active');
+  viewRegistro.style.display = 'block';
+  viewResumen.style.display = 'none';
+  stopPolling();
+  refrescarListaRegistros();
+});
+
+tabResumen.addEventListener('click', () => {
+  tabResumen.classList.add('active');
+  tabRegistro.classList.remove('active');
+  viewResumen.style.display = 'block';
+  viewRegistro.style.display = 'none';
+  refrescarResumen();
+  startPolling();
+});
+
+function startPolling(){
+  stopPolling();
+  pollInterval = setInterval(refrescarResumen, 6000);
+}
+function stopPolling(){
+  if(pollInterval) clearInterval(pollInterval);
+  pollInterval = null;
+}
+
+// --- Choice buttons ---
+const choiceVehiculo = document.getElementById('choice-vehiculo');
+const choiceTransporte = document.getElementById('choice-transporte');
+const campoAsientos = document.getElementById('campo-asientos');
+const labelAsientos = document.getElementById('label-asientos');
+const inputAsientos = document.getElementById('asientos');
+
+function seleccionarTipo(tipo){
+  tipoSeleccionado = tipo;
+  choiceVehiculo.classList.toggle('selected', tipo === 'vehiculo');
+  choiceTransporte.classList.toggle('selected', tipo === 'transporte');
+  campoAsientos.style.display = 'block';
+  if(tipo === 'vehiculo'){
+    labelAsientos.textContent = 'Asientos disponibles (además del tuyo)';
+    inputAsientos.placeholder = 'Ej: 3';
+  } else {
+    labelAsientos.textContent = 'Asientos que necesitás';
+    inputAsientos.placeholder = 'Ej: 1';
+  }
+}
+choiceVehiculo.addEventListener('click', () => seleccionarTipo('vehiculo'));
+choiceTransporte.addEventListener('click', () => seleccionarTipo('transporte'));
+
+// --- Registrar ---
+const msgRegistro = document.getElementById('msg-registro');
+function mostrarMsg(texto, ok){
+  msgRegistro.textContent = texto;
+  msgRegistro.className = 'msg show ' + (ok ? 'ok' : 'err');
+  setTimeout(() => msgRegistro.classList.remove('show'), 3500);
+}
+
+document.getElementById('btn-registrar').addEventListener('click', async () => {
+  const nombre = document.getElementById('nombre').value.trim();
+  const grupo = document.getElementById('grupo').value;
+  const asientos = parseInt(inputAsientos.value, 10);
+
+  if(!nombre){ mostrarMsg('Ingresá tu nombre.', false); return; }
+  if(!tipoSeleccionado){ mostrarMsg('Elegí si tenés vehículo o necesitás transporte.', false); return; }
+  if(!grupo){ mostrarMsg('Elegí tu grupo.', false); return; }
+  if(!asientos || asientos < 1){ mostrarMsg('Ingresá una cantidad de asientos válida.', false); return; }
+
+  const btn = document.getElementById('btn-registrar');
+  btn.disabled = true;
+
+  const actuales = await cargarRegistros();
+  actuales.push({
+    id: uid(),
+    nombre,
+    tipo: tipoSeleccionado,
+    asientos,
+    grupo,
+    ts: Date.now()
+  });
+  const ok = await guardarRegistros(actuales);
+  btn.disabled = false;
+
+  if(ok){
+    mostrarMsg('¡Registrado! Ya aparecés en la lista de abajo.', true);
+    document.getElementById('nombre').value = '';
+    inputAsientos.value = '';
+    document.getElementById('grupo').value = '';
+    tipoSeleccionado = null;
+    choiceVehiculo.classList.remove('selected');
+    choiceTransporte.classList.remove('selected');
+    campoAsientos.style.display = 'none';
+    refrescarListaRegistros();
+  } else {
+    mostrarMsg('No se pudo guardar. Probá de nuevo.', false);
+  }
+});
+
+// --- Lista de registros ---
+async function refrescarListaRegistros(){
+  const lista = document.getElementById('lista-registros');
+  const datos = await cargarRegistros();
+  if(datos.length === 0){
+    lista.innerHTML = '<div class="empty">Todavía no hay nadie registrado.</div>';
+    return;
+  }
+  const ordenados = [...datos].sort((a,b) => b.ts - a.ts);
+  lista.innerHTML = ordenados.map(r => `
+    <div class="entry" data-id="${r.id}">
+      <div>
+        <div class="who">${escapeHtml(r.nombre)}</div>
+        <div class="meta">Grupo ${r.grupo} · ${r.tipo === 'vehiculo' ? `${r.asientos} asiento(s) disponible(s)` : `necesita ${r.asientos} asiento(s)`}</div>
+      </div>
+      <button class="del" data-id="${r.id}">Eliminar</button>
+    </div>
+  `).join('');
+
+  lista.querySelectorAll('.del').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.getAttribute('data-id');
+      const actuales = await cargarRegistros();
+      const filtrados = actuales.filter(r => r.id !== id);
+      await guardarRegistros(filtrados);
+      refrescarListaRegistros();
+    });
+  });
+}
+
+function escapeHtml(s){
+  const div = document.createElement('div');
+  div.textContent = s;
+  return div.innerHTML;
+}
+
+// --- Resumen ---
+async function refrescarResumen(){
+  const datos = await cargarRegistros();
+  const grupos = {};
+  for(let g = 1; g <= 5; g++){
+    grupos[g] = { necesitan: 0, asientosNecesarios: 0, asientosDisponibles: 0, autos: 0 };
+  }
+  datos.forEach(r => {
+    const g = grupos[r.grupo];
+    if(!g) return;
+    if(r.tipo === 'transporte'){
+      g.necesitan += 1;
+      g.asientosNecesarios += r.asientos;
+    } else {
+      g.autos += 1;
+      g.asientosDisponibles += r.asientos;
+    }
+  });
+
+  let totalFaltan = 0, totalSobran = 0, totalPersonasEsperando = 0;
+  const cardsHtml = Object.keys(grupos).map(g => {
+    const d = grupos[g];
+    const saldo = d.asientosDisponibles - d.asientosNecesarios;
+    totalPersonasEsperando += d.necesitan;
+    if(saldo > 0) totalSobran += saldo;
+    if(saldo < 0) totalFaltan += Math.abs(saldo);
+
+    let balanceClass = 'zero', balanceTxt = 'Justo';
+    if(saldo > 0){ balanceClass = 'pos'; balanceTxt = `Sobran ${saldo}`; }
+    if(saldo < 0){ balanceClass = 'neg'; balanceTxt = `Faltan ${Math.abs(saldo)}`; }
+
+    return `
+      <div class="group-card">
+        <div class="group-head">
+          <span class="g-name">Grupo ${g}</span>
+          <span class="balance ${balanceClass}">${balanceTxt}</span>
+        </div>
+        <div class="stat-row">
+          <span><b>${d.necesitan}</b> personas necesitan transporte</span>
+          <span><b>${d.asientosNecesarios}</b> asientos pedidos</span>
+          <span><b>${d.asientosDisponibles}</b> asientos ofrecidos (${d.autos} vehículo${d.autos===1?'':'s'})</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  document.getElementById('resumen-grupos').innerHTML = cardsHtml;
+
+  document.getElementById('resumen-top').innerHTML = `
+    <div class="box"><div class="num">${totalPersonasEsperando}</div><div class="lbl">personas esperando transporte</div></div>
+    <div class="box"><div class="num">${totalSobran}</div><div class="lbl">asientos libres para prestar entre grupos</div></div>
+    <div class="box"><div class="num">${totalFaltan}</div><div class="lbl">asientos que aún faltan en total</div></div>
+  `;
+}
+
+document.getElementById('btn-refrescar').addEventListener('click', (e) => {
+  e.preventDefault();
+  refrescarResumen();
+});
+
+// Init
+refrescarListaRegistros();
+</script>
+</body>
+</html>
