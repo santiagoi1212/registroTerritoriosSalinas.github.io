@@ -245,7 +245,9 @@
 </div>
 
 <script>
-const KEY = 'registros';
+// ⚠️ PEGÁ ACÁ LA URL DE TU GOOGLE APPS SCRIPT (paso "Implementar como aplicación web")
+const WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbxR_oIF9-XTlQMwUydFAAAhbho6jx0tmJBYhq47ARVRQSur6Rfa7s8LuFYRT0SL1bvX/exec';
+
 let tipoSeleccionado = null;
 let registros = [];
 let pollInterval = null;
@@ -254,28 +256,52 @@ function uid(){
   return 'r' + Date.now() + Math.random().toString(36).slice(2,8);
 }
 
+function urlConfigurada(){
+  return WEBAPP_URL && WEBAPP_URL.indexOf('http') === 0;
+}
+
 async function cargarRegistros(){
+  if(!urlConfigurada()){
+    registros = [];
+    return registros;
+  }
   try{
-    const res = await window.storage.get(KEY, true);
-    registros = res ? JSON.parse(res.value) : [];
+    const res = await fetch(WEBAPP_URL + '?t=' + Date.now());
+    const data = await res.json();
+    registros = Array.isArray(data) ? data : [];
   }catch(e){
     registros = [];
   }
   return registros;
 }
 
-async function guardarRegistros(arr){
-  if(!window.storage || typeof window.storage.set !== 'function'){
-    return { ok:false, error:'window.storage no está disponible en este visor.' };
+async function agregarRegistro(registro){
+  if(!urlConfigurada()){
+    return { ok:false, error:'Todavía no se configuró la URL del Google Apps Script en el código (WEBAPP_URL).' };
   }
   try{
-    const result = await window.storage.set(KEY, JSON.stringify(arr), true);
-    if(!result){
-      return { ok:false, error:'window.storage.set devolvió null.' };
-    }
+    await fetch(WEBAPP_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'add', ...registro })
+    });
     return { ok:true };
   }catch(e){
     return { ok:false, error:(e && e.message) ? e.message : String(e) };
+  }
+}
+
+async function eliminarRegistroRemoto(id){
+  if(!urlConfigurada()) return false;
+  try{
+    await fetch(WEBAPP_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'delete', id })
+    });
+    return true;
+  }catch(e){
+    return false;
   }
 }
 
@@ -356,16 +382,13 @@ document.getElementById('btn-registrar').addEventListener('click', async () => {
   const btn = document.getElementById('btn-registrar');
   btn.disabled = true;
 
-  const actuales = await cargarRegistros();
-  actuales.push({
+  const resultado = await agregarRegistro({
     id: uid(),
     nombre,
     tipo: tipoSeleccionado,
     asientos,
-    grupo,
-    ts: Date.now()
+    grupo
   });
-  const resultado = await guardarRegistros(actuales);
   btn.disabled = false;
 
   if(resultado.ok){
@@ -386,6 +409,10 @@ document.getElementById('btn-registrar').addEventListener('click', async () => {
 // --- Lista de registros ---
 async function refrescarListaRegistros(){
   const lista = document.getElementById('lista-registros');
+  if(!urlConfigurada()){
+    lista.innerHTML = '<div class="empty">Falta configurar WEBAPP_URL en el código con la URL de tu Google Apps Script.</div>';
+    return;
+  }
   const datos = await cargarRegistros();
   if(datos.length === 0){
     lista.innerHTML = '<div class="empty">Todavía no hay nadie registrado.</div>';
@@ -405,9 +432,8 @@ async function refrescarListaRegistros(){
   lista.querySelectorAll('.del').forEach(btn => {
     btn.addEventListener('click', async () => {
       const id = btn.getAttribute('data-id');
-      const actuales = await cargarRegistros();
-      const filtrados = actuales.filter(r => r.id !== id);
-      await guardarRegistros(filtrados);
+      btn.disabled = true;
+      await eliminarRegistroRemoto(id);
       refrescarListaRegistros();
     });
   });
