@@ -184,6 +184,36 @@
   .summary-top .box .lbl{font-size:0.8rem;color:var(--muted);margin-top:2px;}
 
   .refresh-note{font-size:0.78rem;color:var(--muted);text-align:right;margin-top:-6px;margin-bottom:14px;}
+
+  .assign-item{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:16px 18px;
+    margin-bottom:12px;
+  }
+  .assign-item .entry{padding:0 0 12px;border-bottom:none;}
+  .assign-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+  .assign-row select{flex:2;min-width:160px;margin-bottom:0;}
+  .assign-row input[type=number]{flex:1;min-width:70px;margin-bottom:0;}
+  .btn-mini{
+    padding:9px 14px;
+    border:none;
+    border-radius:7px;
+    background:var(--ink);
+    color:var(--paper);
+    font-size:0.85rem;
+    font-weight:600;
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .btn-mini:hover{background:#0a1512;}
+  .btn-mini:disabled{background:#a9afa8;cursor:not-allowed;}
+  .btn-mini.alt{background:var(--amber-dark);}
+  .btn-mini.alt:hover{background:#96521a;}
+
+  .auto-row{display:flex;gap:10px;flex-wrap:wrap;margin:4px 0 18px;}
+  .auto-row .btn-mini{flex:1;min-width:180px;padding:12px 14px;}
 </style>
 </head>
 <body>
@@ -191,12 +221,13 @@
   <header>
     <div class="route-line"></div>
     <h1>Coordinación de transporte</h1>
-    <p class="subtitle">Registrá si tenés vehículo o necesitás uno, y mirá cómo quedan los lugares por grupo.</p>
+    <p class="subtitle">Registrá si tenés vehículo o necesitás uno, y mirá cómo quedan los arreglos en cada reunión.</p>
   </header>
 
   <nav>
     <button id="tab-registro" class="active">Registrarme</button>
     <button id="tab-resumen">Ver resumen</button>
+    <button id="tab-asignar">Asignar</button>
   </nav>
 
   <!-- REGISTRO -->
@@ -230,8 +261,13 @@
       <div class="msg" id="msg-registro"></div>
     </div>
 
-    <div class="list-title">Todos los registros</div>
-    <div class="card" id="lista-registros">
+    <div class="list-title">Tienen vehículo</div>
+    <div class="card" id="lista-vehiculos">
+      <div class="empty">Cargando registros…</div>
+    </div>
+
+    <div class="list-title">Piden traslado</div>
+    <div class="card" id="lista-transporte">
       <div class="empty">Cargando registros…</div>
     </div>
   </div>
@@ -241,6 +277,35 @@
     <div class="summary-top" id="resumen-top"></div>
     <div class="refresh-note">Se actualiza solo cada pocos segundos · <a href="#" id="btn-refrescar" style="color:var(--muted);">actualizar ahora</a></div>
     <div id="resumen-grupos"></div>
+  </div>
+
+  <!-- ASIGNAR -->
+  <div id="view-asignar" style="display:none;">
+    <p class="subtitle" style="margin-bottom:16px;">Elegí un vehículo con lugares libres para cada pedido pendiente. Las asignaciones son por reunión.</p>
+
+    <label for="sel-reunion">Reunión</label>
+    <select id="sel-reunion">
+      <option value="2026-09-22">Martes 22/9</option>
+      <option value="2026-09-26">Sábado 26/9</option>
+      <option value="2026-09-29">Martes 29/9</option>
+      <option value="2026-10-02">Viernes 2/10</option>
+      <option value="2026-10-06">Martes 6/10</option>
+      <option value="2026-10-09">Viernes 9/10</option>
+    </select>
+
+    <div class="auto-row">
+      <button class="btn-mini" id="btn-auto-dia" type="button">Auto-emparejar este día</button>
+      <button class="btn-mini alt" id="btn-auto-todos" type="button">Auto-emparejar todos los días</button>
+    </div>
+
+    <div class="summary-top" id="asignar-top"></div>
+    <div class="msg" id="msg-asignar"></div>
+
+    <div class="list-title">Pedidos pendientes de asignar</div>
+    <div id="lista-pendientes"><div class="empty">Cargando…</div></div>
+
+    <div class="list-title" id="titulo-asignaciones">Asignaciones actuales</div>
+    <div class="card" id="lista-asignaciones"><div class="empty">Cargando…</div></div>
   </div>
 </div>
 
@@ -308,30 +373,39 @@ async function eliminarRegistroRemoto(id){
 // --- Tabs ---
 const tabRegistro = document.getElementById('tab-registro');
 const tabResumen = document.getElementById('tab-resumen');
+const tabAsignar = document.getElementById('tab-asignar');
 const viewRegistro = document.getElementById('view-registro');
 const viewResumen = document.getElementById('view-resumen');
+const viewAsignar = document.getElementById('view-asignar');
+
+function activarTab(tab, view){
+  [tabRegistro, tabResumen, tabAsignar].forEach(b => b.classList.remove('active'));
+  [viewRegistro, viewResumen, viewAsignar].forEach(v => v.style.display = 'none');
+  tab.classList.add('active');
+  view.style.display = 'block';
+}
 
 tabRegistro.addEventListener('click', () => {
-  tabRegistro.classList.add('active');
-  tabResumen.classList.remove('active');
-  viewRegistro.style.display = 'block';
-  viewResumen.style.display = 'none';
+  activarTab(tabRegistro, viewRegistro);
   stopPolling();
   refrescarListaRegistros();
 });
 
 tabResumen.addEventListener('click', () => {
-  tabResumen.classList.add('active');
-  tabRegistro.classList.remove('active');
-  viewResumen.style.display = 'block';
-  viewRegistro.style.display = 'none';
+  activarTab(tabResumen, viewResumen);
   refrescarResumen();
-  startPolling();
+  startPolling(refrescarResumen);
 });
 
-function startPolling(){
+tabAsignar.addEventListener('click', () => {
+  activarTab(tabAsignar, viewAsignar);
+  refrescarAsignar();
+  startPolling(refrescarAsignar);
+});
+
+function startPolling(fn){
   stopPolling();
-  pollInterval = setInterval(refrescarResumen, 6000);
+  pollInterval = setInterval(fn, 6000);
 }
 function stopPolling(){
   if(pollInterval) clearInterval(pollInterval);
@@ -407,19 +481,8 @@ document.getElementById('btn-registrar').addEventListener('click', async () => {
 });
 
 // --- Lista de registros ---
-async function refrescarListaRegistros(){
-  const lista = document.getElementById('lista-registros');
-  if(!urlConfigurada()){
-    lista.innerHTML = '<div class="empty">Falta configurar WEBAPP_URL en el código con la URL de tu Google Apps Script.</div>';
-    return;
-  }
-  const datos = await cargarRegistros();
-  if(datos.length === 0){
-    lista.innerHTML = '<div class="empty">Todavía no hay nadie registrado.</div>';
-    return;
-  }
-  const ordenados = [...datos].sort((a,b) => b.ts - a.ts);
-  lista.innerHTML = ordenados.map(r => `
+function renderListaEntry(r){
+  return `
     <div class="entry" data-id="${r.id}">
       <div>
         <div class="who">${escapeHtml(r.nombre)}</div>
@@ -427,9 +490,11 @@ async function refrescarListaRegistros(){
       </div>
       <button class="del" data-id="${r.id}">Eliminar</button>
     </div>
-  `).join('');
+  `;
+}
 
-  lista.querySelectorAll('.del').forEach(btn => {
+function wireDelBotones(cont){
+  cont.querySelectorAll('.del').forEach(btn => {
     btn.addEventListener('click', async () => {
       const id = btn.getAttribute('data-id');
       btn.disabled = true;
@@ -439,6 +504,33 @@ async function refrescarListaRegistros(){
   });
 }
 
+async function refrescarListaRegistros(){
+  const listaVehiculos = document.getElementById('lista-vehiculos');
+  const listaTransporte = document.getElementById('lista-transporte');
+  if(!urlConfigurada()){
+    const msgFalta = '<div class="empty">Falta configurar WEBAPP_URL en el código con la URL de tu Google Apps Script.</div>';
+    listaVehiculos.innerHTML = msgFalta;
+    listaTransporte.innerHTML = msgFalta;
+    return;
+  }
+  const datos = (await cargarRegistros()).filter(r => r.tipo !== 'asignacion');
+  const ordenados = [...datos].sort((a,b) => new Date(b.timestamp||0) - new Date(a.timestamp||0));
+
+  const vehiculos = ordenados.filter(r => r.tipo === 'vehiculo');
+  const transporte = ordenados.filter(r => r.tipo === 'transporte');
+
+  listaVehiculos.innerHTML = vehiculos.length
+    ? vehiculos.map(renderListaEntry).join('')
+    : '<div class="empty">Todavía no hay nadie con vehículo registrado.</div>';
+
+  listaTransporte.innerHTML = transporte.length
+    ? transporte.map(renderListaEntry).join('')
+    : '<div class="empty">Todavía no hay nadie pidiendo traslado.</div>';
+
+  wireDelBotones(listaVehiculos);
+  wireDelBotones(listaTransporte);
+}
+
 function escapeHtml(s){
   const div = document.createElement('div');
   div.textContent = s;
@@ -446,47 +538,47 @@ function escapeHtml(s){
 }
 
 // --- Resumen ---
+// Muestra, para cada una de las 6 reuniones, cómo van quedando los arreglos:
+// quién lleva a quién y quién todavía no tiene lugar asignado.
 async function refrescarResumen(){
   const datos = await cargarRegistros();
-  const grupos = {};
-  for(let g = 1; g <= 5; g++){
-    grupos[g] = { necesitan: 0, asientosNecesarios: 0, asientosDisponibles: 0, autos: 0 };
-  }
-  datos.forEach(r => {
-    const g = grupos[r.grupo];
-    if(!g) return;
-    if(r.tipo === 'transporte'){
-      g.necesitan += 1;
-      g.asientosNecesarios += r.asientos;
-    } else {
-      g.autos += 1;
-      g.asientosDisponibles += r.asientos;
-    }
-  });
+  const asignacionesTodas = calcularAsignaciones(datos);
 
-  let totalFaltan = 0, totalSobran = 0, totalPersonasEsperando = 0;
-  const cardsHtml = Object.keys(grupos).map(g => {
-    const d = grupos[g];
-    const saldo = d.asientosDisponibles - d.asientosNecesarios;
-    totalPersonasEsperando += d.necesitan;
-    if(saldo > 0) totalSobran += saldo;
-    if(saldo < 0) totalFaltan += Math.abs(saldo);
+  let totalAsignaciones = 0, totalPendientes = 0;
 
-    let balanceClass = 'zero', balanceTxt = 'Justo';
-    if(saldo > 0){ balanceClass = 'pos'; balanceTxt = `Sobran ${saldo}`; }
-    if(saldo < 0){ balanceClass = 'neg'; balanceTxt = `Faltan ${Math.abs(saldo)}`; }
+  const cardsHtml = REUNIONES.map(reu => {
+    const asigDia = asignacionesTodas.filter(a => a.meetingKey === reu.key);
+    const pendDia = calcularPendientes(datos, asigDia).filter(p => p.pendiente > 0);
+    totalAsignaciones += asigDia.length;
+    totalPendientes += pendDia.reduce((s,p) => s + p.pendiente, 0);
+
+    const filasAsignadas = asigDia.map(a => {
+      const pedidoRec = datos.find(d => String(d.id) === a.pedidoId);
+      const vehiculoRec = datos.find(d => String(d.id) === a.vehiculoId);
+      const partesEtiqueta = a.etiqueta.split(' → ');
+      const pedidoNombre = pedidoRec ? pedidoRec.nombre : (partesEtiqueta[0] || 'pedido eliminado');
+      const vehiculoNombre = vehiculoRec ? vehiculoRec.nombre : (partesEtiqueta[1] || 'vehículo eliminado');
+      return `<div class="entry" style="padding:7px 0;font-size:0.85rem;">
+        <span>${escapeHtml(pedidoNombre)} → ${escapeHtml(vehiculoNombre)}</span>
+        <span class="meta">${a.asientos} asiento(s)</span>
+      </div>`;
+    }).join('');
+
+    const pendienteTxt = pendDia.length
+      ? `<div class="stat-row" style="margin-top:8px;"><span><b>Sin asignar:</b> ${pendDia.map(p => `${escapeHtml(p.nombre)} (${p.pendiente})`).join(', ')}</span></div>`
+      : '';
+
+    const balanceClass = pendDia.length ? 'neg' : (asigDia.length ? 'pos' : 'zero');
+    const balanceTxt = pendDia.length ? `${pendDia.reduce((s,p)=>s+p.pendiente,0)} sin asignar` : (asigDia.length ? 'Todos asignados' : 'Sin datos');
 
     return `
       <div class="group-card">
         <div class="group-head">
-          <span class="g-name">Grupo ${g}</span>
+          <span class="g-name">${reu.label}</span>
           <span class="balance ${balanceClass}">${balanceTxt}</span>
         </div>
-        <div class="stat-row">
-          <span><b>${d.necesitan}</b> personas necesitan transporte</span>
-          <span><b>${d.asientosNecesarios}</b> asientos pedidos</span>
-          <span><b>${d.asientosDisponibles}</b> asientos ofrecidos (${d.autos} vehículo${d.autos===1?'':'s'})</span>
-        </div>
+        ${filasAsignadas || '<div class="empty">Todavía no hay asignaciones para este día.</div>'}
+        ${pendienteTxt}
       </div>
     `;
   }).join('');
@@ -494,9 +586,8 @@ async function refrescarResumen(){
   document.getElementById('resumen-grupos').innerHTML = cardsHtml;
 
   document.getElementById('resumen-top').innerHTML = `
-    <div class="box"><div class="num">${totalPersonasEsperando}</div><div class="lbl">personas esperando transporte</div></div>
-    <div class="box"><div class="num">${totalSobran}</div><div class="lbl">asientos libres para prestar entre grupos</div></div>
-    <div class="box"><div class="num">${totalFaltan}</div><div class="lbl">asientos que aún faltan en total</div></div>
+    <div class="box"><div class="num">${totalAsignaciones}</div><div class="lbl">asignaciones hechas (las 6 reuniones)</div></div>
+    <div class="box"><div class="num">${totalPendientes}</div><div class="lbl">asientos aún sin asignar</div></div>
   `;
 }
 
@@ -504,6 +595,287 @@ document.getElementById('btn-refrescar').addEventListener('click', (e) => {
   e.preventDefault();
   refrescarResumen();
 });
+
+// --- Asignar (emparejar pedidos con vehículos, por reunión) ---
+// Una asignación se guarda como un registro más (tipo:'asignacion'), reutilizando
+// los mismos 5 campos del backend: nombre = "idPedido|claveReunión|Pedido → Vehículo",
+// grupo = id del vehículo, asientos = cantidad asignada. Cada asignación vale
+// solo para la reunión indicada; los mismos pedidos/vehículos se pueden volver
+// a emparejar distinto en otra reunión.
+const REUNIONES = [
+  { key: '2026-09-22', label: 'Martes 22/9' },
+  { key: '2026-09-26', label: 'Sábado 26/9' },
+  { key: '2026-09-29', label: 'Martes 29/9' },
+  { key: '2026-10-02', label: 'Viernes 2/10' },
+  { key: '2026-10-06', label: 'Martes 6/10' },
+  { key: '2026-10-09', label: 'Viernes 9/10' }
+];
+
+const selReunion = document.getElementById('sel-reunion');
+(function preseleccionarReunion(){
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const proxima = REUNIONES.find(r => new Date(r.key + 'T00:00:00') >= hoy);
+  selReunion.value = proxima ? proxima.key : REUNIONES[REUNIONES.length - 1].key;
+})();
+selReunion.addEventListener('change', refrescarAsignar);
+
+const msgAsignar = document.getElementById('msg-asignar');
+function mostrarMsgAsignar(texto, ok){
+  msgAsignar.textContent = texto;
+  msgAsignar.className = 'msg show ' + (ok ? 'ok' : 'err');
+  setTimeout(() => msgAsignar.classList.remove('show'), 3500);
+}
+
+function calcularAsignaciones(datos){
+  return datos.filter(r => r.tipo === 'asignacion').map(r => {
+    const partes = String(r.nombre || '').split('|');
+    return {
+      id: r.id,
+      pedidoId: partes[0] || '',
+      meetingKey: partes[1] || '',
+      etiqueta: partes.slice(2).join('|'),
+      vehiculoId: String(r.grupo),
+      asientos: Number(r.asientos) || 0
+    };
+  });
+}
+
+function calcularPendientes(datos, asignacionesReunion){
+  return datos.filter(r => r.tipo === 'transporte').map(r => {
+    const asignado = asignacionesReunion.filter(a => a.pedidoId === String(r.id)).reduce((s,a) => s + a.asientos, 0);
+    return { ...r, asignado, pendiente: (Number(r.asientos) || 0) - asignado };
+  });
+}
+
+function calcularVehiculosLibres(datos, asignacionesReunion){
+  return datos.filter(r => r.tipo === 'vehiculo').map(r => {
+    const usados = asignacionesReunion.filter(a => a.vehiculoId === String(r.id)).reduce((s,a) => s + a.asientos, 0);
+    return { ...r, usados, libres: (Number(r.asientos) || 0) - usados };
+  });
+}
+
+// --- Auto-emparejar ---
+// Dado el estado de una reunión (pedidos pendientes y vehículos con lugares
+// libres), arma la lista de asignaciones a crear: para cada pedido, prioriza
+// los vehículos de su mismo grupo (y entre esos, el que tenga más lugares
+// libres) y recién después recurre a vehículos de otros grupos.
+function generarAutoAsignaciones(datos, asignacionesReunion){
+  const pendientes = calcularPendientes(datos, asignacionesReunion).filter(p => p.pendiente > 0);
+  const vehiculos = calcularVehiculosLibres(datos, asignacionesReunion)
+    .filter(v => v.libres > 0)
+    .map(v => ({ ...v })); // copia de trabajo: se va descontando en memoria
+
+  const nuevas = [];
+
+  pendientes.forEach(p => {
+    let restante = p.pendiente;
+    if(restante <= 0) return;
+
+    const candidatos = vehiculos
+      .filter(v => v.libres > 0)
+      .sort((a, b) => {
+        const aMismoGrupo = String(a.grupo) === String(p.grupo) ? 0 : 1;
+        const bMismoGrupo = String(b.grupo) === String(p.grupo) ? 0 : 1;
+        if(aMismoGrupo !== bMismoGrupo) return aMismoGrupo - bMismoGrupo;
+        return b.libres - a.libres;
+      });
+
+    for(const v of candidatos){
+      if(restante <= 0) break;
+      const cantidad = Math.min(restante, v.libres);
+      if(cantidad <= 0) continue;
+      nuevas.push({
+        pedidoId: String(p.id),
+        pedidoNombre: p.nombre,
+        vehiculoId: String(v.id),
+        vehiculoNombre: v.nombre,
+        cantidad
+      });
+      v.libres -= cantidad;
+      restante -= cantidad;
+    }
+  });
+
+  return nuevas;
+}
+
+async function ejecutarAutoAsignaciones(especs, meetingKey){
+  let ok = 0, fail = 0;
+  for(const e of especs){
+    const resultado = await agregarRegistro({
+      id: uid(),
+      nombre: `${e.pedidoId}|${meetingKey}|${e.pedidoNombre} → ${e.vehiculoNombre}`,
+      tipo: 'asignacion',
+      asientos: e.cantidad,
+      grupo: e.vehiculoId
+    });
+    if(resultado.ok) ok++; else fail++;
+  }
+  return { ok, fail };
+}
+
+document.getElementById('btn-auto-dia').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-auto-dia');
+  btn.disabled = true;
+  const reunionActual = selReunion.value;
+  const datos = await cargarRegistros();
+  const asignacionesDia = calcularAsignaciones(datos).filter(a => a.meetingKey === reunionActual);
+  const especs = generarAutoAsignaciones(datos, asignacionesDia);
+
+  if(especs.length === 0){
+    mostrarMsgAsignar('No hay nada para emparejar automáticamente en este día.', false);
+    btn.disabled = false;
+    return;
+  }
+
+  const { ok, fail } = await ejecutarAutoAsignaciones(especs, reunionActual);
+  btn.disabled = false;
+  mostrarMsgAsignar(`Se hicieron ${ok} asignación(es) automática(s)${fail ? `, ${fail} fallaron` : ''}.`, fail === 0);
+  refrescarAsignar();
+});
+
+document.getElementById('btn-auto-todos').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-auto-todos');
+  btn.disabled = true;
+  const datos = await cargarRegistros();
+
+  let totalOk = 0, totalFail = 0;
+  for(const reu of REUNIONES){
+    const asignacionesDia = calcularAsignaciones(datos).filter(a => a.meetingKey === reu.key);
+    const especs = generarAutoAsignaciones(datos, asignacionesDia);
+    const { ok, fail } = await ejecutarAutoAsignaciones(especs, reu.key);
+    totalOk += ok;
+    totalFail += fail;
+  }
+
+  btn.disabled = false;
+  mostrarMsgAsignar(`Se hicieron ${totalOk} asignación(es) automática(s) en total${totalFail ? `, ${totalFail} fallaron` : ''}.`, totalFail === 0);
+  refrescarAsignar();
+});
+
+async function refrescarAsignar(){
+  const contPendientes = document.getElementById('lista-pendientes');
+  const contAsignaciones = document.getElementById('lista-asignaciones');
+  if(!urlConfigurada()){
+    contPendientes.innerHTML = '<div class="empty">Falta configurar WEBAPP_URL en el código con la URL de tu Google Apps Script.</div>';
+    contAsignaciones.innerHTML = '';
+    document.getElementById('asignar-top').innerHTML = '';
+    return;
+  }
+
+  const reunionActual = selReunion.value;
+  const reunionLabel = (REUNIONES.find(r => r.key === reunionActual) || {}).label || '';
+  document.getElementById('titulo-asignaciones').textContent = `Asignaciones actuales · ${reunionLabel}`;
+  const datos = await cargarRegistros();
+  const asignaciones = calcularAsignaciones(datos).filter(a => a.meetingKey === reunionActual);
+  const pendientes = calcularPendientes(datos, asignaciones).filter(p => p.pendiente > 0);
+  const vehiculosLibres = calcularVehiculosLibres(datos, asignaciones).filter(v => v.libres > 0);
+
+  const totalPendiente = pendientes.reduce((s,p) => s + p.pendiente, 0);
+  const totalLibres = vehiculosLibres.reduce((s,v) => s + v.libres, 0);
+  document.getElementById('asignar-top').innerHTML = `
+    <div class="box"><div class="num">${totalPendiente}</div><div class="lbl">asientos por asignar</div></div>
+    <div class="box"><div class="num">${totalLibres}</div><div class="lbl">asientos libres en vehículos</div></div>
+  `;
+
+  if(pendientes.length === 0){
+    contPendientes.innerHTML = '<div class="empty">No hay pedidos pendientes de asignar.</div>';
+  } else {
+    contPendientes.innerHTML = pendientes.map(p => {
+      const opciones = vehiculosLibres.map(v => `<option value="${v.id}" data-libres="${v.libres}">${escapeHtml(v.nombre)} · Grupo ${v.grupo} · ${v.libres} libre(s)</option>`).join('');
+      return `
+      <div class="assign-item" data-pedido="${p.id}">
+        <div class="entry">
+          <div>
+            <div class="who">${escapeHtml(p.nombre)}</div>
+            <div class="meta">Grupo ${p.grupo} · pendiente ${p.pendiente} de ${p.asientos} asiento(s)${p.asignado ? ` · ya asignado ${p.asignado}` : ''}</div>
+          </div>
+        </div>
+        <div class="assign-row">
+          <select class="sel-vehiculo">
+            <option value="">Elegí vehículo</option>
+            ${opciones}
+          </select>
+          <input type="number" class="inp-cantidad" min="1" value="${p.pendiente}">
+          <button class="btn-mini btn-asignar">Asignar</button>
+        </div>
+      </div>`;
+    }).join('');
+
+    contPendientes.querySelectorAll('.assign-item').forEach(item => {
+      const pedidoId = item.getAttribute('data-pedido');
+      const pedido = pendientes.find(p => String(p.id) === pedidoId);
+      const sel = item.querySelector('.sel-vehiculo');
+      const inp = item.querySelector('.inp-cantidad');
+      const btn = item.querySelector('.btn-asignar');
+
+      sel.addEventListener('change', () => {
+        const opt = sel.selectedOptions[0];
+        const libres = opt ? parseInt(opt.getAttribute('data-libres') || '0', 10) : pedido.pendiente;
+        const max = Math.max(1, Math.min(pedido.pendiente, libres || pedido.pendiente));
+        inp.max = max;
+        if(!inp.value || parseInt(inp.value, 10) > max) inp.value = max;
+      });
+
+      btn.addEventListener('click', async () => {
+        const vehiculoId = sel.value;
+        const cantidad = parseInt(inp.value, 10);
+        if(!vehiculoId){ mostrarMsgAsignar('Elegí un vehículo.', false); return; }
+        if(!cantidad || cantidad < 1){ mostrarMsgAsignar('Ingresá una cantidad válida.', false); return; }
+        const vehiculo = vehiculosLibres.find(v => String(v.id) === vehiculoId);
+        if(!vehiculo || cantidad > vehiculo.libres){ mostrarMsgAsignar('Ese vehículo no tiene tantos lugares libres.', false); return; }
+        if(cantidad > pedido.pendiente){ mostrarMsgAsignar('Esa cantidad supera lo que falta asignar.', false); return; }
+
+        btn.disabled = true;
+        const resultado = await agregarRegistro({
+          id: uid(),
+          nombre: `${pedido.id}|${reunionActual}|${pedido.nombre} → ${vehiculo.nombre}`,
+          tipo: 'asignacion',
+          asientos: cantidad,
+          grupo: vehiculo.id
+        });
+        btn.disabled = false;
+
+        if(resultado.ok){
+          mostrarMsgAsignar('¡Asignado!', true);
+          refrescarAsignar();
+        } else {
+          mostrarMsgAsignar('No se pudo asignar: ' + resultado.error, false);
+        }
+      });
+    });
+  }
+
+  if(asignaciones.length === 0){
+    contAsignaciones.innerHTML = '<div class="empty">Todavía no hay asignaciones.</div>';
+  } else {
+    contAsignaciones.innerHTML = asignaciones.map(a => {
+      const pedidoRec = datos.find(d => String(d.id) === a.pedidoId);
+      const vehiculoRec = datos.find(d => String(d.id) === a.vehiculoId);
+      const partesEtiqueta = a.etiqueta.split(' → ');
+      const pedidoNombre = pedidoRec ? pedidoRec.nombre : (partesEtiqueta[0] || 'pedido eliminado');
+      const vehiculoNombre = vehiculoRec ? vehiculoRec.nombre : (partesEtiqueta[1] || 'vehículo eliminado');
+      const grupo = pedidoRec ? pedidoRec.grupo : '';
+      return `
+      <div class="entry" data-id="${a.id}">
+        <div>
+          <div class="who">${escapeHtml(pedidoNombre)} → ${escapeHtml(vehiculoNombre)}</div>
+          <div class="meta">${a.asientos} asiento(s)${grupo ? ' · Grupo ' + grupo : ''}</div>
+        </div>
+        <button class="del" data-id="${a.id}">Quitar</button>
+      </div>`;
+    }).join('');
+
+    contAsignaciones.querySelectorAll('.del').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-id');
+        btn.disabled = true;
+        await eliminarRegistroRemoto(id);
+        refrescarAsignar();
+      });
+    });
+  }
+}
 
 // Init
 refrescarListaRegistros();

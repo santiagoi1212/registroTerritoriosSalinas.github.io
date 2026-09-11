@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Portal Salón Salinas</title>
+
+<script src="./app-config.js"></script>
+<script src="./app-auth.js"></script>
+
+<style>
+  :root{
+    --bg: #0b1220;
+    --card: #0f172a;
+    --border: #263349;
+    --text: #e5e7eb;
+    --muted: #94a3b8;
+    --accent: #2563eb;
+  }
+  *{ box-sizing:border-box; }
+  html, body{ height:100%; margin:0; }
+  body{
+    background: radial-gradient(1200px 600px at 50% -10%, #14213d 0%, var(--bg) 60%);
+    color: var(--text);
+    font: 15px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Arial;
+    min-height:100%;
+  }
+
+  /* ===== Barra superior de sesión (igual patrón que index.html) ===== */
+  .auth-hidden{ display:none !important; }
+  #auth-bar{ position:fixed; right:14px; top:14px; z-index:3100; display:flex; gap:8px; align-items:center; }
+  #auth-bar .pill{ background:rgba(255,255,255,.08); border:1px solid var(--border); color:#fff; padding:6px 10px; border-radius:999px; font-weight:500; font-size:13px; }
+  #btnAuthOpen, #btnLogout{ border:none; border-radius:8px; padding:7px 12px; cursor:pointer; font-weight:600; }
+  #btnAuthOpen{ background:var(--accent); color:#fff; }
+  #btnLogout{ background:#ef4444; color:#fff; }
+
+  /* ===== Modal de login (mismo estilo que index.html) ===== */
+  .overlay{ position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.55); z-index:4000; backdrop-filter: blur(1.5px); padding:24px; }
+  .modal-card{ width:100%; max-width:420px; background:var(--card); color:var(--text); border-radius:14px; box-shadow:0 20px 60px rgba(0,0,0,.35); overflow:hidden; border:1px solid rgba(255,255,255,.06); }
+  .modal-header{ display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid rgba(255,255,255,.06); }
+  .modal-title{ margin:0; font:600 16px/1.2 system-ui; }
+  .modal-close-btn{ border:none; background:transparent; color:#94a3b8; font-size:18px; cursor:pointer; }
+  .modal-body{ padding:16px; display:grid; gap:10px; }
+  .form-field{ display:grid; gap:6px; }
+  .form-label{ font-size:13px; color:#cbd5e1; }
+  .form-input{ width:100%; border:1px solid #334155; background:#0b1220; color:var(--text); border-radius:10px; padding:10px 12px; outline:none; }
+  .form-input:focus{ border-color:#60a5fa; box-shadow:0 0 0 3px rgba(96,165,250,.2); }
+  .form-actions{ display:flex; gap:8px; justify-content:flex-end; margin-top:8px; }
+  .btn-primary{ background:#2563eb; color:#fff; border:none; border-radius:10px; padding:10px 14px; cursor:pointer; }
+  .btn-cancel{ background:#1f2937; color:var(--text); border:1px solid #334155; border-radius:10px; padding:10px 14px; cursor:pointer; }
+
+  /* ===== Contenido del portal ===== */
+  .wrap{ max-width:960px; margin:0 auto; padding:90px 20px 40px; }
+  .hero h1{ margin:0 0 4px; font-size:26px; }
+  .hero p{ margin:0; color:var(--muted); }
+
+  #locked{ margin-top:40px; text-align:center; color:var(--muted); }
+  #locked .btn-primary{ margin-top:14px; font-size:15px; padding:12px 20px; }
+
+  .cards{ display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:16px; margin-top:32px; }
+  .card{
+    display:flex; flex-direction:column; gap:8px;
+    background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:20px; text-decoration:none; color:var(--text);
+    transition:transform .15s ease, border-color .15s ease;
+  }
+  .card:hover{ transform:translateY(-2px); border-color:#3b82f6; }
+  .card .icon{ font-size:28px; }
+  .card h3{ margin:0; font-size:17px; }
+  .card p{ margin:0; color:var(--muted); font-size:13px; }
+  .card.disabled{ opacity:.45; pointer-events:none; }
+  .badge-role{ font-size:11px; color:#93c5fd; background:rgba(37,99,235,.15); border:1px solid rgba(37,99,235,.35); padding:2px 8px; border-radius:999px; align-self:flex-start; }
+</style>
+</head>
+<body>
+
+<div id="auth-bar">
+  <span id="auth-info" class="pill auth-hidden"></span>
+  <button id="btnAuthOpen" type="button">Acceder</button>
+  <button id="btnLogout" class="auth-hidden" type="button">Salir</button>
+</div>
+
+<div class="wrap">
+  <div class="hero">
+    <h1>Portal Salón Salinas</h1>
+    <p>Accesos para publicadores, capitanes y administración.</p>
+  </div>
+
+  <div id="locked">
+    <p>Iniciá sesión para ver los accesos disponibles.</p>
+    <button id="btnAuthOpen2" class="btn-primary" type="button">Iniciar sesión</button>
+  </div>
+
+  <div id="cards" class="cards" style="display:none"></div>
+</div>
+
+<!-- Login modal -->
+<div id="login-overlay" class="overlay">
+  <div id="login-modal" class="modal-card" role="dialog" aria-modal="true" aria-labelledby="login-title">
+    <header class="modal-header">
+      <h3 id="login-title" class="modal-title">Iniciar sesión</h3>
+      <button id="login-close" class="modal-close-btn" title="Cerrar">✕</button>
+    </header>
+    <div class="modal-body">
+      <div class="form-field">
+        <label for="inUser" class="form-label">Usuario</label>
+        <input id="inUser" class="form-input" autocomplete="username" />
+      </div>
+      <div class="form-field">
+        <label for="inPass" class="form-label">Contraseña</label>
+        <input id="inPass" class="form-input" type="password" autocomplete="current-password" />
+      </div>
+      <div class="form-actions">
+        <button id="login-cancel" class="btn-cancel" type="button">Cancelar</button>
+        <button id="btnLogin" class="btn-primary" type="button">Ingresar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+window.showToast = window.showToast || function(msg){ if(!msg) return; try{ console.log("[toast]", msg); }catch(_){} };
+
+const overlayLogin = document.getElementById('login-overlay');
+const inUser = document.getElementById('inUser');
+const inPass = document.getElementById('inPass');
+
+function openLogin(){ overlayLogin.style.display='flex'; inUser && inUser.focus(); }
+function closeLogin(){ overlayLogin.style.display='none'; }
+
+document.getElementById('btnAuthOpen').addEventListener('click', openLogin);
+document.getElementById('btnAuthOpen2').addEventListener('click', openLogin);
+document.getElementById('login-close').addEventListener('click', closeLogin);
+document.getElementById('login-cancel').addEventListener('click', closeLogin);
+
+document.getElementById('btnLogin').addEventListener('click', async () => {
+  const u = (inUser.value||'').trim();
+  const p = (inPass.value||'').trim();
+  if (!u || !p){ window.showToast('Ingresá usuario y contraseña'); return; }
+  if (window.AuthApp && typeof window.AuthApp.doLogin === "function"){
+    await window.AuthApp.doLogin(u,p);
+  } else {
+    window.showToast('AuthApp no está disponible');
+  }
+  closeLogin();
+  renderPortalUI();
+});
+
+document.getElementById('btnLogout').addEventListener('click', () => {
+  if (window.AuthApp && typeof window.AuthApp.logout === "function"){
+    window.AuthApp.logout();
+  }
+  renderPortalUI();
+});
+
+// ===== Definición de accesos =====
+// roles: null => visible para cualquier usuario logueado. Array => solo esos roles.
+const cfg = window.APP_CONFIG || {};
+const ACCESOS = [
+  {
+    icon: '🗺️', title: 'Mapa de Territorios',
+    desc: 'Ver y registrar territorios asignados.',
+    href: cfg.MAPA_TERRITORIOS_URL || './index.html',
+    roles: null
+  },
+  {
+    icon: '🚐', title: 'Registro de Transporte',
+    desc: 'Coordinación y registro de transporte.',
+    href: cfg.REGISTRO_TRANSPORTE_URL || './transporte.html',
+    roles: null
+  },
+  {
+    icon: '🗂️', title: 'Publicadores',
+    desc: 'Estado de DPA, Autorización de Uso de Datos y Formulario de Datos Personales.',
+    href: './publicadores.html',
+    roles: ['admin','capitan']
+  }
+];
+
+function renderPortalUI(){
+  const logged = !!(window.AuthApp && AuthApp.isLogged && AuthApp.isLogged());
+  const role   = (window.AuthApp && AuthApp.getRole && AuthApp.getRole()) || '';
+  const user   = (window.AuthApp && AuthApp.getUsername && AuthApp.getUsername()) || '';
+
+  document.getElementById('locked').style.display = logged ? 'none' : 'block';
+  const cardsEl = document.getElementById('cards');
+  cardsEl.style.display = logged ? 'grid' : 'none';
+
+  const authInfo = document.getElementById('auth-info');
+  const btnOpen  = document.getElementById('btnAuthOpen');
+  const btnOut   = document.getElementById('btnLogout');
+  if (logged){
+    authInfo.classList.remove('auth-hidden');
+    authInfo.textContent = user + ' (' + role + ')';
+    btnOut.classList.remove('auth-hidden');
+    btnOpen.classList.add('auth-hidden');
+  } else {
+    authInfo.classList.add('auth-hidden');
+    btnOut.classList.add('auth-hidden');
+    btnOpen.classList.remove('auth-hidden');
+  }
+
+  if (!logged) return;
+
+  cardsEl.innerHTML = '';
+  ACCESOS.forEach(a => {
+    const allowed = !a.roles || a.roles.includes(role);
+    const el = document.createElement('a');
+    el.href = allowed ? a.href : '#';
+    el.className = 'card' + (allowed ? '' : ' disabled');
+    if (allowed){ el.target = '_blank'; el.rel = 'noopener'; }
+    el.innerHTML = `
+      <div class="icon">${a.icon}</div>
+      <h3>${a.title}</h3>
+      <p>${a.desc}</p>
+      ${allowed ? '' : '<span class="badge-role">Solo admin / capitán</span>'}
+    `;
+    cardsEl.appendChild(el);
+  });
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  if (window.AuthApp && typeof window.AuthApp.restore === "function"){
+    await window.AuthApp.restore();
+  }
+  renderPortalUI();
+});
+</script>
+
+</body>
+</html>

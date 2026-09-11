@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Publicadores · Portal Salinas</title>
+
+<script src="./app-config.js"></script>
+<script src="./app-auth.js"></script>
+<script src="./app-publicadores.js"></script>
+
+<style>
+  :root{
+    --bg: #0b1220;
+    --card: #0f172a;
+    --border: #263349;
+    --text: #e5e7eb;
+    --muted: #94a3b8;
+    --accent: #2563eb;
+    --ok: #16a34a;
+    --ok-bg: rgba(22,163,74,.15);
+    --pend-bg: rgba(148,163,184,.15);
+  }
+  *{ box-sizing:border-box; }
+  html, body{ height:100%; margin:0; }
+  body{
+    background: radial-gradient(1200px 600px at 50% -10%, #14213d 0%, var(--bg) 60%);
+    color: var(--text);
+    font: 15px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Arial;
+    min-height:100%;
+  }
+
+  .auth-hidden{ display:none !important; }
+  #auth-bar{ position:fixed; right:14px; top:14px; z-index:3100; display:flex; gap:8px; align-items:center; }
+  #auth-bar .pill{ background:rgba(255,255,255,.08); border:1px solid var(--border); color:#fff; padding:6px 10px; border-radius:999px; font-weight:500; font-size:13px; }
+  #btnAuthOpen, #btnLogout{ border:none; border-radius:8px; padding:7px 12px; cursor:pointer; font-weight:600; }
+  #btnAuthOpen{ background:var(--accent); color:#fff; }
+  #btnLogout{ background:#ef4444; color:#fff; }
+
+  .overlay{ position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.55); z-index:4000; backdrop-filter: blur(1.5px); padding:24px; }
+  .modal-card{ width:100%; max-width:420px; background:var(--card); color:var(--text); border-radius:14px; box-shadow:0 20px 60px rgba(0,0,0,.35); overflow:hidden; border:1px solid rgba(255,255,255,.06); }
+  .modal-header{ display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid rgba(255,255,255,.06); }
+  .modal-title{ margin:0; font:600 16px/1.2 system-ui; }
+  .modal-close-btn{ border:none; background:transparent; color:#94a3b8; font-size:18px; cursor:pointer; }
+  .modal-body{ padding:16px; display:grid; gap:10px; }
+  .form-field{ display:grid; gap:6px; }
+  .form-label{ font-size:13px; color:#cbd5e1; }
+  .form-input{ width:100%; border:1px solid #334155; background:#0b1220; color:var(--text); border-radius:10px; padding:10px 12px; outline:none; }
+  .form-input:focus{ border-color:#60a5fa; box-shadow:0 0 0 3px rgba(96,165,250,.2); }
+  .form-actions{ display:flex; gap:8px; justify-content:flex-end; margin-top:8px; }
+  .btn-primary{ background:#2563eb; color:#fff; border:none; border-radius:10px; padding:10px 14px; cursor:pointer; }
+  .btn-cancel{ background:#1f2937; color:var(--text); border:1px solid #334155; border-radius:10px; padding:10px 14px; cursor:pointer; }
+
+  .wrap{ max-width:1000px; margin:0 auto; padding:90px 20px 60px; }
+  .topbar{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:8px; }
+  .topbar a.back{ color: var(--muted); text-decoration:none; font-size:13px; }
+  .topbar a.back:hover{ color:#fff; }
+  h1{ margin:0 0 4px; font-size:24px; }
+  .subtitle{ color:var(--muted); margin:0 0 20px; }
+
+  #locked, #forbidden{ margin-top:40px; text-align:center; color:var(--muted); }
+  #locked .btn-primary, #forbidden .btn-primary{ margin-top:14px; font-size:15px; padding:12px 20px; }
+
+  #contenido{ display:none; }
+
+  .toolbar{ display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin:16px 0 20px; }
+  #buscador{ flex:1; min-width:200px; }
+
+  .resumen{ display:flex; gap:12px; flex-wrap:wrap; margin-bottom:8px; }
+  .resumen-item{
+    background:var(--card); border:1px solid var(--border); border-radius:12px;
+    padding:12px 16px; display:flex; flex-direction:column; min-width:110px;
+  }
+  .resumen-item .n{ font-size:20px; font-weight:700; }
+  .resumen-item .l{ font-size:12px; color:var(--muted); }
+
+  .grupo-block{ margin-top:28px; }
+  .grupo-block h2{ font-size:16px; margin:0 0 10px; color:#93c5fd; }
+
+  .tabla-wrap{ overflow-x:auto; border:1px solid var(--border); border-radius:12px; }
+  table{ width:100%; border-collapse:collapse; font-size:14px; }
+  thead th{ text-align:left; padding:10px 12px; background:rgba(255,255,255,.04); color:var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.03em; white-space:nowrap; }
+  tbody td{ padding:10px 12px; border-top:1px solid var(--border); vertical-align:top; }
+  tbody tr:hover{ background:rgba(255,255,255,.02); }
+  .notas{ font-size:11px; color:var(--muted); margin-top:2px; }
+
+  .badge{ display:inline-flex; align-items:center; gap:4px; padding:3px 9px; border-radius:999px; font-size:12px; font-weight:600; text-decoration:none; white-space:nowrap; }
+  .badge-ok{ background:var(--ok-bg); color:#4ade80; border:1px solid rgba(74,222,128,.35); }
+  a.badge-ok{ cursor:pointer; }
+  a.badge-ok:hover{ background:rgba(22,163,74,.28); }
+  .badge-pend{ background:var(--pend-bg); color:var(--muted); border:1px solid var(--border); }
+
+  .leyenda{ display:flex; gap:16px; flex-wrap:wrap; margin:6px 0 0; color:var(--muted); font-size:12px; }
+  .leyenda span{ display:inline-flex; align-items:center; gap:6px; }
+  .muted{ color:var(--muted); }
+
+  .aviso{
+    background:rgba(234,179,8,.1); border:1px solid rgba(234,179,8,.35); color:#fde68a;
+    padding:10px 14px; border-radius:10px; font-size:13px; margin-bottom:18px;
+  }
+</style>
+</head>
+<body>
+
+<div id="auth-bar">
+  <span id="auth-info" class="pill auth-hidden"></span>
+  <button id="btnAuthOpen" type="button">Acceder</button>
+  <button id="btnLogout" class="auth-hidden" type="button">Salir</button>
+</div>
+
+<div class="wrap">
+  <div class="topbar">
+    <div>
+      <h1>Publicadores</h1>
+      <p class="subtitle">Estado de DPA, Autorización de Uso de Datos y Formulario de Datos Personales.</p>
+    </div>
+    <a class="back" href="./portal.html">&larr; Volver al portal</a>
+  </div>
+
+  <div id="locked">
+    <p>Iniciá sesión para ver esta sección.</p>
+    <button id="btnAuthOpen2" class="btn-primary" type="button">Iniciar sesión</button>
+  </div>
+
+  <div id="forbidden" style="display:none">
+    <p>Esta sección es solo para administración / capitanes.</p>
+    <a class="btn-primary" style="text-decoration:none; display:inline-block;" href="./portal.html">Volver al portal</a>
+  </div>
+
+  <div id="contenido">
+    <div id="avisoConfig" class="aviso" style="display:none"></div>
+
+    <div class="resumen" id="resumen"></div>
+    <div class="leyenda">
+      <span><span class="badge badge-ok">✔ Sí</span> al día / firmado</span>
+      <span><span class="badge badge-pend">Pendiente</span> falta o sin confirmar</span>
+      <span>Un badge verde con enlace abre el archivo en Drive.</span>
+    </div>
+
+    <div class="toolbar">
+      <input id="buscador" class="form-input" type="search" placeholder="Buscar por nombre…" />
+      <button id="btnRefrescar" class="btn-cancel" type="button">Refrescar</button>
+    </div>
+
+    <div id="tablas">Cargando…</div>
+  </div>
+</div>
+
+<!-- Login modal -->
+<div id="login-overlay" class="overlay">
+  <div id="login-modal" class="modal-card" role="dialog" aria-modal="true" aria-labelledby="login-title">
+    <header class="modal-header">
+      <h3 id="login-title" class="modal-title">Iniciar sesión</h3>
+      <button id="login-close" class="modal-close-btn" title="Cerrar">✕</button>
+    </header>
+    <div class="modal-body">
+      <div class="form-field">
+        <label for="inUser" class="form-label">Usuario</label>
+        <input id="inUser" class="form-input" autocomplete="username" />
+      </div>
+      <div class="form-field">
+        <label for="inPass" class="form-label">Contraseña</label>
+        <input id="inPass" class="form-input" type="password" autocomplete="current-password" />
+      </div>
+      <div class="form-actions">
+        <button id="login-cancel" class="btn-cancel" type="button">Cancelar</button>
+        <button id="btnLogin" class="btn-primary" type="button">Ingresar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+window.showToast = window.showToast || function(msg){ if(!msg) return; try{ console.log("[toast]", msg); }catch(_){} };
+
+const ROLES_PERMITIDOS = ['admin', 'capitan'];
+let personasCache = [];
+
+const overlayLogin = document.getElementById('login-overlay');
+const inUser = document.getElementById('inUser');
+const inPass = document.getElementById('inPass');
+
+function openLogin(){ overlayLogin.style.display='flex'; inUser && inUser.focus(); }
+function closeLogin(){ overlayLogin.style.display='none'; }
+
+document.getElementById('btnAuthOpen').addEventListener('click', openLogin);
+document.getElementById('btnAuthOpen2') && document.getElementById('btnAuthOpen2').addEventListener('click', openLogin);
+document.getElementById('login-close').addEventListener('click', closeLogin);
+document.getElementById('login-cancel').addEventListener('click', closeLogin);
+
+document.getElementById('btnLogin').addEventListener('click', async () => {
+  const u = (inUser.value||'').trim();
+  const p = (inPass.value||'').trim();
+  if (!u || !p){ window.showToast('Ingresá usuario y contraseña'); return; }
+  if (window.AuthApp && typeof window.AuthApp.doLogin === "function"){
+    await window.AuthApp.doLogin(u,p);
+  } else {
+    window.showToast('AuthApp no está disponible');
+  }
+  closeLogin();
+  await refrescarVista();
+});
+
+document.getElementById('btnLogout').addEventListener('click', () => {
+  if (window.AuthApp && typeof window.AuthApp.logout === "function"){
+    window.AuthApp.logout();
+  }
+  refrescarVista();
+});
+
+function actualizarAuthBar(){
+  const logged = !!(window.AuthApp && AuthApp.isLogged && AuthApp.isLogged());
+  const role   = (window.AuthApp && AuthApp.getRole && AuthApp.getRole()) || '';
+  const user   = (window.AuthApp && AuthApp.getUsername && AuthApp.getUsername()) || '';
+
+  const authInfo = document.getElementById('auth-info');
+  const btnOpen  = document.getElementById('btnAuthOpen');
+  const btnOut   = document.getElementById('btnLogout');
+  if (logged){
+    authInfo.classList.remove('auth-hidden');
+    authInfo.textContent = user + ' (' + role + ')';
+    btnOut.classList.remove('auth-hidden');
+    btnOpen.classList.add('auth-hidden');
+  } else {
+    authInfo.classList.add('auth-hidden');
+    btnOut.classList.add('auth-hidden');
+    btnOpen.classList.remove('auth-hidden');
+  }
+  return { logged, role };
+}
+
+async function cargarYRenderizar(){
+  const cfg = window.APP_CONFIG || {};
+  const avisoEl = document.getElementById('avisoConfig');
+
+  if (!cfg.PUBLICADORES_CSV_URL){
+    avisoEl.style.display = 'block';
+    avisoEl.textContent = 'Falta configurar PUBLICADORES_CSV_URL en app-config.js (link "Publicar en la web" en formato CSV de la planilla de Publicadores).';
+    document.getElementById('tablas').innerHTML = '';
+    document.getElementById('resumen').innerHTML = '';
+    return;
+  }
+  avisoEl.style.display = 'none';
+
+  try {
+    personasCache = await window.PublicadoresApp.cargarPublicadores();
+    window.PublicadoresApp.renderResumen(document.getElementById('resumen'), personasCache);
+    window.PublicadoresApp.renderTabla(document.getElementById('tablas'), personasCache, document.getElementById('buscador').value);
+  } catch (err){
+    console.error(err);
+    document.getElementById('tablas').innerHTML = `<p class="muted">No se pudo cargar la planilla de publicadores.</p>`;
+  }
+}
+
+document.getElementById('buscador').addEventListener('input', (e) => {
+  window.PublicadoresApp.renderTabla(document.getElementById('tablas'), personasCache, e.target.value);
+});
+
+document.getElementById('btnRefrescar').addEventListener('click', cargarYRenderizar);
+
+async function refrescarVista(){
+  const { logged, role } = actualizarAuthBar();
+
+  document.getElementById('locked').style.display    = logged ? 'none' : 'block';
+  const permitido = logged && ROLES_PERMITIDOS.includes(role);
+  document.getElementById('forbidden').style.display = (logged && !permitido) ? 'block' : 'none';
+  document.getElementById('contenido').style.display  = permitido ? 'block' : 'none';
+
+  if (permitido) await cargarYRenderizar();
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  if (window.AuthApp && typeof window.AuthApp.restore === "function"){
+    await window.AuthApp.restore();
+  }
+  await refrescarVista();
+});
+</script>
+
+</body>
+</html>
