@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Informe de Predicación</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="form-header">
+    <h1>Informe Predicación Salinas</h1>
+    <p class="subtitulo">Congregación · Registro mensual de actividad de predicación</p>
+  </header>
+
+  <div class="container">
+    <form id="form-predicacion" novalidate>
+      <div class="field">
+        <label for="grupo">Número de grupo *</label>
+        <select id="grupo" name="grupo" required>
+          <option value="" disabled selected>Elegir</option>
+        </select>
+      </div>
+
+      <fieldset id="resto-formulario" disabled>
+      <div class="field">
+        <label for="nombre">Nombre y Apellido *</label>
+        <select id="nombre" name="nombre" required>
+          <option value="" disabled selected>Elegí primero el grupo</option>
+          <option value="__otro__">Otro (no está en la lista)</option>
+        </select>
+        <input type="text" id="nombre-otro" name="nombre-otro" class="hidden" placeholder="Escribí el nombre y apellido">
+      </div>
+
+      <div class="fila-doble">
+        <div class="field">
+          <label for="mes">Mes *</label>
+          <select id="mes" name="mes" required>
+            <option value="" disabled selected>Elegir</option>
+            <option>Enero</option>
+            <option>Febrero</option>
+            <option>Marzo</option>
+            <option>Abril</option>
+            <option>Mayo</option>
+            <option>Junio</option>
+            <option>Julio</option>
+            <option>Agosto</option>
+            <option>Septiembre</option>
+            <option>Octubre</option>
+            <option>Noviembre</option>
+            <option>Diciembre</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="anio">Año *</label>
+          <select id="anio" name="anio" required>
+            <option value="" disabled selected>Elegir</option>
+            <option>2025</option>
+            <option>2026</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>¿Participó en alguna faceta de la predicación durante el mes? *</label>
+        <div class="radio-group">
+          <label class="radio-option">
+            <input type="radio" name="participo" value="Si" required>
+            Si
+          </label>
+          <label class="radio-option">
+            <input type="radio" name="participo" value="No" required>
+            No
+          </label>
+        </div>
+      </div>
+
+      <div id="campos-participacion" class="hidden">
+        <h2 class="seccion-titulo">Detalle de la participación</h2>
+
+        <div class="field">
+          <label for="situacion">Situación *</label>
+          <select id="situacion" name="situacion">
+            <option value="" disabled selected>Elegir</option>
+            <option>Precursor Auxiliar 15 horas</option>
+            <option>Precursor Auxiliar 30 horas</option>
+            <option>Precursor Especial</option>
+            <option>Precursor Regular</option>
+            <option>Publicador</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="cursos">Número de cursos bíblicos dirigidos</label>
+          <input type="number" id="cursos" name="cursos" min="0" step="1" inputmode="numeric" pattern="[0-9]*">
+        </div>
+
+        <div class="field" id="campo-horas">
+          <label for="horas">Horas</label>
+          <input type="number" id="horas" name="horas" min="0" step="0.5" inputmode="decimal">
+        </div>
+
+        <div class="field">
+          <label for="comentarios">Comentarios</label>
+          <textarea id="comentarios" name="comentarios" rows="3"></textarea>
+        </div>
+      </div>
+      </fieldset>
+
+      <button type="submit" id="btn-enviar">Enviar informe</button>
+
+      <p id="mensaje" class="mensaje" role="status"></p>
+    </form>
+
+    <p class="nota-pie">Los campos marcados con * son obligatorios.</p>
+  </div>
+
+<script src="script.js"></script>
+</body>
+</html>
