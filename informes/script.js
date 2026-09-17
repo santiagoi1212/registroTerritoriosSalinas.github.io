@@ -129,6 +129,7 @@ function actualizarPorGrupo() {
     nombreOtro.classList.add("hidden");
     nombreOtro.required = false;
     camposParticipacion.classList.add("hidden");
+    campoHoras.classList.remove("hidden");
   }
 }
 
@@ -161,15 +162,11 @@ function actualizarVisibilidadParticipacion() {
 
   if (participo === "Si") {
     camposParticipacion.classList.remove("hidden");
-    situacion.required = true;
   } else {
     camposParticipacion.classList.add("hidden");
-    situacion.required = false;
-    situacion.value = "";
     document.getElementById("cursos").value = "";
     document.getElementById("horas").value = "";
     document.getElementById("comentarios").value = "";
-    actualizarVisibilidadHoras();
   }
 }
 
@@ -211,7 +208,7 @@ form.addEventListener("submit", async (e) => {
   datos.append("mes", document.getElementById("mes").value);
   datos.append("anio", document.getElementById("anio").value);
   datos.append("participo", participo);
-  datos.append("situacion", participo === "Si" ? situacion.value : "");
+  datos.append("situacion", situacion.value);
   datos.append(
     "cursos",
     participo === "Si" ? document.getElementById("cursos").value : ""
@@ -242,6 +239,7 @@ form.addEventListener("submit", async (e) => {
       restoFormulario.disabled = true;
       nombreOtro.classList.add("hidden");
       camposParticipacion.classList.add("hidden");
+      campoHoras.classList.remove("hidden");
     } else {
       throw new Error(resultado.message || "Error desconocido");
     }

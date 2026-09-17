@@ -21,11 +21,11 @@
       </div>
       <form id="loginForm" onsubmit="handleLogin(event)">
         <div class="field">
-          <label>Usuario</label>
+          <label for="loginUser">Usuario</label>
           <input type="text" id="loginUser" placeholder="Ingresá tu usuario" required />
         </div>
         <div class="field">
-          <label>Contraseña</label>
+          <label for="loginPass">Contraseña</label>
           <input type="password" id="loginPass" placeholder="••••••••" required />
         </div>
         <div id="loginError" class="error-msg hidden">Usuario o contraseña incorrectos</div>
@@ -91,7 +91,7 @@
           <p class="subtitle">Asignaciones por fin de semana</p>
         </div>
         <div class="header-actions">
-          <select id="filterMonth" onchange="renderCronogramaList()" class="select-input"></select>
+          <select id="filterMonth" onchange="renderCronogramaList()" class="select-input" aria-label="Filtrar por mes"></select>
           <button class="btn-secondary" onclick="printMes()">
             <svg viewBox="0 0 24 24" style="width:15px;height:15px;display:inline;vertical-align:middle;margin-right:4px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
             Mes
@@ -138,7 +138,7 @@
       </div>
       <div class="search-bar">
         <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input type="text" id="searchPersona" placeholder="Buscar persona..." oninput="renderPersonasList()" />
+        <input type="text" id="searchPersona" placeholder="Buscar persona..." oninput="renderPersonasList()" aria-label="Buscar persona" />
       </div>
       <div id="personas-list" class="personas-grid"></div>
     </div>
@@ -176,22 +176,22 @@
   <div class="modal">
     <div class="modal-header">
       <h3 id="modal-persona-titulo">Nueva Persona</h3>
-      <button class="modal-close" onclick="closeModal('modal-persona')">✕</button>
+      <button class="modal-close" onclick="closeModal('modal-persona')" aria-label="Cerrar">✕</button>
     </div>
     <form id="personaForm" onsubmit="savePersona(event)">
       <input type="hidden" id="persona-id" />
       <div class="form-row">
         <div class="field">
-          <label>Nombre *</label>
+          <label for="persona-nombre">Nombre *</label>
           <input type="text" id="persona-nombre" required placeholder="Nombre" />
         </div>
         <div class="field">
-          <label>Apellido *</label>
+          <label for="persona-apellido">Apellido *</label>
           <input type="text" id="persona-apellido" required placeholder="Apellido" />
         </div>
       </div>
       <div class="field">
-        <label>Celular WhatsApp</label>
+        <label for="persona-celular">Celular WhatsApp</label>
         <input type="tel" id="persona-celular" placeholder="Ej: 5491112345678" />
         <small class="field-hint">Código de país + número sin espacios ni +. Ej: 5491112345678</small>
       </div>
@@ -242,11 +242,11 @@
   <div class="modal">
     <div class="modal-header">
       <h3>Generar Cronograma</h3>
-      <button class="modal-close" onclick="closeModal('modal-generar')">✕</button>
+      <button class="modal-close" onclick="closeModal('modal-generar')" aria-label="Cerrar">✕</button>
     </div>
     <div style="padding:1.25rem 1.5rem 0">
       <div class="field">
-        <label>Mes y Año</label>
+        <label for="generar-mes">Mes y Año</label>
         <input type="month" id="generar-mes" class="select-input" style="width:100%" />
       </div>
       <p class="info-text">Se generarán cronogramas para todos los fines de semana del mes seleccionado, priorizando a quienes llevan más tiempo sin asignación.</p>
@@ -263,7 +263,7 @@
   <div class="modal modal-lg">
     <div class="modal-header">
       <h3>Editar Asignaciones</h3>
-      <button class="modal-close" onclick="closeModal('modal-editar-asig')">✕</button>
+      <button class="modal-close" onclick="closeModal('modal-editar-asig')" aria-label="Cerrar">✕</button>
     </div>
     <div id="editar-asig-content"></div>
     <div class="modal-footer">
@@ -278,7 +278,7 @@
   <div class="modal">
     <div class="modal-header">
       <h3>Conductor — Titular y Suplentes</h3>
-      <button class="modal-close" onclick="closeModal('modal-atalaya')">✕</button>
+      <button class="modal-close" onclick="closeModal('modal-atalaya')" aria-label="Cerrar">✕</button>
     </div>
     <div style="padding:1.25rem 1.5rem">
       <p class="info-text" style="margin-bottom:1rem">Seleccioná quién conduce. El primero es el titular; los siguientes son suplentes ordenados por prioridad.</p>
@@ -296,7 +296,7 @@
   <div class="modal modal-lg">
     <div class="modal-header">
       <h3>Notificar por WhatsApp</h3>
-      <button class="modal-close" onclick="closeModal('modal-whatsapp')">✕</button>
+      <button class="modal-close" onclick="closeModal('modal-whatsapp')" aria-label="Cerrar">✕</button>
     </div>
     <div style="padding:1.25rem 1.5rem">
       <p class="info-text">Se abrirá WhatsApp Web por cada persona para enviarle su asignación. Confirmá las personas a notificar:</p>

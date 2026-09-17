@@ -33,23 +33,22 @@
   .auth-hidden{ display:none !important; }
   #auth-bar{ position:fixed; right:14px; top:14px; z-index:3100; display:flex; gap:8px; align-items:center; }
   #auth-bar .pill{ background:rgba(255,255,255,.08); border:1px solid var(--border); color:#fff; padding:6px 10px; border-radius:999px; font-weight:500; font-size:13px; }
-  #btnAuthOpen, #btnLogout{ border:none; border-radius:8px; padding:7px 12px; cursor:pointer; font-weight:600; }
-  #btnAuthOpen{ background:var(--accent); color:#fff; }
-  #btnLogout{ background:#ef4444; color:#fff; }
+  #btnLogout{ border:none; border-radius:8px; padding:7px 12px; cursor:pointer; font-weight:600; background:#ef4444; color:#fff; }
+  /* Cuando la página se muestra embebida dentro del portal, el usuario/rol y el
+     botón de salir ya se ven en el sidebar del portal: se ocultan acá para no duplicar. */
+  body.embedded-portal #auth-bar{ display:none !important; }
 
-  .overlay{ position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.55); z-index:4000; backdrop-filter: blur(1.5px); padding:24px; }
-  .modal-card{ width:100%; max-width:420px; background:var(--card); color:var(--text); border-radius:14px; box-shadow:0 20px 60px rgba(0,0,0,.35); overflow:hidden; border:1px solid rgba(255,255,255,.06); }
-  .modal-header{ display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid rgba(255,255,255,.06); }
-  .modal-title{ margin:0; font:600 16px/1.2 system-ui; }
-  .modal-close-btn{ border:none; background:transparent; color:#94a3b8; font-size:18px; cursor:pointer; }
-  .modal-body{ padding:16px; display:grid; gap:10px; }
-  .form-field{ display:grid; gap:6px; }
-  .form-label{ font-size:13px; color:#cbd5e1; }
-  .form-input{ width:100%; border:1px solid #334155; background:#0b1220; color:var(--text); border-radius:10px; padding:10px 12px; outline:none; }
+  .btn-primary{ background:#2563eb; color:#fff; border:none; border-radius:10px; padding:11px 18px; cursor:pointer; font-weight:600; font-size:14.5px; display:inline-flex; align-items:center; justify-content:center; gap:8px; text-decoration:none; }
+  .btn-primary:hover{ background:#1d4ed8; }
+  .btn-cancel{ background:#1f2937; color:var(--text); border:1px solid #334155; border-radius:10px; padding:11px 16px; cursor:pointer; font-weight:600; font-size:14.5px; }
+  .btn-cancel:hover{ background:#263449; }
+  .form-input{ border:1px solid #334155; background:#0b1220; color:var(--text); border-radius:10px; padding:10px 12px; outline:none; font-size:14.5px; }
   .form-input:focus{ border-color:#60a5fa; box-shadow:0 0 0 3px rgba(96,165,250,.2); }
-  .form-actions{ display:flex; gap:8px; justify-content:flex-end; margin-top:8px; }
-  .btn-primary{ background:#2563eb; color:#fff; border:none; border-radius:10px; padding:10px 14px; cursor:pointer; }
-  .btn-cancel{ background:#1f2937; color:var(--text); border:1px solid #334155; border-radius:10px; padding:10px 14px; cursor:pointer; }
+  #toast-stack{ position:fixed; bottom:20px; left:50%; transform:translateX(-50%); z-index:5000; display:flex; flex-direction:column; gap:8px; align-items:center; }
+  .toast{ background:#111827; border:1px solid var(--border); color:var(--text); padding:10px 16px; border-radius:10px; font-size:13.5px; box-shadow:0 10px 30px rgba(0,0,0,.4); animation: toastIn .18s ease; }
+  .toast.error{ border-color:rgba(239,68,68,.4); }
+  .toast.success{ border-color:rgba(34,197,94,.4); }
+  @keyframes toastIn{ from{ opacity:0; transform:translateY(6px); } to{ opacity:1; transform:translateY(0); } }
 
   .wrap{ max-width:1000px; margin:0 auto; padding:90px 20px 60px; }
   .topbar{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:8px; }
@@ -101,10 +100,14 @@
 </style>
 </head>
 <body>
+<script>
+// Si la página está embebida (iframe del portal), el usuario/rol y "Salir"
+// ya se muestran en el sidebar del portal: se ocultan acá para no duplicar.
+if (window.self !== window.top){ document.body.classList.add('embedded-portal'); }
+</script>
 
 <div id="auth-bar">
   <span id="auth-info" class="pill auth-hidden"></span>
-  <button id="btnAuthOpen" type="button">Acceder</button>
   <button id="btnLogout" class="auth-hidden" type="button">Salir</button>
 </div>
 
@@ -114,17 +117,17 @@
       <h1>Publicadores</h1>
       <p class="subtitle">Estado de DPA, Autorización de Uso de Datos y Formulario de Datos Personales.</p>
     </div>
-    <a class="back" href="./portal.html">&larr; Volver al portal</a>
+    <a class="back" href="./index.html">&larr; Volver al portal</a>
   </div>
 
   <div id="locked">
-    <p>Iniciá sesión para ver esta sección.</p>
-    <button id="btnAuthOpen2" class="btn-primary" type="button">Iniciar sesión</button>
+    <p>Iniciá sesión desde el portal para ver esta sección.</p>
+    <a class="btn-primary" href="./index.html">Ir al portal</a>
   </div>
 
   <div id="forbidden" style="display:none">
     <p>Esta sección es solo para administración / capitanes.</p>
-    <a class="btn-primary" style="text-decoration:none; display:inline-block;" href="./portal.html">Volver al portal</a>
+    <a class="btn-primary" style="text-decoration:none; display:inline-block;" href="./index.html">Volver al portal</a>
   </div>
 
   <div id="contenido">
@@ -138,7 +141,7 @@
     </div>
 
     <div class="toolbar">
-      <input id="buscador" class="form-input" type="search" placeholder="Buscar por nombre…" />
+      <input id="buscador" class="form-input" type="search" placeholder="Buscar por nombre…" aria-label="Buscar publicador por nombre" />
       <button id="btnRefrescar" class="btn-cancel" type="button">Refrescar</button>
     </div>
 
@@ -146,60 +149,26 @@
   </div>
 </div>
 
-<!-- Login modal -->
-<div id="login-overlay" class="overlay">
-  <div id="login-modal" class="modal-card" role="dialog" aria-modal="true" aria-labelledby="login-title">
-    <header class="modal-header">
-      <h3 id="login-title" class="modal-title">Iniciar sesión</h3>
-      <button id="login-close" class="modal-close-btn" title="Cerrar">✕</button>
-    </header>
-    <div class="modal-body">
-      <div class="form-field">
-        <label for="inUser" class="form-label">Usuario</label>
-        <input id="inUser" class="form-input" autocomplete="username" />
-      </div>
-      <div class="form-field">
-        <label for="inPass" class="form-label">Contraseña</label>
-        <input id="inPass" class="form-input" type="password" autocomplete="current-password" />
-      </div>
-      <div class="form-actions">
-        <button id="login-cancel" class="btn-cancel" type="button">Cancelar</button>
-        <button id="btnLogin" class="btn-primary" type="button">Ingresar</button>
-      </div>
-    </div>
-  </div>
-</div>
+<div id="toast-stack"></div>
 
 <script>
-window.showToast = window.showToast || function(msg){ if(!msg) return; try{ console.log("[toast]", msg); }catch(_){} };
+(function(){
+  const stack = document.getElementById('toast-stack');
+  window.showToast = function(msg, type){
+    if (!msg) return;
+    const el = document.createElement('div');
+    el.className = 'toast' + (type ? ' ' + type : '');
+    el.textContent = msg;
+    stack.appendChild(el);
+    setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .25s ease'; }, 2600);
+    setTimeout(() => { el.remove(); }, 2900);
+  };
+})();
 
+// El login se hace desde el portal (index.html); esta página solo lee la
+// sesión compartida (cookie) para decidir qué mostrar, y permite cerrarla.
 const ROLES_PERMITIDOS = ['admin', 'capitan'];
 let personasCache = [];
-
-const overlayLogin = document.getElementById('login-overlay');
-const inUser = document.getElementById('inUser');
-const inPass = document.getElementById('inPass');
-
-function openLogin(){ overlayLogin.style.display='flex'; inUser && inUser.focus(); }
-function closeLogin(){ overlayLogin.style.display='none'; }
-
-document.getElementById('btnAuthOpen').addEventListener('click', openLogin);
-document.getElementById('btnAuthOpen2') && document.getElementById('btnAuthOpen2').addEventListener('click', openLogin);
-document.getElementById('login-close').addEventListener('click', closeLogin);
-document.getElementById('login-cancel').addEventListener('click', closeLogin);
-
-document.getElementById('btnLogin').addEventListener('click', async () => {
-  const u = (inUser.value||'').trim();
-  const p = (inPass.value||'').trim();
-  if (!u || !p){ window.showToast('Ingresá usuario y contraseña'); return; }
-  if (window.AuthApp && typeof window.AuthApp.doLogin === "function"){
-    await window.AuthApp.doLogin(u,p);
-  } else {
-    window.showToast('AuthApp no está disponible');
-  }
-  closeLogin();
-  await refrescarVista();
-});
 
 document.getElementById('btnLogout').addEventListener('click', () => {
   if (window.AuthApp && typeof window.AuthApp.logout === "function"){
@@ -214,17 +183,14 @@ function actualizarAuthBar(){
   const user   = (window.AuthApp && AuthApp.getUsername && AuthApp.getUsername()) || '';
 
   const authInfo = document.getElementById('auth-info');
-  const btnOpen  = document.getElementById('btnAuthOpen');
   const btnOut   = document.getElementById('btnLogout');
   if (logged){
     authInfo.classList.remove('auth-hidden');
     authInfo.textContent = user + ' (' + role + ')';
     btnOut.classList.remove('auth-hidden');
-    btnOpen.classList.add('auth-hidden');
   } else {
     authInfo.classList.add('auth-hidden');
     btnOut.classList.add('auth-hidden');
-    btnOpen.classList.remove('auth-hidden');
   }
   return { logged, role };
 }
@@ -270,6 +236,9 @@ async function refrescarVista(){
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+  if (window.AuthApp && typeof window.AuthApp.onChange === "function"){
+    window.AuthApp.onChange(refrescarVista);
+  }
   if (window.AuthApp && typeof window.AuthApp.restore === "function"){
     await window.AuthApp.restore();
   }
