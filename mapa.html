@@ -98,7 +98,7 @@
 
 <!-- Auth + Config -->
 <script src="./app-config.js"></script>
-<script src="./app-auth.js"></script>
+<script src="./app-auth.js" defer></script>
 
 <style>
   /* ===== Login modal minimal styles (compatible con index.slim2.html) ===== */
@@ -884,7 +884,7 @@ async function enviarAlSheet(rec) {
 
     // ===== Mapa =====
     const vista = getVistaFromURL();
-    const map = L.map('map', { zoomControl: true }).setView(centrado, 19);
+    const map = L.map('map', { zoomControl: true, preferCanvas: true }).setView(centrado, 19);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {  attribution: '&copy; OpenStreetMap contributors' , maxZoom: 19 }).addTo(map);
 
     const polygonsLayer   = L.featureGroup().addTo(map);

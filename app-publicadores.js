@@ -57,6 +57,71 @@
   }
 
   // ==========================
+  // Estado (publicador / precursor regular / precursor especial /
+  // siervo ministerial / anciano). Una persona puede tener hasta dos.
+  // En la planilla va en la columna "Estado", separados por "," o "|".
+  // ==========================
+  const ESTADOS_VALIDOS = ["Publicador", "Precursor Regular", "Precursor Especial", "Siervo Ministerial", "Anciano"];
+
+  function normalizeEstado(v) {
+    const norm = normalizeName(v);
+    const match = ESTADOS_VALIDOS.find(e => normalizeName(e) === norm);
+    return match || String(v || "").trim();
+  }
+
+  function parseEstados(raw) {
+    return String(raw || "")
+      .split(/[|,;]/)
+      .map(s => s.trim())
+      .filter(Boolean)
+      .map(normalizeEstado)
+      .slice(0, 2);
+  }
+
+  // ==========================
+  // FechaVenceDPA: el DPA vence 2 años después de subirse.
+  // Alerta amarilla si quedan <= 3 meses, roja si quedan <= 1 mes o ya venció.
+  // ==========================
+  function parseFecha(str) {
+    const s = String(str || "").trim();
+    if (!s) return null;
+    let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if (m) return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+    const d = new Date(s);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  function formatFecha(d) {
+    if (!d) return "";
+    const pad = n => String(n).padStart(2, "0");
+    return pad(d.getDate()) + "/" + pad(d.getMonth() + 1) + "/" + d.getFullYear();
+  }
+
+  function diasHasta(d) {
+    const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+    const t = new Date(d); t.setHours(0, 0, 0, 0);
+    return Math.round((t - hoy) / 86400000);
+  }
+
+  function calcularAlertaDPA(fechaVenceDPA) {
+    if (!fechaVenceDPA) return { nivel: null, mensaje: "" };
+    const dias = diasHasta(fechaVenceDPA);
+    const fechaTxt = formatFecha(fechaVenceDPA);
+    if (dias < 0) return { nivel: "roja", mensaje: `DPA vencido desde el ${fechaTxt}` };
+    if (dias <= 30) return { nivel: "roja", mensaje: `Falta ${dias === 1 ? "1 día" : dias + " días"} para que venza el DPA (${fechaTxt})` };
+    if (dias <= 90) return { nivel: "amarilla", mensaje: `Quedan menos de 3 meses para renovar el DPA (vence ${fechaTxt})` };
+    return { nivel: null, mensaje: "" };
+  }
+
+  function alertaDpaHtml(alerta) {
+    if (!alerta || !alerta.nivel) return "";
+    const cls = alerta.nivel === "roja" ? "alerta-roja" : "alerta-amarilla";
+    return ` <span class="alerta-dpa ${cls} tooltip" tabindex="0" data-tooltip="${alerta.mensaje}">⚠</span>`;
+  }
+
+  // ==========================
   // Carga + cruce de datos
   // ==========================
   async function cargarPublicadores() {
@@ -93,10 +158,14 @@
         }
       }
 
+      const fechaVenceDPA = parseFecha(r.FechaVenceDPA);
+
       return {
         grupo: r.Grupo || "",
         nombre: r.Nombre || "",
+        estado: parseEstados(r.Estado),
         dpa, linkDpa: r.LinkDPA || "",
+        fechaVenceDPA, alertaDPA: calcularAlertaDPA(fechaVenceDPA),
         usoDatos, linkAutorizacion: r.LinkAutorizacion || "",
         datosPersonales, datosPersonalesFecha,
         notas: r.Notas || ""
@@ -109,7 +178,7 @@
   // ==========================
   function badge(ok, link, labelOk = "Sí", labelPend = "Pendiente") {
     if (ok && link) {
-      return `<a class="badge badge-ok" href="${link}" target="_blank" rel="noopener">✔ ${labelOk}</a>`;
+      return `<a class="badge badge-ok tooltip" href="${link}" target="_blank" rel="noopener" data-tooltip="Ver documento">✔ ${labelOk}</a>`;
     }
     if (ok) {
       return `<span class="badge badge-ok">✔ ${labelOk}</span>`;
@@ -132,14 +201,14 @@
     `;
   }
 
-  function renderTabla(el, personas, filtro) {
+  function renderTabla(el, personas, filtro, onClickPersona) {
     const f = normalizeName(filtro || "");
     const porGrupo = new Map();
-    personas.forEach(p => {
+    personas.forEach((p, idx) => {
       if (f && !normalizeName(p.nombre).includes(f)) return;
       const g = p.grupo || "Sin grupo";
       if (!porGrupo.has(g)) porGrupo.set(g, []);
-      porGrupo.get(g).push(p);
+      porGrupo.get(g).push({ ...p, __idx: idx });
     });
 
     const grupos = Array.from(porGrupo.keys()).sort((a, b) => {
@@ -154,14 +223,17 @@
     }
 
     el.innerHTML = grupos.map(g => {
-      const filas = porGrupo.get(g).map(p => `
-        <tr>
-          <td>${p.nombre}${p.notas ? `<div class="notas">${p.notas}</div>` : ""}</td>
-          <td>${badge(p.dpa, p.linkDpa)}</td>
+      const filas = porGrupo.get(g).map(p => {
+        const estadoTxt = (p.estado && p.estado.length) ? ` <span class="estado-tag">(${p.estado.join(", ")})</span>` : "";
+        return `
+        <tr class="fila-persona" data-idx="${p.__idx}" tabindex="0" role="button" aria-haspopup="dialog">
+          <td>${p.nombre}${estadoTxt}${p.notas ? `<div class="notas">${p.notas}</div>` : ""}</td>
+          <td>${badge(p.dpa, p.linkDpa)}${alertaDpaHtml(p.alertaDPA)}</td>
           <td>${badge(p.usoDatos, p.linkAutorizacion)}</td>
           <td>${badge(p.datosPersonales, "", "Sí", "Pendiente")}${p.datosPersonalesFecha ? `<div class="notas">${p.datosPersonalesFecha}</div>` : ""}</td>
         </tr>
-      `).join("");
+      `;
+      }).join("");
 
       return `
         <section class="grupo-block">
@@ -177,12 +249,30 @@
         </section>
       `;
     }).join("");
+
+    if (onClickPersona) {
+      el.querySelectorAll(".fila-persona").forEach(tr => {
+        const persona = personas[Number(tr.dataset.idx)];
+        tr.addEventListener("click", (e) => {
+          if (e.target.closest("a")) return; // dejar que el link del badge abra el documento
+          onClickPersona(persona);
+        });
+        tr.addEventListener("keydown", (e) => {
+          if (e.target.closest("a")) return;
+          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClickPersona(persona); }
+        });
+      });
+    }
   }
 
   window.PublicadoresApp = {
     cargarPublicadores,
     renderResumen,
     renderTabla,
-    normalizeName
+    normalizeName,
+    badge,
+    formatFecha,
+    alertaDpaHtml,
+    calcularAlertaDPA
   };
 })();

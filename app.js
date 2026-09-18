@@ -17,11 +17,21 @@ let state = {
 
 // ===================================================
 // USUARIOS
+// Contraseñas guardadas como hash salteado (SHA-256), nunca en texto plano.
+// Esto sigue siendo verificación 100% client-side (no hay backend que la
+// valide), así que no reemplaza un login real: solo evita que la contraseña
+// quede legible con "Ver código fuente".
 // ===================================================
 const USERS = [
-  { username: 'admin', password: 'admin123', role: 'administrador', nombre: 'Administrador' },
-  { username: 'vedor', password: 'vedor123', role: 'vedor', nombre: 'Veedor' }
+  { username: 'admin', salt: 'HKz9Lcufv3ktO0EiwgqWOg==', passwordHash: 'It4wZj5kfXQosbWX0aL8VIzxFRWxi+EkA1ZfQfQ04yQ=', role: 'administrador', nombre: 'Administrador' },
+  { username: 'vedor', salt: 'BbJbTVwH6cXZC++4xi+lyw==', passwordHash: 'FgYxfhsZT05WFLWkNMC+xIE552bVwsyOb48sS9NQSHg=', role: 'vedor', nombre: 'Veedor' }
 ];
+
+async function hashPassword(salt, password) {
+  const bytes = new TextEncoder().encode(salt + password);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return btoa(String.fromCharCode(...new Uint8Array(digest)));
+}
 
 const DEPARTAMENTOS = ['Acomodadores', 'Audio y Video', 'Presidencia', 'Conferencia', 'Estudio Atalaya'];
 
@@ -91,11 +101,13 @@ async function saveData() {
 // ===================================================
 // AUTH
 // ===================================================
-function handleLogin(e) {
+async function handleLogin(e) {
   e.preventDefault();
   const username = document.getElementById('loginUser').value.trim();
   const password = document.getElementById('loginPass').value;
-  const user = USERS.find(u => u.username === username && u.password === password);
+  const candidate = USERS.find(u => u.username === username);
+  const hash = candidate ? await hashPassword(candidate.salt, password) : null;
+  const user = (candidate && hash === candidate.passwordHash) ? candidate : null;
   if (!user) { document.getElementById('loginError').classList.remove('hidden'); return; }
   state.currentUser = user;
   document.getElementById('loginError').classList.add('hidden');
