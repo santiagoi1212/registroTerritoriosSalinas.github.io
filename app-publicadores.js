@@ -43,6 +43,18 @@
     return parseCSV(text);
   }
 
+  // Vía preferida: el mismo Apps Script (PUBLICADORES_API_URL) que ya se usa
+  // para subir documentos, corriendo con los permisos de quien lo desplegó.
+  // Evita depender de "Publicar en la web", que algunas cuentas/organizaciones
+  // terminan bloqueando (redirige a un login de Google en vez de servir el CSV).
+  async function fetchPublicadoresAPI(apiUrl) {
+    const res = await fetch(apiUrl + "?action=publicadoresDetalle&t=" + Date.now(), { cache: "no-store" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    if (!data || data.status !== "ok") throw new Error((data && data.message) || "Error al cargar publicadores");
+    return data.publicadores || [];
+  }
+
   function normalizeName(s) {
     return String(s || "")
       .normalize("NFD").replace(/[̀-ͯ]/g, "") // sin acentos
@@ -126,7 +138,9 @@
   // ==========================
   async function cargarPublicadores() {
     const cfg = window.APP_CONFIG || {};
-    const rows = await fetchCSV(cfg.PUBLICADORES_CSV_URL);
+    const rows = cfg.PUBLICADORES_API_URL
+      ? await fetchPublicadoresAPI(cfg.PUBLICADORES_API_URL)
+      : await fetchCSV(cfg.PUBLICADORES_CSV_URL);
 
     let respuestasPorNombre = null;
     if (cfg.DATOS_PERSONALES_RESPUESTAS_CSV_URL) {

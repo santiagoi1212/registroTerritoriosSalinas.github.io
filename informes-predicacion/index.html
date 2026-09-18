@@ -1,0 +1,1223 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Informes de Predicación · Portal Salinas</title>
+
+<!-- Gate de sesión del Portal: agregado al integrar este widget al portal
+     (registroTerritoriosSalinas.github.io). El resto del archivo, de acá
+     para abajo, es el widget original sin cambios de comportamiento. -->
+<script src="../app-config.js"></script>
+<script src="../app-auth.js"></script>
+<style>
+  /* Tema del portal (mismos tokens que publicadores.html) aplicado tanto al
+     marco de la página (fuera de #pub-app: auth-bar, locked/forbidden) como
+     al propio widget, forzando su modo oscuro incorporado a estos colores
+     en vez de los suyos originales o de los del sistema operativo. */
+  :root{
+    --bg: #0b1220;
+    --card: #0f172a;
+    --border: #263349;
+    --text: #e5e7eb;
+    --muted: #94a3b8;
+    --accent: #2563eb;
+  }
+  html, body{ height:100%; margin:0; }
+  body{
+    background: radial-gradient(1200px 600px at 50% -10%, #14213d 0%, var(--bg) 60%);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    min-height:100%;
+  }
+  .auth-hidden{ display:none !important; }
+  #auth-bar{ position:fixed; right:14px; top:14px; z-index:3100; display:flex; gap:8px; align-items:center; }
+  #auth-bar .pill{ background:rgba(255,255,255,.08); border:1px solid var(--border); color:#fff; padding:6px 10px; border-radius:999px; font-weight:500; font-size:13px; }
+  #btnLogout{ border:none; border-radius:8px; padding:7px 12px; cursor:pointer; font-weight:600; background:#ef4444; color:#fff; font-size:13px; }
+  body.embedded-portal #auth-bar{ display:none !important; }
+  #locked, #forbidden{ max-width:480px; margin:80px auto; text-align:center; color:var(--muted); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; padding:0 20px; }
+  #locked .btn-primary, #forbidden .btn-primary{ display:inline-block; margin-top:14px; text-decoration:none; background:var(--accent); color:#fff; border-radius:8px; padding:11px 20px; font-weight:600; font-size:14.5px; }
+</style>
+
+<!--
+  ============================================================================
+  PUBLICADORES POR GRUPO — widget autocontenido
+  ============================================================================
+  Qué hace:
+    - Lee el PADRÓN maestro (una planilla con columnas Grupo/Nombre) que dice
+      a qué grupo (1-5) pertenece cada persona — esa es la fuente de verdad.
+    - Lee las respuestas de las 5 planillas de formulario (una por grupo
+      "físico", pero sus filas se juntan todas y se reasignan al grupo que
+      diga el padrón — así no importa si alguien quedó reorganizado a otro
+      grupo pero sigue llenando el mismo formulario de siempre).
+    - Para el mes seleccionado, muestra por grupo (según el padrón) quién ya
+      se registró y quién falta, y grafica cuántos están como Precursor
+      Regular, Precursor Auxiliar o Publicador.
+
+  Requisito de las planillas:
+    Las 6 planillas (padrón + 5 formularios) pueden quedar PRIVADAS. Los datos
+    se leen a través de un proxy de Google Apps Script (apps-script/Code.gs)
+    que corre con tu cuenta y expone únicamente los ids autorizados en
+    ALLOWED_SHEETS. Desplegalo siguiendo las instrucciones al principio de
+    Code.gs y pegá la URL /exec en API_URL más abajo.
+
+  Cómo integrarlo en otro portal:
+    1) Copiá el <div id="pub-app">…</div> y el bloque <script id="pub-logic">.
+    2) Incluí la librería de CDN (Chart.js) antes de ese script.
+    3) Los estilos están agrupados bajo el prefijo ".pub-" / "#pub-app".
+    4) Para configurar desde el portal anfitrión, definí
+       `window.PUBLICADORES_API_URL` y `window.PUBLICADORES_RECOMPUTE_TOKEN`
+       ANTES de que corra este script.
+
+  De dónde salen los datos (desde la versión con caché):
+    Este widget YA NO lee ni matchea las 5 planillas de formulario contra el
+    padrón en el navegador — eso lo hace apps-script/Code.gs (una sola vez,
+    en el servidor) y guarda el resultado en una pestaña "Cache" dentro de
+    la planilla padrón. Acá solo se piden dos cosas al proxy:
+      - ?action=cache: la caché ya calculada + el padrón fresco (rápido,
+        es lo que se usa en cada carga de pantalla / botón "Actualizar").
+      - ?action=recompute&token=...: le pide al proxy que relea las 5
+        planillas de formulario y regenere la caché (botón "Recalcular
+        ahora"; tarda unos segundos). Necesita PUBLICADORES_RECOMPUTE_TOKEN
+        configurado igual que RECOMPUTE_TOKEN en las Propiedades del script
+        de Code.gs.
+  ============================================================================
+-->
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+
+<style id="pub-styles">
+  #pub-app {
+    --surface-1:      #fcfcfb;
+    --page-plane:     #f9f9f7;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --gridline:       #e1e0d9;
+    --baseline:       #c3c2b7;
+    --border:         rgba(11,11,11,0.10);
+
+    --series-publicador: #2a78d6;
+    --series-auxiliar:   #eb6834;
+    --series-regular:    #1baf7a;
+
+    --status-good:     #0ca30c;
+    --status-warning:  #fab219;
+    --status-critical: #d03b3b;
+
+    color-scheme: light;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: var(--text-primary);
+    background: var(--page-plane);
+    line-height: 1.4;
+  }
+  @media (prefers-color-scheme: dark) {
+    #pub-app:not([data-theme="light"]) {
+      --surface-1:      #1a1a19;
+      --page-plane:     #0d0d0d;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #898781;
+      --gridline:       #2c2c2a;
+      --baseline:       #383835;
+      --border:         rgba(255,255,255,0.10);
+      --series-publicador: #3987e5;
+      --series-auxiliar:   #d95926;
+      --series-regular:    #199e70;
+      color-scheme: dark;
+    }
+  }
+  #pub-app[data-theme="dark"] {
+    --surface-1:      #1a1a19;
+    --page-plane:     #0d0d0d;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #898781;
+    --gridline:       #2c2c2a;
+    --baseline:       #383835;
+    --border:         rgba(255,255,255,0.10);
+    --series-publicador: #3987e5;
+    --series-auxiliar:   #d95926;
+    --series-regular:    #199e70;
+    color-scheme: dark;
+  }
+
+  #pub-app * { box-sizing: border-box; }
+  #pub-app { padding: 20px; max-width: 1180px; margin: 0 auto; }
+  #pub-app h1 { font-size: 1.4rem; margin: 0 0 2px; }
+  #pub-app .pub-sub { color: var(--text-secondary); font-size: 0.85rem; margin: 0 0 18px; }
+
+  .pub-controls {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 14px;
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 10px; padding: 12px 16px; margin-bottom: 14px;
+  }
+  .pub-field { display: flex; flex-direction: column; gap: 3px; font-size: 0.75rem; color: var(--text-secondary); }
+  .pub-field select, .pub-field input {
+    font: inherit; font-size: 0.85rem; padding: 6px 8px; border-radius: 6px;
+    border: 1px solid var(--baseline); background: var(--surface-1); color: var(--text-primary);
+  }
+  .pub-btn {
+    font: inherit; font-size: 0.85rem; padding: 7px 14px; border-radius: 6px;
+    border: 1px solid var(--baseline); background: var(--surface-1); color: var(--text-primary);
+    cursor: pointer; align-self: flex-end;
+  }
+  .pub-btn:hover { border-color: var(--text-secondary); }
+  .pub-btn:disabled { opacity: 0.5; cursor: default; }
+  .pub-status { font-size: 0.78rem; color: var(--text-muted); margin-left: auto; align-self: center; text-align: right; }
+
+  .pub-banners { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+  .pub-banner {
+    font-size: 0.82rem; border-radius: 8px; padding: 9px 12px; border: 1px solid var(--border);
+  }
+  .pub-banner.crit { border-color: var(--status-critical); color: var(--status-critical); }
+  .pub-banner.warn { border-color: var(--status-warning); color: var(--text-primary); background: var(--surface-1); }
+  .pub-banner details summary { cursor: pointer; }
+
+  .pub-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; margin-bottom: 28px; }
+  .pub-card {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px 16px 16px;
+  }
+  .pub-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+  .pub-card-title {
+    font-size: 1rem; font-weight: 600; border: none; background: transparent; color: var(--text-primary);
+    padding: 2px 4px; border-radius: 4px; width: 60%;
+  }
+  .pub-card-title:hover, .pub-card-title:focus { background: var(--page-plane); outline: none; }
+  .pub-period-tag { font-size: 0.72rem; color: var(--text-muted); }
+
+  .pub-stats { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .pub-chip {
+    font-size: 0.76rem; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border);
+    color: var(--text-secondary); white-space: nowrap;
+  }
+  .pub-chip b { color: var(--text-primary); }
+  .pub-chip.good { border-color: var(--status-good); }
+  .pub-chip.warn { border-color: var(--status-warning); }
+  .pub-chip.crit { border-color: var(--status-critical); }
+
+  .pub-section-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin: 10px 0 4px; }
+  .pub-names { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pub-name-chip {
+    font-size: 0.78rem; padding: 3px 8px; border-radius: 6px; background: var(--page-plane);
+    border: 1px solid var(--border); color: var(--text-primary);
+    max-width: 100%; overflow-wrap: break-word;
+  }
+  .pub-empty-ok { font-size: 0.82rem; color: var(--status-good); }
+  .pub-mini-chart-wrap { position: relative; height: 130px; margin-top: 12px; }
+
+  .pub-summary { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+  .pub-summary h2 { font-size: 1.05rem; margin: 0 0 12px; }
+  .pub-charts-row { display: grid; grid-template-columns: 2fr 1fr; gap: 24px; align-items: start; }
+  @media (max-width: 720px) { .pub-charts-row { grid-template-columns: 1fr; } }
+  .pub-chart-box { position: relative; height: 300px; }
+  .pub-note { font-size: 0.74rem; color: var(--text-muted); margin-top: 14px; }
+
+  /* ---- Chips de nombre clicables (abren la ficha de la persona) ---- */
+  .pub-name-chip.clickable { cursor: pointer; background: none; font: inherit; }
+  .pub-name-chip.clickable:hover { border-color: var(--text-secondary); }
+  .pub-name-chip.st-ok { color: var(--status-good); border-color: var(--status-good); }
+  .pub-name-chip.st-warn { color: var(--text-primary); border-color: var(--status-warning); }
+  .pub-name-chip.st-crit { border-color: var(--status-critical); color: var(--status-critical); }
+  .pub-name-chip .pub-flag { margin-left: 3px; }
+
+  /* ---- Grilla "Integrantes del grupo": lista prolija en filas/columnas,
+     en vez de chips sueltos flotando dentro del área ---- */
+  .pub-roster-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 4px 10px;
+  }
+  .pub-roster-item {
+    display: flex; align-items: center; gap: 7px; width: 100%; text-align: left;
+    font: inherit; font-size: 0.8rem; padding: 5px 8px; border-radius: 6px;
+    background: var(--page-plane); border: 1px solid var(--border); color: var(--text-primary);
+    cursor: pointer;
+  }
+  .pub-roster-item:hover { border-color: var(--text-secondary); }
+  .pub-roster-item .pub-dot {
+    width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; background: var(--text-muted);
+  }
+  .pub-roster-item.st-ok .pub-dot { background: var(--status-good); }
+  .pub-roster-item.st-warn .pub-dot { background: var(--status-warning); }
+  .pub-roster-item.st-crit .pub-dot { background: var(--status-critical); }
+  .pub-roster-item .pub-name-text {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 auto;
+  }
+  .pub-roster-item .pub-flag { flex: 0 0 auto; }
+
+  /* ---- Modal de ficha por persona ---- */
+  .pub-modal-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex;
+    align-items: center; justify-content: center; padding: 20px; z-index: 1000;
+  }
+  .pub-modal {
+    background: var(--surface-1); color: var(--text-primary); border-radius: 12px;
+    border: 1px solid var(--border); max-width: 640px; width: 100%; max-height: 85vh;
+    overflow-y: auto; padding: 20px 22px;
+  }
+  .pub-modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
+  .pub-modal-head h3 { margin: 0; font-size: 1.15rem; }
+  .pub-modal-close {
+    font: inherit; font-size: 1rem; line-height: 1; border: none; background: transparent;
+    color: var(--text-secondary); cursor: pointer; padding: 4px 6px; border-radius: 6px;
+  }
+  .pub-modal-close:hover { background: var(--page-plane); }
+  .pub-modal-sub { font-size: 0.8rem; color: var(--text-secondary); margin: 0 0 14px; }
+  .pub-modal h4 { font-size: 0.82rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin: 16px 0 6px; }
+  .pub-status-badge { font-size: 0.78rem; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border); }
+  .pub-status-badge.st-ok { border-color: var(--status-good); color: var(--status-good); }
+  .pub-status-badge.st-warn { border-color: var(--status-warning); color: var(--text-primary); }
+  .pub-status-badge.st-crit { border-color: var(--status-critical); color: var(--status-critical); }
+  .pub-modal table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  .pub-modal th, .pub-modal td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--border); }
+  .pub-modal tr.pub-missing-row td { color: var(--status-warning); }
+  .pub-table-wrap { width: 100%; overflow-x: auto; }
+
+  /* Badge de situación (Regular/Auxiliar/Publicador), mismos colores que
+     usan los gráficos (--series-*) para que se reconozca de un vistazo. */
+  .pub-situacion-badge {
+    font-size: 0.72rem; padding: 2px 9px; border-radius: 999px; font-weight: 600;
+    border: 1px solid var(--border); white-space: nowrap; display: inline-flex; align-items: center; gap: 5px;
+  }
+  .pub-situacion-badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: 0 0 auto; }
+  .pub-situacion-badge.sit-regular { border-color: var(--series-regular); color: var(--series-regular); }
+  .pub-situacion-badge.sit-auxiliar { border-color: var(--series-auxiliar); color: var(--series-auxiliar); }
+  .pub-situacion-badge.sit-publicador { border-color: var(--series-publicador); color: var(--series-publicador); }
+  .pub-situacion-badge.sit-otro { border-color: var(--border); color: var(--text-muted); }
+
+  /* Panel destacado para la sección de Precursor Regular / Auxiliar en la
+     ficha de la persona: franja de color a la izquierda + fondo sutil. */
+  .pub-situacion-panel {
+    background: var(--page-plane); border: 1px solid var(--border); border-radius: 8px;
+    border-left-width: 4px; padding: 10px 14px; margin: 8px 0 12px;
+  }
+  .pub-situacion-panel.sit-regular { border-left-color: var(--series-regular); }
+  .pub-situacion-panel.sit-auxiliar { border-left-color: var(--series-auxiliar); }
+  .pub-situacion-panel h4 { margin-top: 0; }
+
+  /* Barra de progreso hacia la meta anual de horas (Precursor Regular). */
+  .pub-goal-bar-wrap { background: var(--gridline); border-radius: 999px; height: 8px; overflow: hidden; margin: 8px 0 6px; }
+  .pub-goal-bar-fill { height: 100%; background: var(--series-regular); border-radius: 999px; }
+  .pub-modal th { color: var(--text-muted); font-weight: 500; }
+  .pub-svc-year { margin-bottom: 14px; }
+  .pub-svc-year summary { cursor: pointer; font-size: 0.88rem; padding: 4px 0; }
+  .pub-goal-line { font-size: 0.82rem; margin: 6px 0 0; color: var(--text-secondary); }
+  .pub-goal-line b { color: var(--text-primary); }
+
+  /* ---- Mobile ---- */
+  @media (max-width: 640px) {
+    #pub-app { padding: 12px; }
+    #pub-app h1 { font-size: 1.15rem; }
+    #pub-app .pub-sub { font-size: 0.8rem; }
+
+    .pub-controls { flex-direction: column; align-items: stretch; gap: 10px; padding: 12px; }
+    .pub-field { width: 100%; }
+    .pub-field select { width: 100%; }
+    .pub-btn { width: 100%; align-self: stretch; }
+    .pub-status { margin-left: 0; text-align: left; }
+
+    .pub-grid { grid-template-columns: 1fr; gap: 12px; }
+    .pub-card { padding: 12px 14px 14px; }
+    .pub-card-head { flex-wrap: wrap; }
+    .pub-card-title { width: 100%; }
+    .pub-period-tag { width: 100%; }
+
+    .pub-chart-box { height: 220px; }
+    .pub-mini-chart-wrap { height: 160px; }
+
+    /* Integrantes: una sola columna, más fácil de tocar con el dedo. */
+    .pub-roster-grid { grid-template-columns: 1fr; }
+    .pub-roster-item { padding: 8px 10px; font-size: 0.85rem; }
+
+    /* Modal de ficha por persona: casi a todo el ancho, con menos aire. */
+    .pub-modal-backdrop { padding: 0; align-items: flex-end; }
+    .pub-modal { max-width: 100%; width: 100%; max-height: 92vh; border-radius: 14px 14px 0 0; padding: 16px 14px; }
+    .pub-modal-head h3 { font-size: 1.05rem; }
+    .pub-modal table { font-size: 0.76rem; }
+    .pub-modal th, .pub-modal td { padding: 4px; }
+  }
+</style>
+
+<!-- Reskin del portal: va DESPUÉS de #pub-styles a propósito, para ganarle
+     en el cascade (misma especificidad, gana el que aparece último) a la
+     regla #pub-app[data-theme="dark"] de más arriba. Pisa sus variables de
+     modo oscuro para que el widget use la misma paleta que el resto del
+     sitio en vez de la suya propia. Se activa con data-theme="dark" en el
+     div #pub-app (ver <body>). -->
+<style>
+  #pub-app[data-theme="dark"]{
+    --surface-1:      var(--card);
+    --page-plane:     var(--bg);
+    --text-primary:   var(--text);
+    --text-secondary: var(--muted);
+    --text-muted:     var(--muted);
+    --gridline:       var(--border);
+    --baseline:       var(--border);
+    --border:         var(--border);
+    color-scheme: dark;
+  }
+</style>
+</head>
+<body>
+<script>
+// Si la página está embebida (iframe del portal), el usuario/rol y "Salir"
+// ya se muestran en el sidebar del portal: se ocultan acá para no duplicar.
+if (window.self !== window.top){ document.body.classList.add('embedded-portal'); }
+</script>
+
+<div id="auth-bar">
+  <span id="auth-info" class="pill auth-hidden"></span>
+  <button id="btnLogout" class="auth-hidden" type="button">Salir</button>
+</div>
+
+<div id="locked">
+  <p>Iniciá sesión desde el portal para ver esta sección.</p>
+  <a class="btn-primary" href="../index.html">Ir al portal</a>
+</div>
+
+<div id="forbidden" style="display:none">
+  <p>Esta sección es solo para administración / capitanes.</p>
+  <a class="btn-primary" href="../index.html">Volver al portal</a>
+</div>
+
+<div id="contenido" style="display:none">
+<div id="pub-app" data-theme="dark">
+  <h1>Publicadores por grupo</h1>
+  <p class="pub-sub">Estado de registro mensual y situación (Precursor Regular / Auxiliar / Publicador), por grupo según el padrón.</p>
+
+  <div class="pub-controls">
+    <div class="pub-field">
+      <label for="pub-period">Mes a revisar</label>
+      <select id="pub-period"></select>
+    </div>
+    <button class="pub-btn" id="pub-refresh">↻ Actualizar datos</button>
+    <button class="pub-btn" id="pub-recompute" title="Relee las 5 planillas de formulario y regenera la caché — tarda unos segundos">⟳ Recalcular ahora</button>
+    <div class="pub-status" id="pub-status">Cargando…</div>
+  </div>
+
+  <div class="pub-banners" id="pub-banners"></div>
+
+  <div class="pub-grid" id="pub-grid"></div>
+
+  <div id="pub-modal-root"></div>
+
+  <div class="pub-summary">
+    <h2>Resumen general — situación por grupo</h2>
+    <div class="pub-charts-row">
+      <div class="pub-chart-box"><canvas id="pub-chart-groups"></canvas></div>
+      <div class="pub-chart-box"><canvas id="pub-chart-total"></canvas></div>
+    </div>
+    <p class="pub-note">
+      Los grupos y quién pertenece a cada uno salen del padrón maestro (columnas Grupo/Nombre). Las respuestas de
+      las 5 planillas de formulario se juntan y se emparejan por nombre contra el padrón — así no importa por cuál
+      de las 5 planillas haya respondido cada persona. La coincidencia de nombres tolera errores de tipeo menores;
+      revisá el aviso de "nombres sin coincidencia" si aparece.
+    </p>
+  </div>
+</div>
+</div>
+
+<script id="pub-logic">
+(function () {
+  "use strict";
+
+  // ---------------------------------------------------------------------
+  // 1) CONFIGURACIÓN
+  //    Podés sobreescribir esto desde el portal anfitrión definiendo
+  //    window.PUBLICADORES_API_URL / window.PUBLICADORES_RECOMPUTE_TOKEN
+  //    antes de cargar este script.
+  //
+  //    Ya NO hace falta configurar aquí las 5 planillas de formulario ni el
+  //    padrón: ese matching/parseo ahora lo hace apps-script/Code.gs una
+  //    sola vez (?action=recompute) y este widget solo consume el
+  //    resultado ya calculado (?action=cache). Ver comentario grande al
+  //    principio del archivo.
+  // ---------------------------------------------------------------------
+
+  // URL /exec de tu implementación de apps-script/Code.gs (ver instrucciones
+  // al principio de ese archivo). Reemplazala por la tuya, o definí
+  // window.PUBLICADORES_API_URL antes de cargar este script.
+  var API_URL = window.PUBLICADORES_API_URL || "https://script.google.com/macros/s/AKfycbznuLplCadjhHpGRysU4xj1WfcAKPLty0faOsa__Gjm6Bu7zDr-FzshzNzeeGZXo0Fv/exec";
+
+  // OJO: esto NO es una URL — es una cadena secreta cualquiera que vos
+  // inventás, y tiene que ser EXACTAMENTE igual a la propiedad de script
+  // RECOMPUTE_TOKEN que configurás en Code.gs (Apps Script → ícono de
+  // tuerca "Configuración del proyecto" → "Propiedades del script" →
+  // "Añadir propiedad de script"). Sin esto, el botón "Recalcular ahora"
+  // no funciona (la caché la puede seguir regenerando el trigger diario
+  // igual, si ya corriste createDailyTrigger).
+  var RECOMPUTE_TOKEN = window.PUBLICADORES_RECOMPUTE_TOKEN || "16031990dmA.";
+
+  // Meta anual de horas para Precursor Regular.
+  var REGULAR_PIONEER_GOAL_HOURS = 600;
+
+  var MONTHS = ["enero","febrero","marzo","abril","mayo","junio","julio",
+                "agosto","septiembre","octubre","noviembre","diciembre"];
+  // Orden de un año de servicio: septiembre (índice 8) a agosto (índice 7).
+  var SERVICE_YEAR_MONTH_ORDER = [8, 9, 10, 11, 0, 1, 2, 3, 4, 5, 6, 7];
+
+  // ---------------------------------------------------------------------
+  // 2) UTILIDADES DE TEXTO
+  // ---------------------------------------------------------------------
+  var ESCAPE_MAP = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+  function escapeHtml(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return ESCAPE_MAP[c]; });
+  }
+  function titleCase(s) {
+    return s.replace(/\s+/g, " ").trim().split(" ").map(function (w) {
+      return w ? w.charAt(0).toUpperCase() + w.slice(1) : w;
+    }).join(" ");
+  }
+  function periodLabel(key) {
+    var year = Math.floor(key / 12), m = key % 12;
+    return titleCase(MONTHS[m]) + " " + year;
+  }
+  // Año de servicio (septiembre a agosto) al que pertenece un periodKey:
+  // se etiqueta por el año en que empieza (septiembre).
+  function serviceYearStart(periodKey) {
+    var year = Math.floor(periodKey / 12), month = periodKey % 12;
+    return month >= 8 ? year : year - 1;
+  }
+  function serviceYearLabel(svcStart) {
+    return "Septiembre " + svcStart + " – Agosto " + (svcStart + 1);
+  }
+
+  // ---------------------------------------------------------------------
+  // 3) CARGA
+  //    Ya no se leen ni matchean las 5 planillas de formulario acá — eso
+  //    corre en apps-script/Code.gs (recomputeCache()) y este widget solo
+  //    consume el resultado:
+  //      - ?action=cache      -> padrón fresco + caché ya calculada
+  //      - ?action=recompute  -> le pide al proxy que regenere la caché
+  // ---------------------------------------------------------------------
+  function sleep(ms) { return new Promise(function (resolve) { setTimeout(resolve, ms); }); }
+
+  function actionUrl(action, extraParams) {
+    var url = API_URL + "?action=" + encodeURIComponent(action) + "&_=" + Date.now();
+    if (extraParams) {
+      Object.keys(extraParams).forEach(function (k) {
+        url += "&" + encodeURIComponent(k) + "=" + encodeURIComponent(extraParams[k]);
+      });
+    }
+    return url;
+  }
+
+  // Los Web Apps de Apps Script (sobre todo ejecutados de forma anónima, con
+  // acceso "Cualquier usuario") a veces devuelven un 404/429/500 esporádico
+  // ante pedidos concurrentes, aunque el deploy esté bien. Reintentamos un
+  // par de veces antes de dar el error por definitivo.
+  var MAX_ATTEMPTS = 3;
+  async function fetchJson(url) {
+    if (!API_URL || API_URL.indexOf("REEMPLAZA_CON_TU_URL") !== -1) {
+      throw new Error("Falta configurar API_URL con la URL /exec de tu Apps Script (ver apps-script/Code.gs)");
+    }
+    var lastErr;
+    for (var attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        var res = await fetch(url, { cache: "no-store" });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        var json = await res.json();
+        if (json.error) throw new Error(json.error); // error de la app (no autorizada, etc.) — no reintentar
+        return json;
+      } catch (e) {
+        lastErr = e;
+        var isNetworkish = /^HTTP \d/.test(e.message) || e.message.indexOf("Failed to fetch") !== -1;
+        if (!isNetworkish || attempt === MAX_ATTEMPTS) throw e;
+        await sleep(400 * attempt);
+      }
+    }
+    throw lastErr;
+  }
+
+  function fetchCache() { return fetchJson(actionUrl("cache")); }
+  function fetchRecompute() {
+    if (!RECOMPUTE_TOKEN) {
+      return Promise.reject(new Error("Falta configurar PUBLICADORES_RECOMPUTE_TOKEN (tiene que ser igual a RECOMPUTE_TOKEN en las Propiedades del script de Code.gs)"));
+    }
+    return fetchJson(actionUrl("recompute", { token: RECOMPUTE_TOKEN }));
+  }
+
+  function groupRosterByGrupo(roster) {
+    var byGroup = {};
+    roster.forEach(function (r) {
+      if (!byGroup[r.grupo]) byGroup[r.grupo] = [];
+      byGroup[r.grupo].push(r);
+    });
+    return byGroup;
+  }
+
+  // ---------------------------------------------------------------------
+  // 4) ESTADO GLOBAL
+  // ---------------------------------------------------------------------
+  var STATE = {
+    roster: [],           // [{grupo, nombre}] — padrón fresco
+    rosterByGroup: {},
+    rosterStatus: { ok: false, error: null },
+    rows: [],             // caché ya calculada: {grupo,nombre,anio,mes,mesIndex,periodKey,situacion,horas,participo}
+    rowsByNamePeriod: {}, // "nombre|periodKey" -> row
+    rowsByName: {},       // nombre -> [rows] ordenadas por periodKey asc
+    sheetStatus: [],      // estado del último recompute (no de esta carga)
+    unmatched: [],
+    generatedAt: null,
+    selectedPeriod: null,
+    loading: false,
+    recomputing: false,
+    charts: {}
+  };
+  var NAME_KEY_PREFIX = "pub-group-name-";
+
+  // Indexa STATE.rows para lookups O(1) por persona/período y por persona.
+  function indexRows() {
+    var byNamePeriod = {}, byName = {};
+    STATE.rows.forEach(function (r) {
+      byNamePeriod[r.nombre + "|" + r.periodKey] = r;
+      if (!byName[r.nombre]) byName[r.nombre] = [];
+      byName[r.nombre].push(r);
+    });
+    Object.keys(byName).forEach(function (n) {
+      byName[n].sort(function (a, b) { return a.periodKey - b.periodKey; });
+    });
+    STATE.rowsByNamePeriod = byNamePeriod;
+    STATE.rowsByName = byName;
+  }
+
+  // ---------------------------------------------------------------------
+  // 4b) ESTADO DE LA PERSONA (Activo / Irregular / Inactivo)
+  //    Ventana de los últimos 6 períodos con datos en TODO el sistema
+  //    (no solo los de esta persona): un período "sin participar" es uno
+  //    en el que la persona no informó nada, o informó "no" a "¿Participó
+  //    en alguna faceta de la predicación?".
+  //      - 6 consecutivos (desde el más reciente) sin participar -> Inactivo
+  //      - 2+ sin participar en la ventana (seguidos o alternados) -> Irregular
+  //      - menos de 2 períodos de historial propio -> sin info suficiente
+  // ---------------------------------------------------------------------
+  function personStatus(name) {
+    var hist = STATE.rowsByName[name] || []; // ordenado asc por periodKey
+    if (hist.length < 2) return { code: "sin-info", label: "Sin historial suficiente" };
+
+    // Ventana: los últimos 6 períodos CON DATOS DE ALGUIEN, pero sin ir más
+    // atrás del primer informe propio de esta persona — antes de eso
+    // todavía no le correspondía informar, así que no cuenta como "faltó".
+    var earliestOwnPeriod = hist[0].periodKey;
+    var periods = allPeriods().filter(function (p) { return p >= earliestOwnPeriod; }); // desc
+    var window_ = periods.slice(0, 6);
+    var consecutiveNo = 0, totalNo = 0, streakBroken = false;
+    for (var i = 0; i < window_.length; i++) {
+      var row = STATE.rowsByNamePeriod[name + "|" + window_[i]];
+      var noParticipo = !row || row.participo === false;
+      if (noParticipo) {
+        totalNo++;
+        if (!streakBroken) consecutiveNo++;
+      } else {
+        streakBroken = true;
+      }
+    }
+    if (consecutiveNo >= 6) return { code: "inactivo", label: "Inactivo" };
+    if (consecutiveNo >= 2 || totalNo >= 2) return { code: "irregular", label: "Irregular" };
+    return { code: "activo", label: "Activo" };
+  }
+
+  function statusBadgeClass(code) {
+    return code === "inactivo" ? "st-crit" : (code === "irregular" ? "st-warn" : (code === "activo" ? "st-ok" : ""));
+  }
+
+  // Clase/badge de situación (Precursor Regular/Auxiliar/Publicador/Otro),
+  // con los mismos colores que ya usan los gráficos (--series-*).
+  function situacionBadgeClass(situacion) {
+    if (situacion === "Precursor Regular") return "sit-regular";
+    if (situacion === "Precursor Auxiliar") return "sit-auxiliar";
+    if (situacion === "Publicador") return "sit-publicador";
+    return "sit-otro";
+  }
+  function situacionBadge(situacion) {
+    if (!situacion) return "";
+    return '<span class="pub-situacion-badge ' + situacionBadgeClass(situacion) + '">' + escapeHtml(situacion) + "</span>";
+  }
+
+  // ---------------------------------------------------------------------
+  // 4c) HORAS POR AÑO DE SERVICIO (Precursor Regular)
+  //    Agrupa las horas informadas por año de servicio (sep->ago).
+  //    Solo se muestran los años en los que en algún mes figuró como
+  //    "Precursor Regular" (hasRegular).
+  // ---------------------------------------------------------------------
+  function serviceYearBuckets(name) {
+    var hist = STATE.rowsByName[name] || [];
+    var byYear = {};
+    hist.forEach(function (r) {
+      var svcStart = serviceYearStart(r.periodKey);
+      if (!byYear[svcStart]) byYear[svcStart] = { months: {}, hasRegular: false };
+      byYear[svcStart].months[r.periodKey % 12] = r.horas;
+      if (r.situacion === "Precursor Regular") byYear[svcStart].hasRegular = true;
+    });
+    return byYear;
+  }
+
+  function currentServiceYearStart() {
+    var now = new Date();
+    return now.getMonth() >= 8 ? now.getFullYear() : now.getFullYear() - 1;
+  }
+
+  function loadGroupName(grupoNum) {
+    try { return localStorage.getItem(NAME_KEY_PREFIX + grupoNum) || ("Grupo " + grupoNum); }
+    catch (e) { return "Grupo " + grupoNum; }
+  }
+  function saveGroupName(grupoNum, value) {
+    try { localStorage.setItem(NAME_KEY_PREFIX + grupoNum, value); } catch (e) { /* ignore */ }
+  }
+
+  function groupNumbers() {
+    return Object.keys(STATE.rosterByGroup).map(Number).sort(function (a, b) { return a - b; });
+  }
+
+  function allPeriods() {
+    var set = {};
+    STATE.rows.forEach(function (r) { if (r.periodKey != null) set[r.periodKey] = true; });
+    return Object.keys(set).map(Number).sort(function (a, b) { return b - a; });
+  }
+
+  function computeGroupView(grupoNum, selectedPeriod) {
+    var rosterList = STATE.rosterByGroup[grupoNum] || [];
+    var rosterNames = rosterList.map(function (r) { return r.nombre; }).sort();
+
+    var submitted = [], missing = [], noActivity = [];
+    var counts = { "Precursor Regular": 0, "Precursor Auxiliar": 0, "Publicador": 0, "Otro": 0 };
+    rosterNames.forEach(function (name) {
+      var row = STATE.rowsByNamePeriod[name + "|" + selectedPeriod];
+      if (row) {
+        submitted.push(name);
+        if (row.participo === false) noActivity.push(name);
+        var bucket = row.situacion || "Otro";
+        counts[bucket] = (counts[bucket] || 0) + 1;
+      } else {
+        missing.push(name);
+      }
+    });
+
+    return { roster: rosterNames, submitted: submitted, missing: missing, noActivity: noActivity, counts: counts };
+  }
+
+  function chip(cls, label, value) {
+    return '<span class="pub-chip ' + cls + '"><b>' + value + '</b> ' + label + '</span>';
+  }
+
+  // Chip de nombre clicable (abre la ficha de la persona), coloreado según
+  // su estado Activo/Irregular/Inactivo (punto 2).
+  function nameChip(name) {
+    var status = personStatus(name);
+    var cls = "pub-name-chip clickable " + statusBadgeClass(status.code);
+    var flag = status.code === "irregular" ? ' <span class="pub-flag">⚠</span>'
+      : (status.code === "inactivo" ? ' <span class="pub-flag">⛔</span>' : "");
+    return '<button type="button" class="' + cls + '" data-person="' + escapeHtml(name) + '">' +
+      escapeHtml(name) + flag + "</button>";
+  }
+
+  // Fila de la grilla "Integrantes del grupo": misma info que nameChip pero
+  // en formato de lista prolija (una fila por persona, alineada en columnas)
+  // en vez de chips sueltos que van fluyendo dentro del área.
+  function rosterItem(name) {
+    var status = personStatus(name);
+    var cls = "pub-roster-item clickable " + statusBadgeClass(status.code);
+    var flag = status.code === "irregular" ? " ⚠" : (status.code === "inactivo" ? " ⛔" : "");
+    return '<button type="button" class="' + cls + '" data-person="' + escapeHtml(name) + '">' +
+      '<span class="pub-dot"></span><span class="pub-name-text">' + escapeHtml(name) + "</span>" +
+      (flag ? '<span class="pub-flag">' + flag + "</span>" : "") +
+      "</button>";
+  }
+
+  function renderPeriodSelect() {
+    var sel = document.getElementById("pub-period");
+    var periods = allPeriods();
+    var prevVal = STATE.selectedPeriod;
+    sel.innerHTML = periods.map(function (p) {
+      return '<option value="' + p + '">' + periodLabel(p) + "</option>";
+    }).join("");
+    if (periods.length) {
+      STATE.selectedPeriod = (prevVal != null && periods.indexOf(prevVal) !== -1) ? prevVal : periods[0];
+      sel.value = String(STATE.selectedPeriod);
+    } else {
+      STATE.selectedPeriod = null;
+    }
+  }
+
+  function renderBanners() {
+    var el = document.getElementById("pub-banners");
+    var parts = [];
+    if (!STATE.rosterStatus.ok) {
+      parts.push('<div class="pub-banner crit">⚠ No se pudo cargar el padrón: ' +
+        escapeHtml(STATE.rosterStatus.error || "error desconocido") +
+        '. Sin el padrón no se puede armar la vista por grupo.</div>');
+    }
+    if (!STATE.generatedAt) {
+      parts.push('<div class="pub-banner warn">⚠ Todavía no se generó la caché de cálculos (pestaña "Cache" en el padrón). ' +
+        'Apretá "⟳ Recalcular ahora" para generarla por primera vez.</div>');
+    }
+    var failedSheets = STATE.sheetStatus.filter(function (s) { return !s.ok; });
+    if (failedSheets.length) {
+      parts.push('<div class="pub-banner warn">⚠ ' + failedSheets.length + ' de ' + STATE.sheetStatus.length +
+        ' planillas de formulario no cargaron en el último recálculo — los datos pueden estar incompletos. Detalle: ' +
+        failedSheets.map(function (s) { return escapeHtml(s.error || "error"); }).join(" · ") + '</div>');
+    }
+    if (STATE.unmatched.length) {
+      parts.push('<div class="pub-banner warn"><details><summary>⚠ ' + STATE.unmatched.length +
+        ' nombre(s) de las planillas no coincidieron con nadie del padrón en el último recálculo (revisar typos o agregarlos al padrón)</summary>' +
+        '<div class="pub-names" style="margin-top:6px;">' +
+        STATE.unmatched.map(function (n) { return '<span class="pub-name-chip">' + escapeHtml(n) + "</span>"; }).join("") +
+        "</div></details></div>");
+    }
+    el.innerHTML = parts.join("");
+  }
+
+  function seriesColors() {
+    var cs = getComputedStyle(document.getElementById("pub-app"));
+    return {
+      "Publicador": cs.getPropertyValue("--series-publicador").trim(),
+      "Precursor Auxiliar": cs.getPropertyValue("--series-auxiliar").trim(),
+      "Precursor Regular": cs.getPropertyValue("--series-regular").trim(),
+      "Otro": cs.getPropertyValue("--text-muted").trim()
+    };
+  }
+  function inkColors() {
+    var cs = getComputedStyle(document.getElementById("pub-app"));
+    return {
+      text: cs.getPropertyValue("--text-secondary").trim(),
+      grid: cs.getPropertyValue("--gridline").trim(),
+      surface: cs.getPropertyValue("--surface-1").trim()
+    };
+  }
+
+  function destroyChart(key) {
+    if (STATE.charts[key]) { STATE.charts[key].destroy(); delete STATE.charts[key]; }
+  }
+
+  function renderMiniChart(canvasId, counts) {
+    destroyChart(canvasId);
+    var colors = seriesColors(), ink = inkColors();
+    var labels = ["Regular", "Auxiliar", "Publicador"];
+    var keys = ["Precursor Regular", "Precursor Auxiliar", "Publicador"];
+    var data = keys.map(function (k) { return counts[k] || 0; });
+    var bg = keys.map(function (k) { return colors[k]; });
+    var ctx = document.getElementById(canvasId).getContext("2d");
+    STATE.charts[canvasId] = new Chart(ctx, {
+      type: "bar",
+      data: { labels: labels, datasets: [{ data: data, backgroundColor: bg, borderRadius: 4, maxBarThickness: 34 }] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { enabled: true } },
+        scales: {
+          x: { ticks: { color: ink.text, font: { size: 11 } }, grid: { display: false } },
+          y: { beginAtZero: true, ticks: { color: ink.text, precision: 0 }, grid: { color: ink.grid } }
+        }
+      }
+    });
+  }
+
+  function renderCard(grupoNum, displayName, view) {
+    var missingHtml = view.missing.length
+      ? '<div class="pub-names">' + view.missing.map(nameChip).join("") + "</div>"
+      : '<div class="pub-empty-ok">✅ Todos los del grupo ya se registraron este mes</div>';
+
+    var noActivityHtml = view.noActivity.length
+      ? '<div class="pub-names">' + view.noActivity.map(nameChip).join("") + "</div>"
+      : "";
+
+    var missingCls = view.missing.length === 0 ? "good" : (view.missing.length <= 2 ? "warn" : "crit");
+    var canvasId = "pub-chart-g" + grupoNum;
+
+    var html =
+      '<div class="pub-card-head">' +
+        '<input class="pub-card-title" id="pub-title-g' + grupoNum + '" value="' + escapeHtml(displayName) + '">' +
+        '<span class="pub-period-tag">' + (STATE.selectedPeriod != null ? periodLabel(STATE.selectedPeriod) : "") + "</span>" +
+      "</div>" +
+      '<div class="pub-stats">' +
+        chip("", "cantidad total", view.roster.length) +
+        chip("good", "registrados", view.submitted.length) +
+        chip(missingCls, "faltan", view.missing.length) +
+      "</div>" +
+      '<div class="pub-section-label">Faltan registrarse' + (STATE.selectedPeriod != null ? " (" + periodLabel(STATE.selectedPeriod) + ")" : "") + "</div>" +
+      missingHtml +
+      (noActivityHtml ? '<div class="pub-section-label">Registraron, sin actividad este mes</div>' + noActivityHtml : "") +
+      '<div class="pub-section-label">Integrantes del grupo (click en un nombre para ver su ficha)</div>' +
+      '<div class="pub-roster-grid">' + view.roster.map(rosterItem).join("") + "</div>" +
+      '<div class="pub-section-label">Situación' + (STATE.selectedPeriod != null ? " (" + periodLabel(STATE.selectedPeriod) + ")" : "") + "</div>" +
+      '<div class="pub-mini-chart-wrap"><canvas id="' + canvasId + '"></canvas></div>';
+
+    var card = document.getElementById("pub-card-g" + grupoNum);
+    card.innerHTML = html;
+
+    document.getElementById("pub-title-g" + grupoNum).addEventListener("change", function (e) {
+      var val = e.target.value.trim() || ("Grupo " + grupoNum);
+      saveGroupName(grupoNum, val);
+      renderAll(); // recalcula todo, así el gráfico de resumen toma el nombre nuevo
+    });
+
+    renderMiniChart(canvasId, view.counts);
+  }
+
+  // ---------------------------------------------------------------------
+  // 4d) FICHA POR PERSONA (modal) — punto 2 y punto 3
+  // ---------------------------------------------------------------------
+  function svcYearTableHtml(svcStart, bucket, isCurrent) {
+    var rowsHtml = SERVICE_YEAR_MONTH_ORDER.map(function (m) {
+      var horas = bucket.months.hasOwnProperty(m) ? bucket.months[m] : null;
+      return "<tr><td>" + escapeHtml(titleCase(MONTHS[m])) + "</td><td>" + (horas == null ? "—" : horas) + "</td></tr>";
+    }).join("");
+    var total = SERVICE_YEAR_MONTH_ORDER.reduce(function (sum, m) {
+      return sum + (typeof bucket.months[m] === "number" ? bucket.months[m] : 0);
+    }, 0);
+    var goalHtml = "";
+    if (isCurrent) {
+      var remaining = Math.max(0, REGULAR_PIONEER_GOAL_HOURS - total);
+      var pct = Math.max(0, Math.min(100, Math.round((total / REGULAR_PIONEER_GOAL_HOURS) * 100)));
+      goalHtml = '<div class="pub-goal-bar-wrap"><div class="pub-goal-bar-fill" style="width:' + pct + '%"></div></div>' +
+        '<p class="pub-goal-line">Lleva <b>' + total + '</b> horas en este año de servicio (' + pct + '%) · ' +
+        "le faltan <b>" + remaining + "</b> para llegar a " + REGULAR_PIONEER_GOAL_HOURS + ".</p>";
+    }
+    return '<details class="pub-svc-year"' + (isCurrent ? " open" : "") + "><summary>" +
+      escapeHtml(serviceYearLabel(svcStart)) + " — total " + total + " h" + (isCurrent ? " (en curso)" : "") + "</summary>" +
+      '<div class="pub-table-wrap"><table><thead><tr><th>Mes</th><th>Horas</th></tr></thead><tbody>' + rowsHtml + "</tbody></table></div>" +
+      goalHtml + "</details>";
+  }
+
+  // Historial COMPLETO desde el primer informe propio hasta el período más
+  // reciente con datos de cualquiera, rellenando con "No informó" los meses
+  // en el medio para los que esta persona no tiene fila — así se ve
+  // exactamente qué meses cuentan como "no participó" para el estado
+  // Activo/Irregular/Inactivo (mismo criterio que personStatus()).
+  function fullHistoryWithGaps(name) {
+    var hist = STATE.rowsByName[name] || []; // asc
+    if (!hist.length) return [];
+    var byPeriod = {};
+    hist.forEach(function (r) { byPeriod[r.periodKey] = r; });
+    var earliest = hist[0].periodKey;
+    var periods = allPeriods().filter(function (p) { return p >= earliest; }); // desc
+    return periods.map(function (p) {
+      return byPeriod[p] || { periodKey: p, situacion: null, horas: null, participo: null, missing: true };
+    });
+  }
+
+  function historyTableHtml(name) {
+    var rowsList = fullHistoryWithGaps(name);
+    if (!rowsList.length) return '<p class="pub-modal-sub">Sin informes registrados.</p>';
+    var rowsHtml = rowsList.map(function (r) {
+      var participoTxt = r.missing ? "No informó" : (r.participo === true ? "Sí" : (r.participo === false ? "No" : "—"));
+      return '<tr class="' + (r.missing || r.participo === false ? "pub-missing-row" : "") + '"><td>' +
+        escapeHtml(periodLabel(r.periodKey)) + "</td><td>" + (r.situacion ? situacionBadge(r.situacion) : "—") + "</td><td>" +
+        (r.horas == null ? "—" : r.horas) + "</td><td>" + participoTxt + "</td></tr>";
+    }).join("");
+    return '<div class="pub-table-wrap"><table><thead><tr><th>Mes</th><th>Situación</th><th>Horas</th><th>Participó</th></tr></thead><tbody>' +
+      rowsHtml + "</tbody></table></div>";
+  }
+
+  function personModalHtml(name) {
+    var rosterEntry = STATE.roster.filter(function (r) { return r.nombre === name; })[0];
+    var grupo = rosterEntry ? rosterEntry.grupo : null;
+    var status = personStatus(name);
+    var hist = STATE.rowsByName[name] || [];
+    var auxCount = hist.filter(function (r) { return r.situacion === "Precursor Auxiliar"; }).length;
+    var regularRows = hist.filter(function (r) { return r.situacion === "Precursor Regular"; });
+    var svcYears = serviceYearBuckets(name);
+    var curSvcStart = currentServiceYearStart();
+    var svcKeys = Object.keys(svcYears).map(Number)
+      .filter(function (k) { return svcYears[k].hasRegular; })
+      .sort(function (a, b) { return b - a; });
+
+    var regularSummary = "";
+    if (regularRows.length) {
+      var sorted = regularRows.slice().sort(function (a, b) { return a.periodKey - b.periodKey; });
+      var first = sorted[0], last = sorted[sorted.length - 1];
+      regularSummary = "<p>Precursor Regular en <b>" + regularRows.length + "</b> mes(es) registrados, desde " +
+        escapeHtml(periodLabel(first.periodKey)) + " hasta " + escapeHtml(periodLabel(last.periodKey)) + ".</p>";
+    }
+
+    var svcHtml = svcKeys.length
+      ? svcKeys.map(function (k) { return svcYearTableHtml(k, svcYears[k], k === curSvcStart); }).join("")
+      : '<p class="pub-modal-sub">Nunca figura como Precursor Regular.</p>';
+
+    // Situación más reciente informada (hist está ordenado asc). Si
+    // actualmente es Precursor Regular, no tiene sentido mostrarle además
+    // el bloque de Precursor Auxiliar (categoría "menor" ya superada).
+    var latestRow = hist.length ? hist[hist.length - 1] : null;
+    var currentSituacionHtml = latestRow ? situacionBadge(latestRow.situacion) : "";
+    var isCurrentlyRegular = !!latestRow && latestRow.situacion === "Precursor Regular";
+
+    var auxiliarPanelHtml = isCurrentlyRegular ? "" :
+      '<div class="pub-situacion-panel sit-auxiliar">' +
+        "<h4>Precursor Auxiliar</h4>" +
+        "<p>" + (auxCount ? "Lo fue <b>" + auxCount + "</b> vez/veces (meses)." : "Nunca figura como Precursor Auxiliar.") + "</p>" +
+      "</div>";
+
+    return "" +
+      '<div class="pub-modal-backdrop"><div class="pub-modal" role="dialog" aria-modal="true">' +
+        '<div class="pub-modal-head"><h3>' + escapeHtml(name) + '</h3>' +
+        '<button type="button" class="pub-modal-close" aria-label="Cerrar">✕</button></div>' +
+        '<p class="pub-modal-sub">' + (grupo != null ? "Grupo " + grupo + " · " : "") +
+          '<span class="pub-status-badge ' + statusBadgeClass(status.code) + '">' + escapeHtml(status.label) + "</span>" +
+          (currentSituacionHtml ? " " + currentSituacionHtml : "") +
+        "</p>" +
+        auxiliarPanelHtml +
+        '<div class="pub-situacion-panel sit-regular">' +
+          "<h4>Precursor Regular — horas por año de servicio (septiembre a agosto)</h4>" +
+          regularSummary + svcHtml +
+        "</div>" +
+        "<h4>Historial completo</h4>" +
+        historyTableHtml(name) +
+      "</div></div>";
+  }
+
+  function onModalKeydown(e) { if (e.key === "Escape") closePersonModal(); }
+
+  function closePersonModal() {
+    document.getElementById("pub-modal-root").innerHTML = "";
+    document.removeEventListener("keydown", onModalKeydown);
+  }
+
+  function openPersonModal(name) {
+    var root = document.getElementById("pub-modal-root");
+    root.innerHTML = personModalHtml(name);
+    document.addEventListener("keydown", onModalKeydown);
+    root.querySelector(".pub-modal-backdrop").addEventListener("click", function (e) {
+      if (e.target.classList.contains("pub-modal-backdrop")) closePersonModal();
+    });
+    root.querySelector(".pub-modal-close").addEventListener("click", closePersonModal);
+  }
+
+  function renderSummaryCharts(views, names) {
+    var colors = seriesColors(), ink = inkColors();
+    var keys = ["Precursor Regular", "Precursor Auxiliar", "Publicador"];
+    var labelMap = { "Precursor Regular": "Regular", "Precursor Auxiliar": "Auxiliar", "Publicador": "Publicador" };
+
+    destroyChart("groups");
+    var ctx1 = document.getElementById("pub-chart-groups").getContext("2d");
+    STATE.charts.groups = new Chart(ctx1, {
+      type: "bar",
+      data: {
+        labels: names,
+        datasets: keys.map(function (k) {
+          return {
+            label: labelMap[k],
+            data: views.map(function (v) { return v.counts[k] || 0; }),
+            backgroundColor: colors[k],
+            borderRadius: 4,
+            maxBarThickness: 28
+          };
+        })
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: "bottom", labels: { color: ink.text } } },
+        scales: {
+          x: { ticks: { color: ink.text }, grid: { display: false } },
+          y: { beginAtZero: true, ticks: { color: ink.text, precision: 0 }, grid: { color: ink.grid } }
+        }
+      }
+    });
+
+    var totals = { "Precursor Regular": 0, "Precursor Auxiliar": 0, "Publicador": 0 };
+    views.forEach(function (v) { keys.forEach(function (k) { totals[k] += v.counts[k] || 0; }); });
+
+    destroyChart("total");
+    var ctx2 = document.getElementById("pub-chart-total").getContext("2d");
+    STATE.charts.total = new Chart(ctx2, {
+      type: "doughnut",
+      data: {
+        labels: keys.map(function (k) { return labelMap[k]; }),
+        datasets: [{ data: keys.map(function (k) { return totals[k]; }), backgroundColor: keys.map(function (k) { return colors[k]; }) }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: "bottom", labels: { color: ink.text } } }
+      }
+    });
+  }
+
+  function renderAll() {
+    renderBanners();
+    var grid = document.getElementById("pub-grid");
+    var nums = groupNumbers();
+
+    // Quita tarjetas de grupos que ya no existen en el padrón.
+    Array.prototype.slice.call(grid.children).forEach(function (el) {
+      var num = el.id.replace("pub-card-g", "");
+      if (nums.indexOf(Number(num)) === -1) grid.removeChild(el);
+    });
+
+    if (STATE.selectedPeriod == null || !nums.length) {
+      try { renderSummaryCharts([], []); } catch (e) { /* nada que graficar todavía */ }
+      return;
+    }
+
+    var views = [], names = [];
+    nums.forEach(function (grupoNum) {
+      if (!document.getElementById("pub-card-g" + grupoNum)) {
+        var el = document.createElement("div");
+        el.className = "pub-card";
+        el.id = "pub-card-g" + grupoNum;
+        grid.appendChild(el);
+      }
+      var displayName = loadGroupName(grupoNum);
+      var view = computeGroupView(grupoNum, STATE.selectedPeriod);
+      views.push(view);
+      names.push(displayName);
+      try { renderCard(grupoNum, displayName, view); }
+      catch (err) { console.error("Error renderizando grupo", grupoNum, err); }
+    });
+
+    try { renderSummaryCharts(views, names); }
+    catch (err) { console.error("Error renderizando gráficos de resumen", err); }
+  }
+
+  function setStatus(text) { document.getElementById("pub-status").textContent = text; }
+
+  // Carga liviana: un solo pedido a ?action=cache (padrón fresco + caché ya
+  // calculada). No relee ni matchea las 5 planillas de formulario — eso
+  // solo pasa en recomputeNow() / el trigger diario en Code.gs.
+  async function loadAll() {
+    if (STATE.loading) return;
+    STATE.loading = true;
+    var refreshBtn = document.getElementById("pub-refresh");
+    var recomputeBtn = document.getElementById("pub-recompute");
+    refreshBtn.disabled = true;
+    recomputeBtn.disabled = true;
+    try {
+      setStatus("Cargando datos…");
+      try {
+        var data = await fetchCache();
+        STATE.roster = data.roster || [];
+        STATE.rosterStatus = data.rosterStatus || { ok: false, error: "Respuesta vacía" };
+        STATE.rows = data.rows || [];
+        STATE.sheetStatus = data.sheetStatus || [];
+        STATE.unmatched = data.unmatched || [];
+        STATE.generatedAt = data.generatedAt || null;
+      } catch (e) {
+        STATE.roster = [];
+        STATE.rosterStatus = { ok: false, error: e.message || "No se pudo cargar" };
+        STATE.rows = [];
+        STATE.sheetStatus = [];
+        STATE.unmatched = [];
+        STATE.generatedAt = null;
+      }
+      STATE.rosterByGroup = groupRosterByGrupo(STATE.roster);
+      indexRows();
+      renderPeriodSelect();
+      renderAll();
+
+      setStatus("Pantalla actualizada " + new Date().toLocaleTimeString("es-UY") +
+        " · padrón " + (STATE.rosterStatus.ok ? "ok" : "ERROR") +
+        (STATE.generatedAt
+          ? " · cálculos del " + new Date(STATE.generatedAt).toLocaleString("es-UY")
+          : " · caché sin generar todavía"));
+    } finally {
+      STATE.loading = false;
+      refreshBtn.disabled = false;
+      recomputeBtn.disabled = false;
+    }
+  }
+
+  // Carga pesada: le pide al proxy que relea las 5 planillas de formulario
+  // y regenere la caché (?action=recompute), y después hace un loadAll()
+  // liviano para mostrar el resultado.
+  async function recomputeNow() {
+    if (STATE.loading || STATE.recomputing) return;
+    STATE.recomputing = true;
+    var recomputeBtn = document.getElementById("pub-recompute");
+    var refreshBtn = document.getElementById("pub-refresh");
+    var prevLabel = recomputeBtn.textContent;
+    recomputeBtn.disabled = true;
+    refreshBtn.disabled = true;
+    recomputeBtn.textContent = "⟳ Recalculando…";
+    setStatus("Recalculando (releyendo las 5 planillas de formulario)… puede tardar unos segundos");
+    try {
+      await fetchRecompute();
+      await loadAll();
+    } catch (e) {
+      setStatus("Error al recalcular: " + (e.message || e));
+    } finally {
+      recomputeBtn.textContent = prevLabel;
+      STATE.recomputing = false;
+      recomputeBtn.disabled = false;
+      refreshBtn.disabled = false;
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // 5) EVENTOS
+  // ---------------------------------------------------------------------
+  document.getElementById("pub-period").addEventListener("change", function (e) {
+    STATE.selectedPeriod = Number(e.target.value);
+    renderAll();
+  });
+  document.getElementById("pub-refresh").addEventListener("click", loadAll);
+  document.getElementById("pub-recompute").addEventListener("click", recomputeNow);
+
+  // Delegación: click en cualquier chip de nombre (faltan / sin actividad /
+  // integrantes) abre la ficha de esa persona (punto 2).
+  document.getElementById("pub-app").addEventListener("click", function (e) {
+    var btn = e.target.closest ? e.target.closest("[data-person]") : null;
+    if (btn) openPersonModal(btn.getAttribute("data-person"));
+  });
+
+  if (window.matchMedia) {
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function () {
+      renderAll(); // recalcula colores de los gráficos con el nuevo tema
+    });
+  }
+
+  loadAll();
+})();
+</script>
+
+<script>
+// Gate de sesión del Portal (igual patrón que publicadores.html): esta
+// página solo lee la sesión compartida (cookie) para decidir qué mostrar.
+// Nota: el widget de arriba (loadAll) ya pidió sus datos al cargar la
+// página, antes de que esto corra — el gate solo controla qué se VE, no
+// frena el pedido de red en sí (misma limitación que el resto del sitio).
+const ROLES_PERMITIDOS = ['admin', 'capitan'];
+
+document.getElementById('btnLogout').addEventListener('click', () => {
+  if (window.AuthApp && typeof window.AuthApp.logout === "function"){
+    window.AuthApp.logout();
+  }
+  refrescarVistaGate();
+});
+
+function actualizarAuthBarGate(){
+  const logged = !!(window.AuthApp && AuthApp.isLogged && AuthApp.isLogged());
+  const role   = (window.AuthApp && AuthApp.getRole && AuthApp.getRole()) || '';
+  const user   = (window.AuthApp && AuthApp.getUsername && AuthApp.getUsername()) || '';
+
+  const authInfo = document.getElementById('auth-info');
+  const btnOut   = document.getElementById('btnLogout');
+  if (logged){
+    authInfo.classList.remove('auth-hidden');
+    authInfo.textContent = user + ' (' + role + ')';
+    btnOut.classList.remove('auth-hidden');
+  } else {
+    authInfo.classList.add('auth-hidden');
+    btnOut.classList.add('auth-hidden');
+  }
+  return { logged, role };
+}
+
+function refrescarVistaGate(){
+  const { logged, role } = actualizarAuthBarGate();
+  const permitido = logged && ROLES_PERMITIDOS.includes(role);
+
+  document.getElementById('locked').style.display    = logged ? 'none' : 'block';
+  document.getElementById('forbidden').style.display = (logged && !permitido) ? 'block' : 'none';
+  document.getElementById('contenido').style.display  = permitido ? 'block' : 'none';
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  if (window.AuthApp && typeof window.AuthApp.onChange === "function"){
+    window.AuthApp.onChange(refrescarVistaGate);
+  }
+  if (window.AuthApp && typeof window.AuthApp.restore === "function"){
+    await window.AuthApp.restore();
+  }
+  refrescarVistaGate();
+});
+</script>
+</body>
+</html>

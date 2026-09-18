@@ -16,11 +16,16 @@ window.APP_CONFIG = {
       // subir/borrar el DPA y el Uso de Datos desde el modal de Publicadores.
       // Dejar vacío si todavía no se desplegó: el modal muestra los datos igual,
       // solo sin la opción de subir/borrar.
-      PUBLICADORES_API_URL: 'https://script.google.com/macros/s/AKfycbyQ1of12HHtLNPGBJQaacQaOx0__FY4lB4DdRknj-HSSyYI_ZPkUdOXw9rmdbmx_Z50/exec',
+      PUBLICADORES_API_URL: 'https://script.google.com/macros/s/AKfycbzAG7WB9G1mGscY7CfGvVrJMo6vlQhFNKScSSA5LsFbmekZJS6zqM1sl73odxYwWCTG/exec',
 
-      // Opcional: planilla de respuestas del Formulario de Datos Personales (para
-      // corroborar automáticamente si está "al día"). Columnas esperadas: Nombre, Fecha.
-      // Dejar vacío si por ahora se va a cargar manualmente en la planilla de arriba.
+      // Ya NO hace falta: el backend (google-apps-script-publicadores.js,
+      // guardarDatosPersonales) marca sola la columna "DatosPersonales" (y
+      // "DatosPersonalesFecha" si existe) en la hoja Publicadores cuando
+      // alguien envía datos-personales.html. Dejar SIEMPRE vacío: la hoja
+      // "DatosPersonales" tiene datos sensibles (salud, dirección, contacto
+      // familiar) y este archivo es público (repo *.github.io) — si se
+      // publica esa hoja como CSV y se pega el link acá, queda accesible
+      // por internet para cualquiera.
       DATOS_PERSONALES_RESPUESTAS_CSV_URL: ''
 };
 

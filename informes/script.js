@@ -1,5 +1,5 @@
 // Reemplazá esta URL por la de tu Web App de Google Apps Script (ver README.md)
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw2JbkSnWsDmsPul0RLLNJiFgRAgQTQMXZspaNdMCePgfPMPjIGrslG0oqiNTumRs6i/exec";
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzAG7WB9G1mGscY7CfGvVrJMo6vlQhFNKScSSA5LsFbmekZJS6zqM1sl73odxYwWCTG/exec";
 
 const form = document.getElementById("form-predicacion");
 const grupoSelect = document.getElementById("grupo");
@@ -13,6 +13,28 @@ const btnEnviar = document.getElementById("btn-enviar");
 const cursosInput = document.getElementById("cursos");
 const horasInput = document.getElementById("horas");
 const campoHoras = document.getElementById("campo-horas");
+const mesSelect = document.getElementById("mes");
+const anioSelect = document.getElementById("anio");
+
+const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+
+// Deja preseleccionados el mes anterior al actual (el informe siempre es
+// sobre el mes que ya terminó) y su año correspondiente, si están entre las
+// opciones disponibles del <select>.
+function preseleccionarMesAnio() {
+  const hoy = new Date();
+  // day 1 evita problemas de "día 31 no existe en el mes anterior" al restar.
+  const mesPasado = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
+  const mesAMostrar = MESES[mesPasado.getMonth()];
+  const anioAMostrar = String(mesPasado.getFullYear());
+
+  if ([...mesSelect.options].some((o) => o.value === mesAMostrar)) {
+    mesSelect.value = mesAMostrar;
+  }
+  if ([...anioSelect.options].some((o) => o.value === anioAMostrar)) {
+    anioSelect.value = anioAMostrar;
+  }
+}
 
 // grupo (string) -> [nombres...]
 let publicadoresPorGrupo = {};
@@ -240,6 +262,7 @@ form.addEventListener("submit", async (e) => {
       nombreOtro.classList.add("hidden");
       camposParticipacion.classList.add("hidden");
       campoHoras.classList.remove("hidden");
+      preseleccionarMesAnio();
     } else {
       throw new Error(resultado.message || "Error desconocido");
     }
@@ -252,3 +275,4 @@ form.addEventListener("submit", async (e) => {
 });
 
 cargarPublicadores();
+preseleccionarMesAnio();

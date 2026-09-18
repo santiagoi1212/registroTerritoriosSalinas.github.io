@@ -142,6 +142,35 @@
     background:rgba(234,179,8,.1); border:1px solid rgba(234,179,8,.35); color:#fde68a;
     padding:10px 14px; border-radius:10px; font-size:13px; margin-bottom:18px;
   }
+
+  .grupo-organizar-card{
+    background:var(--card); border:1px solid var(--border); border-radius:12px;
+    padding:16px 18px; margin-bottom:14px;
+  }
+  .grupo-organizar-card h2{ font-size:15px; margin:0 0 10px; color:#93c5fd; }
+  .persona-mover{
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    padding:8px 0; border-top:1px solid var(--border);
+  }
+  .persona-mover:first-of-type{ border-top:none; }
+  .persona-mover .p-nombre{ flex:1; min-width:140px; font-size:14px; }
+  .persona-mover select{ min-width:150px; }
+  .btn-mover{
+    background:#1f2937; color:var(--text); border:1px solid #334155; border-radius:8px;
+    padding:8px 12px; font-size:13px; font-weight:600; cursor:pointer;
+  }
+  .btn-mover:hover{ background:#263449; }
+  .btn-mover:disabled{ opacity:.5; cursor:not-allowed; }
+
+  .dp-detalle{ border-top:1px solid var(--border); margin-top:6px; padding-top:4px; }
+  .radio-group-dp{ display:flex; gap:8px; }
+  .radio-opt-dp{
+    flex:1; border:1.5px solid #334155; border-radius:8px; padding:8px;
+    text-align:center; font-size:13px; font-weight:600; color:var(--muted);
+    cursor:pointer; background:#0b1220;
+  }
+  .radio-opt-dp input{ display:none; }
+  .radio-opt-dp.selected{ border-color:var(--accent); color:#93c5fd; background:rgba(37,99,235,.12); }
 </style>
 </head>
 <body>
@@ -159,10 +188,9 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
 <div class="wrap">
   <div class="topbar">
     <div>
-      <h1>Publicadores</h1>
-      <p class="subtitle">Estado de DPA, Autorización de Uso de Datos y Formulario de Datos Personales.</p>
+      <h1 id="pagina-titulo">Publicadores</h1>
+      <p class="subtitle" id="pagina-subtitulo">Estado de DPA, Autorización de Uso de Datos y Formulario de Datos Personales.</p>
     </div>
-    <a class="back" href="./index.html">&larr; Volver al portal</a>
   </div>
 
   <div id="locked">
@@ -178,19 +206,26 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
   <div id="contenido">
     <div id="avisoConfig" class="aviso" style="display:none"></div>
 
-    <div class="resumen" id="resumen"></div>
-    <div class="leyenda">
-      <span><span class="badge badge-ok">✔ Sí</span> al día / firmado</span>
-      <span><span class="badge badge-pend">Pendiente</span> falta o sin confirmar</span>
-      <span>Un badge verde con enlace abre el archivo en Drive.</span>
+    <div id="view-estado">
+      <div class="resumen" id="resumen"></div>
+      <div class="leyenda">
+        <span><span class="badge badge-ok">✔ Sí</span> al día / firmado</span>
+        <span><span class="badge badge-pend">Pendiente</span> falta o sin confirmar</span>
+        <span>Un badge verde con enlace abre el archivo en Drive.</span>
+      </div>
+
+      <div class="toolbar">
+        <input id="buscador" class="form-input" type="search" placeholder="Buscar por nombre…" aria-label="Buscar publicador por nombre" />
+        <button id="btnRefrescar" class="btn-cancel" type="button">Refrescar</button>
+      </div>
+
+      <div id="tablas">Cargando…</div>
     </div>
 
-    <div class="toolbar">
-      <input id="buscador" class="form-input" type="search" placeholder="Buscar por nombre…" aria-label="Buscar publicador por nombre" />
-      <button id="btnRefrescar" class="btn-cancel" type="button">Refrescar</button>
+    <div id="view-grupos" style="display:none">
+      <p class="subtitle" style="margin:0 0 16px;">Movés a alguien de un grupo a otro eligiendo el grupo destino y confirmando.</p>
+      <div id="grupos-organizar">Cargando…</div>
     </div>
-
-    <div id="tablas">Cargando…</div>
   </div>
 </div>
 
@@ -304,11 +339,109 @@ function abrirModalPersona(p){
     <div class="modal-row"><span class="l">Estado</span><span class="v">${estados}</span></div>
     <div class="modal-row"><span class="l">DPA</span>${renderDocSection('dpa', p)}</div>
     <div class="modal-row"><span class="l">Uso de Datos</span>${renderDocSection('usoDatos', p)}</div>
-    <div class="modal-row"><span class="l">Datos Personales</span><span class="v">${window.PublicadoresApp.badge(p.datosPersonales, "", "Sí", "Pendiente")}${p.datosPersonalesFecha ? ` <span class="notas">${p.datosPersonalesFecha}</span>` : ''}</span></div>
+    <div class="modal-row"><span class="l">Datos Personales</span><span class="v">${window.PublicadoresApp.badge(p.datosPersonales, "", "Sí", "Pendiente")}${p.datosPersonalesFecha ? ` <span class="notas">${p.datosPersonalesFecha}</span>` : ''}${!p.datosPersonales ? ` <a class="badge badge-pend" href="./datos-personales.html?nombre=${encodeURIComponent(p.nombre)}" target="_blank" rel="noopener" style="text-decoration:none;">Completar formulario ↗</a>` : ''}</span></div>
     ${p.notas ? `<div class="modal-row"><span class="l">Notas</span><span class="v">${p.notas}</span></div>` : ''}
+    ${p.datosPersonales ? `<div id="datos-personales-detalle" class="dp-detalle"></div>` : ''}
   `;
   wireDocSections();
+  if (p.datosPersonales) cargarDatosPersonalesDetalle(p);
   modalPersonaOverlay.classList.add('open');
+}
+
+const CAMPOS_DATOS_PERSONALES = [
+  { campo: 'correo', label: 'Correo electronico', tipo: 'email' },
+  { campo: 'direccion', label: 'Dirección', tipo: 'text' },
+  { campo: 'telefonoFijo', label: 'Teléfono fijo', tipo: 'text' },
+  { campo: 'telefonoCelular', label: 'Teléfono celular', tipo: 'text' },
+  { campo: 'fechaNacimiento', label: 'Fecha de nacimiento', tipo: 'text' },
+  { campo: 'fechaBautismo', label: 'Fecha de bautismo', tipo: 'text' },
+  { campo: 'datoAdicional', label: 'Dato adicional', tipo: 'text' },
+  { campo: 'mutualista', label: 'Mutualista', tipo: 'text' },
+  { campo: 'emergenciaMovil', label: '¿Emergencia móvil?', tipo: 'radio' },
+  { campo: 'nombreEmergenciaMovil', label: 'Emergencia móvil (nombre / socio)', tipo: 'text' },
+  { campo: 'servicioAcompanante', label: '¿Servicio de acompañante?', tipo: 'radio' },
+  { campo: 'medicacionRegular', label: 'Medicación regular', tipo: 'text' },
+  { campo: 'tieneDPAVigente', label: 'Tiene DPA vigente', tipo: 'radio' },
+  { campo: 'otrosDatosSalud', label: 'Otros datos de salud', tipo: 'text' },
+  { campo: 'nombreFamiliar', label: 'Familiar de contacto', tipo: 'text' },
+  { campo: 'relacionFamiliar', label: 'Relación con el familiar', tipo: 'text' },
+  { campo: 'telefonoFamiliar', label: 'Teléfono del familiar', tipo: 'text' }
+];
+
+function inputDatosPersonalesHtml(campo, label, tipo, valor){
+  if (tipo === 'radio'){
+    const opts = ['Si', 'No'].map(v => `
+      <label class="radio-opt-dp ${valor === v ? 'selected' : ''}">
+        <input type="radio" name="dp-${campo}" value="${v}" ${valor === v ? 'checked' : ''}>${v === 'Si' ? 'Sí' : 'No'}
+      </label>`).join('');
+    return `<div class="modal-row"><span class="l">${label}</span><div class="radio-group-dp">${opts}</div></div>`;
+  }
+  return `<div class="modal-row"><span class="l">${label}</span><input class="form-input dp-input" data-campo="${campo}" type="${tipo}" value="${valor || ''}" style="margin:0;"></div>`;
+}
+
+async function cargarDatosPersonalesDetalle(p){
+  const cont = document.getElementById('datos-personales-detalle');
+  const cfg = window.APP_CONFIG || {};
+  if (!cont || !cfg.PUBLICADORES_API_URL) return;
+
+  cont.innerHTML = `<p class="muted">Cargando datos personales…</p>`;
+  try {
+    const res = await fetch(cfg.PUBLICADORES_API_URL + '?action=datosPersonales&nombre=' + encodeURIComponent(p.nombre) + '&t=' + Date.now(), { cache: 'no-store' });
+    const data = await res.json();
+    if (!data || data.status !== 'ok') throw new Error(data && data.message || 'Error al cargar');
+    const datos = data.datos || {};
+
+    cont.innerHTML = `
+      <h3 style="font-size:14px; margin:18px 0 10px; color:#93c5fd;">Datos personales</h3>
+      ${CAMPOS_DATOS_PERSONALES.map(f => inputDatosPersonalesHtml(f.campo, f.label, f.tipo, datos[f.campo])).join('')}
+      <button type="button" class="btn-primary" id="btn-guardar-dp" style="margin-top:6px; width:100%;">Guardar cambios</button>
+    `;
+
+    cont.querySelectorAll('.radio-opt-dp').forEach(opt => {
+      opt.addEventListener('click', () => {
+        opt.closest('.radio-group-dp').querySelectorAll('.radio-opt-dp').forEach(o => o.classList.remove('selected'));
+        opt.classList.add('selected');
+        opt.querySelector('input').checked = true;
+      });
+    });
+
+    document.getElementById('btn-guardar-dp').addEventListener('click', () => guardarDatosPersonalesDetalle(p));
+  } catch (err){
+    console.error(err);
+    cont.innerHTML = `<p class="muted">No se pudieron cargar los datos personales.</p>`;
+  }
+}
+
+async function guardarDatosPersonalesDetalle(p){
+  const cfg = window.APP_CONFIG || {};
+  const cont = document.getElementById('datos-personales-detalle');
+  const btn = document.getElementById('btn-guardar-dp');
+  if (!cont || !btn) return;
+  btn.disabled = true;
+
+  const payload = { action: 'actualizarDatosPersonalesAdmin', nombre: p.nombre };
+  cont.querySelectorAll('.dp-input').forEach(inp => { payload[inp.dataset.campo] = inp.value.trim(); });
+  CAMPOS_DATOS_PERSONALES.filter(f => f.tipo === 'radio').forEach(f => {
+    const checked = cont.querySelector(`input[name="dp-${f.campo}"]:checked`);
+    payload[f.campo] = checked ? checked.value : '';
+  });
+
+  try {
+    const res = await fetch(cfg.PUBLICADORES_API_URL, {
+      method: 'POST',
+      credentials: 'omit',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!data || !data.ok) throw new Error((data && data.error) || 'Error al guardar');
+    window.showToast('Datos personales actualizados', 'success');
+  } catch (err){
+    console.error(err);
+    window.showToast('No se pudo guardar: ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 function cerrarModalPersona(){
@@ -443,9 +576,9 @@ async function cargarYRenderizar(){
   const cfg = window.APP_CONFIG || {};
   const avisoEl = document.getElementById('avisoConfig');
 
-  if (!cfg.PUBLICADORES_CSV_URL){
+  if (!cfg.PUBLICADORES_API_URL && !cfg.PUBLICADORES_CSV_URL){
     avisoEl.style.display = 'block';
-    avisoEl.textContent = 'Falta configurar PUBLICADORES_CSV_URL en app-config.js (link "Publicar en la web" en formato CSV de la planilla de Publicadores).';
+    avisoEl.textContent = 'Falta configurar PUBLICADORES_API_URL (o PUBLICADORES_CSV_URL) en app-config.js.';
     document.getElementById('tablas').innerHTML = '';
     document.getElementById('resumen').innerHTML = '';
     return;
@@ -456,6 +589,7 @@ async function cargarYRenderizar(){
     personasCache = await window.PublicadoresApp.cargarPublicadores();
     window.PublicadoresApp.renderResumen(document.getElementById('resumen'), personasCache);
     window.PublicadoresApp.renderTabla(document.getElementById('tablas'), personasCache, document.getElementById('buscador').value, abrirModalPersona);
+    renderOrganizarGrupos();
   } catch (err){
     console.error(err);
     document.getElementById('tablas').innerHTML = `<p class="muted">No se pudo cargar la planilla de publicadores.</p>`;
@@ -465,6 +599,122 @@ async function cargarYRenderizar(){
 document.getElementById('buscador').addEventListener('input', (e) => {
   window.PublicadoresApp.renderTabla(document.getElementById('tablas'), personasCache, e.target.value, abrirModalPersona);
 });
+
+// --- Vista: "Ver estado" o "Organizar grupos" ---
+// Son dos accesos separados en el sidebar del portal (index.html), cada uno
+// apunta a esta misma página pero con una URL distinta: publicadores.html
+// (estado) y publicadores.html?vista=grupos (organizar grupos). Acá adentro
+// ya no hay forma de pasar de uno a otro: la vista queda fija según por
+// dónde se entró.
+const viewEstado = document.getElementById('view-estado');
+const viewGrupos = document.getElementById('view-grupos');
+const esVistaGrupos = new URLSearchParams(location.search).get('vista') === 'grupos';
+
+if (esVistaGrupos){
+  viewEstado.style.display = 'none';
+  viewGrupos.style.display = 'block';
+  document.getElementById('pagina-titulo').textContent = 'Organizar grupos';
+  document.getElementById('pagina-subtitulo').textContent = 'Mové publicadores de un grupo a otro.';
+} else {
+  viewEstado.style.display = 'block';
+  viewGrupos.style.display = 'none';
+}
+
+// --- Organizar grupos: mover a alguien de un grupo a otro ---
+function renderOrganizarGrupos(){
+  const cont = document.getElementById('grupos-organizar');
+  if (!cont) return;
+
+  if (!personasCache.length){
+    cont.innerHTML = `<p class="muted">Todavía no hay publicadores cargados.</p>`;
+    return;
+  }
+
+  const gruposDisponibles = [...new Set(personasCache.map(p => p.grupo).filter(Boolean))]
+    .sort((a, b) => {
+      const na = parseInt(a, 10), nb = parseInt(b, 10);
+      if (isFinite(na) && isFinite(nb)) return na - nb;
+      return String(a).localeCompare(String(b), 'es');
+    });
+
+  const porGrupo = new Map();
+  personasCache.forEach((p, idx) => {
+    const g = p.grupo || 'Sin grupo';
+    if (!porGrupo.has(g)) porGrupo.set(g, []);
+    porGrupo.get(g).push({ ...p, __idx: idx });
+  });
+
+  const grupos = Array.from(porGrupo.keys()).sort((a, b) => {
+    const na = parseInt(a, 10), nb = parseInt(b, 10);
+    if (isFinite(na) && isFinite(nb)) return na - nb;
+    return String(a).localeCompare(String(b), 'es');
+  });
+
+  cont.innerHTML = grupos.map(g => {
+    const filas = porGrupo.get(g).map(p => {
+      const opciones = gruposDisponibles
+        .filter(dest => dest !== g)
+        .map(dest => `<option value="${dest}">Grupo ${dest}</option>`)
+        .join('');
+      return `
+        <div class="persona-mover" data-idx="${p.__idx}">
+          <span class="p-nombre">${p.nombre}</span>
+          <select class="form-input sel-grupo-destino">${opciones || '<option value="">No hay otro grupo</option>'}</select>
+          <button type="button" class="btn-mover">Mover</button>
+        </div>
+      `;
+    }).join('');
+
+    return `
+      <div class="grupo-organizar-card">
+        <h2>Grupo ${g} <span class="muted">(${porGrupo.get(g).length})</span></h2>
+        ${filas}
+      </div>
+    `;
+  }).join('');
+
+  cont.querySelectorAll('.persona-mover').forEach(fila => {
+    const persona = personasCache[Number(fila.dataset.idx)];
+    const sel = fila.querySelector('.sel-grupo-destino');
+    const btn = fila.querySelector('.btn-mover');
+
+    btn.addEventListener('click', async () => {
+      const destino = sel.value;
+      if (!destino) return;
+      if (!confirm(`¿Mover a ${persona.nombre} del Grupo ${persona.grupo} al Grupo ${destino}?`)) return;
+      await moverPersonaDeGrupo(persona, destino, btn);
+    });
+  });
+}
+
+async function moverPersonaDeGrupo(persona, grupoDestino, btn){
+  const cfg = window.APP_CONFIG || {};
+  if (!cfg.PUBLICADORES_API_URL){
+    window.showToast('Falta configurar PUBLICADORES_API_URL en app-config.js.', 'error');
+    return;
+  }
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch(cfg.PUBLICADORES_API_URL, {
+      method: 'POST',
+      credentials: 'omit',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'cambiarGrupo', nombre: persona.nombre, grupo: grupoDestino })
+    });
+    const data = await res.json();
+    if (!data || !data.ok) throw new Error((data && data.error) || 'Error al mover de grupo');
+
+    persona.grupo = grupoDestino;
+    window.showToast(`${persona.nombre} pasó al Grupo ${grupoDestino}`, 'success');
+    window.PublicadoresApp.renderResumen(document.getElementById('resumen'), personasCache);
+    window.PublicadoresApp.renderTabla(document.getElementById('tablas'), personasCache, document.getElementById('buscador').value, abrirModalPersona);
+    renderOrganizarGrupos();
+  } catch (err){
+    console.error(err);
+    window.showToast('No se pudo mover: ' + err.message, 'error');
+    if (btn) btn.disabled = false;
+  }
+}
 
 document.getElementById('btnRefrescar').addEventListener('click', cargarYRenderizar);
 

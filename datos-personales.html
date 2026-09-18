@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Datos Personales · Portal Salinas</title>
+
+<script src="./app-config.js"></script>
+<script src="./app-publicadores.js"></script>
+
+<style>
+  :root{
+    --bg: #0b1220;
+    --card: #0f172a;
+    --border: #263349;
+    --text: #e5e7eb;
+    --muted: #94a3b8;
+    --accent: #2563eb;
+  }
+  *{ box-sizing:border-box; }
+  html, body{ height:100%; margin:0; }
+  body{
+    background: radial-gradient(1200px 600px at 50% -10%, #14213d 0%, var(--bg) 60%);
+    color: var(--text);
+    font: 15px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Arial;
+    min-height:100%;
+  }
+
+  .wrap{ max-width:640px; margin:0 auto; padding:40px 20px 60px; }
+  h1{ margin:0 0 4px; font-size:24px; }
+  .subtitle{ color:var(--muted); margin:0 0 24px; }
+
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:20px 22px; margin-bottom:18px;
+  }
+
+  label{ display:block; font-size:13.5px; font-weight:600; color:var(--text); margin-bottom:6px; }
+  .ayuda{ font-size:12.5px; color:var(--muted); margin:-2px 0 8px; }
+
+  .form-input, select.form-input{
+    width:100%; border:1px solid #334155; background:#0b1220; color:var(--text);
+    border-radius:10px; padding:10px 12px; outline:none; font-size:14.5px; margin-bottom:16px;
+  }
+  .form-input:focus{ border-color:#60a5fa; box-shadow:0 0 0 3px rgba(96,165,250,.2); }
+  .form-input[readonly]{ opacity:.75; cursor:not-allowed; }
+
+  .radio-group{ display:flex; gap:10px; margin-bottom:16px; }
+  .radio-opt{
+    flex:1; border:1.5px solid #334155; border-radius:10px; padding:11px;
+    text-align:center; font-size:14px; font-weight:600; color:var(--muted);
+    cursor:pointer; background:#0b1220; transition:border-color .15s, color .15s, background .15s;
+  }
+  .radio-opt input{ display:none; }
+  .radio-opt.selected{ border-color:var(--accent); color:#93c5fd; background:rgba(37,99,235,.12); }
+
+  .section-note{
+    font-size:13.5px; color:#93c5fd; font-weight:600;
+    margin:22px 0 14px; padding-top:14px; border-top:1px solid var(--border);
+  }
+  .card > .section-note:first-child{ margin-top:0; padding-top:0; border-top:none; }
+
+  .btn-primary{
+    width:100%; background:#2563eb; color:#fff; border:none; border-radius:10px;
+    padding:13px 18px; cursor:pointer; font-weight:600; font-size:15px;
+  }
+  .btn-primary:hover{ background:#1d4ed8; }
+  .btn-primary:disabled{ background:#334155; color:var(--muted); cursor:not-allowed; }
+
+  .msg{ font-size:13.5px; margin-top:12px; padding:10px 12px; border-radius:8px; display:none; }
+  .msg.show{ display:block; }
+  .msg.ok{ background:rgba(22,163,74,.15); color:#4ade80; }
+  .msg.err{ background:rgba(239,68,68,.15); color:#f87171; }
+
+  .estado-msg{ font-size:13.5px; margin-top:4px; }
+  .estado-msg.bloqueado{ color:#facc15; }
+  .estado-msg.listo{ color:#4ade80; }
+
+  .aviso{
+    background:rgba(234,179,8,.1); border:1px solid rgba(234,179,8,.35); color:#fde68a;
+    padding:10px 14px; border-radius:10px; font-size:13px; margin-bottom:18px;
+  }
+
+  #toast-stack{ position:fixed; bottom:20px; left:50%; transform:translateX(-50%); z-index:5000; display:flex; flex-direction:column; gap:8px; align-items:center; }
+  .toast{ background:#111827; border:1px solid var(--border); color:var(--text); padding:10px 16px; border-radius:10px; font-size:13.5px; box-shadow:0 10px 30px rgba(0,0,0,.4); animation: toastIn .18s ease; }
+  .toast.error{ border-color:rgba(239,68,68,.4); }
+  .toast.success{ border-color:rgba(34,197,94,.4); }
+  @keyframes toastIn{ from{ opacity:0; transform:translateY(6px); } to{ opacity:1; transform:translateY(0); } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <h1>Datos Personales</h1>
+  <p class="subtitle">Información de publicadores. Si tenés algo que consultar no dudes en hacerlo con tu superintendente de grupo.</p>
+
+  <div id="avisoConfig" class="aviso" style="display:none"></div>
+
+  <div class="card">
+    <label for="sel-grupo">Grupo</label>
+    <select id="sel-grupo" class="form-input">
+      <option value="">Elegí tu número de grupo…</option>
+    </select>
+
+    <label for="sel-nombre">¿Quién eres?</label>
+    <select id="sel-nombre" class="form-input" style="margin-bottom:4px;" disabled>
+      <option value="">Elegí primero tu grupo…</option>
+    </select>
+    <div id="estado-nombre" class="estado-msg"></div>
+  </div>
+
+  <form id="form-datos" style="display:none;">
+    <div class="card">
+      <div class="section-note">Datos personales</div>
+
+      <label for="f-nombre">Nombre completo *</label>
+      <input class="form-input" id="f-nombre" type="text" readonly>
+
+      <label for="f-correo">Correo electronico</label>
+      <input class="form-input" id="f-correo" type="email">
+
+      <label for="f-direccion">Dirección *</label>
+      <input class="form-input" id="f-direccion" type="text" required>
+
+      <label for="f-telefonoFijo">Número de teléfono fijo</label>
+      <input class="form-input" id="f-telefonoFijo" type="text">
+
+      <label for="f-telefonoCelular">Numero de teléfono celular *</label>
+      <input class="form-input" id="f-telefonoCelular" type="text" required>
+
+      <label for="f-fechaNacimiento">Fecha de nacimiento *</label>
+      <input class="form-input" id="f-fechaNacimiento" type="date" required>
+
+      <label for="f-fechaBautismo">Fecha de bautismo</label>
+      <input class="form-input" id="f-fechaBautismo" type="date">
+
+      <label for="f-datoAdicional">Algún dato adicional que crea conveniente aclarar o sumar</label>
+      <input class="form-input" id="f-datoAdicional" type="text" style="margin-bottom:0;">
+    </div>
+
+    <div class="card">
+      <div class="section-note">A continuación te vamos a pedir algunos datos específicos referidos a tu salud.</div>
+
+      <label for="f-mutualista">Servicio de salud - Mutualista *</label>
+      <input class="form-input" id="f-mutualista" type="text" required>
+
+      <label>¿Cuenta con emergencia móvil? *</label>
+      <div class="radio-group" data-campo="emergenciaMovil">
+        <label class="radio-opt"><input type="radio" name="emergenciaMovil" value="Si">Sí</label>
+        <label class="radio-opt"><input type="radio" name="emergenciaMovil" value="No">No</label>
+      </div>
+
+      <label for="f-nombreEmergenciaMovil">Nombre de la emergencia móvil (si corresponde). Y en caso de tener que utilizar el servicio, cómo lo/a identificarían a usted como socio/a</label>
+      <input class="form-input" id="f-nombreEmergenciaMovil" type="text">
+
+      <label>En caso de internación, ¿cuenta con servicio de acompañante? *</label>
+      <div class="radio-group" data-campo="servicioAcompanante">
+        <label class="radio-opt"><input type="radio" name="servicioAcompanante" value="Si">Sí</label>
+        <label class="radio-opt"><input type="radio" name="servicioAcompanante" value="No">No</label>
+      </div>
+
+      <label for="f-medicacionRegular">En caso de tomar alguna medicación de forma regular, por favor indicar cuál</label>
+      <input class="form-input" id="f-medicacionRegular" type="text">
+
+      <label>Tiene DPA vigente *</label>
+      <div class="radio-group" data-campo="tieneDPAVigente">
+        <label class="radio-opt"><input type="radio" name="tieneDPAVigente" value="Si">Sí</label>
+        <label class="radio-opt"><input type="radio" name="tieneDPAVigente" value="No">No</label>
+      </div>
+
+      <label for="f-otrosDatosSalud">Otros datos que usted crea convenientes compartirnos referidos a su salud</label>
+      <input class="form-input" id="f-otrosDatosSalud" type="text" style="margin-bottom:0;">
+    </div>
+
+    <div class="card">
+      <div class="section-note">A continuación te vamos a pedir algunos datos específicos en caso de que surja una emergencia.</div>
+
+      <label for="f-nombreFamiliar">Nombre de un familiar al cual contactar *</label>
+      <input class="form-input" id="f-nombreFamiliar" type="text" required>
+
+      <label for="f-relacionFamiliar">Relación con el familiar *</label>
+      <input class="form-input" id="f-relacionFamiliar" type="text" required>
+
+      <label for="f-telefonoFamiliar">Teléfono del familiar *</label>
+      <input class="form-input" id="f-telefonoFamiliar" type="text" required style="margin-bottom:0;">
+    </div>
+
+    <button class="btn-primary" id="btn-enviar" type="submit">Enviar</button>
+    <div class="msg" id="msg-form"></div>
+  </form>
+</div>
+
+<div id="toast-stack"></div>
+
+<script>
+(function(){
+  const stack = document.getElementById('toast-stack');
+  window.showToast = function(msg, type){
+    if (!msg) return;
+    const el = document.createElement('div');
+    el.className = 'toast' + (type ? ' ' + type : '');
+    el.textContent = msg;
+    stack.appendChild(el);
+    setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .25s ease'; }, 2600);
+    setTimeout(() => { el.remove(); }, 2900);
+  };
+})();
+
+const CAMPOS_TEXTO = [
+  'correo', 'direccion', 'telefonoFijo', 'telefonoCelular', 'fechaNacimiento',
+  'fechaBautismo', 'datoAdicional', 'mutualista', 'nombreEmergenciaMovil',
+  'medicacionRegular', 'otrosDatosSalud', 'nombreFamiliar', 'relacionFamiliar',
+  'telefonoFamiliar'
+];
+const CAMPOS_RADIO = ['emergenciaMovil', 'servicioAcompanante', 'tieneDPAVigente'];
+
+let personasCache = [];
+let personaSeleccionada = null;
+
+const selNombre    = document.getElementById('sel-nombre');
+const estadoNombre = document.getElementById('estado-nombre');
+const formDatos    = document.getElementById('form-datos');
+const msgForm      = document.getElementById('msg-form');
+const btnEnviar    = document.getElementById('btn-enviar');
+
+function mostrarMsg(texto, ok){
+  msgForm.textContent = texto;
+  msgForm.className = 'msg show ' + (ok ? 'ok' : 'err');
+  setTimeout(() => msgForm.classList.remove('show'), 4000);
+}
+
+// --- Radios estilo "choice" ---
+document.querySelectorAll('.radio-group').forEach(grupo => {
+  grupo.querySelectorAll('.radio-opt').forEach(opt => {
+    const input = opt.querySelector('input');
+    opt.addEventListener('click', () => {
+      grupo.querySelectorAll('.radio-opt').forEach(o => o.classList.remove('selected'));
+      opt.classList.add('selected');
+      input.checked = true;
+    });
+  });
+});
+
+function valorRadio(campo){
+  const el = document.querySelector(`input[name="${campo}"]:checked`);
+  return el ? el.value : '';
+}
+
+function limpiarFormulario(){
+  formDatos.reset();
+  document.querySelectorAll('.radio-opt.selected').forEach(o => o.classList.remove('selected'));
+}
+
+const selGrupo = document.getElementById('sel-grupo');
+
+async function cargarPersonas(){
+  const cfg = window.APP_CONFIG || {};
+  const aviso = document.getElementById('avisoConfig');
+  if (!cfg.PUBLICADORES_API_URL && !cfg.PUBLICADORES_CSV_URL){
+    aviso.style.display = 'block';
+    aviso.textContent = 'Falta configurar PUBLICADORES_API_URL (o PUBLICADORES_CSV_URL) en app-config.js.';
+    return;
+  }
+  aviso.style.display = 'none';
+  try {
+    personasCache = await window.PublicadoresApp.cargarPublicadores();
+
+    const grupos = [...new Set(personasCache.map(p => p.grupo).filter(Boolean))]
+      .sort((a, b) => {
+        const na = parseInt(a, 10), nb = parseInt(b, 10);
+        if (isFinite(na) && isFinite(nb)) return na - nb;
+        return String(a).localeCompare(String(b), 'es');
+      });
+    selGrupo.innerHTML = '<option value="">Elegí tu número de grupo…</option>' +
+      grupos.map(g => `<option value="${g}">Grupo ${g}</option>`).join('');
+
+    // Preseleccionar si viene ?nombre= en la URL (link desde el modal de Publicadores)
+    const nombreUrl = new URLSearchParams(location.search).get('nombre');
+    const personaUrl = nombreUrl ? personasCache.find(p => p.nombre === nombreUrl) : null;
+    if (personaUrl){
+      selGrupo.value = personaUrl.grupo;
+      actualizarNombresSegunGrupo();
+      selNombre.value = personaUrl.nombre;
+      actualizarSegunPersona();
+    }
+  } catch (err){
+    console.error(err);
+    aviso.style.display = 'block';
+    aviso.textContent = 'No se pudo cargar la lista de publicadores.';
+  }
+}
+
+function actualizarNombresSegunGrupo(){
+  const grupo = selGrupo.value;
+  formDatos.style.display = 'none';
+  estadoNombre.textContent = '';
+  estadoNombre.className = 'estado-msg';
+  personaSeleccionada = null;
+
+  if (!grupo){
+    selNombre.innerHTML = '<option value="">Elegí primero tu grupo…</option>';
+    selNombre.disabled = true;
+    return;
+  }
+
+  const delGrupo = personasCache
+    .filter(p => p.grupo === grupo)
+    .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+
+  selNombre.innerHTML = '<option value="">Elegí tu nombre…</option>' +
+    delGrupo.map(p => `<option value="${p.nombre}">${p.nombre}</option>`).join('');
+  selNombre.disabled = false;
+}
+
+selGrupo.addEventListener('change', actualizarNombresSegunGrupo);
+
+function actualizarSegunPersona(){
+  const nombre = selNombre.value;
+  personaSeleccionada = personasCache.find(p => p.nombre === nombre && p.grupo === selGrupo.value) || null;
+
+  if (!nombre || !personaSeleccionada){
+    estadoNombre.textContent = '';
+    estadoNombre.className = 'estado-msg';
+    formDatos.style.display = 'none';
+    return;
+  }
+
+  const listo = !!personaSeleccionada.usoDatos;
+  if (!listo){
+    estadoNombre.textContent = 'Todavía no tenés el Uso de Datos aprobado. Pedile a tu capitán/admin que lo confirme primero en la sección de Publicadores, y después volvé a esta página.';
+    estadoNombre.className = 'estado-msg bloqueado';
+    formDatos.style.display = 'none';
+    return;
+  }
+
+  estadoNombre.textContent = '✔ Uso de Datos al día. Ya podés completar tus datos personales.';
+  estadoNombre.className = 'estado-msg listo';
+  document.getElementById('f-nombre').value = personaSeleccionada.nombre;
+  formDatos.style.display = 'block';
+}
+
+selNombre.addEventListener('change', actualizarSegunPersona);
+
+formDatos.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!personaSeleccionada){
+    mostrarMsg('Elegí tu nombre primero.', false);
+    return;
+  }
+
+  for (const campo of CAMPOS_RADIO){
+    if (!valorRadio(campo)){
+      mostrarMsg('Faltan responder preguntas obligatorias (con *).', false);
+      return;
+    }
+  }
+
+  const cfg = window.APP_CONFIG || {};
+  if (!cfg.PUBLICADORES_API_URL){
+    mostrarMsg('Falta configurar PUBLICADORES_API_URL en app-config.js.', false);
+    return;
+  }
+
+  const datos = { action: 'guardarDatosPersonales', nombre: personaSeleccionada.nombre };
+  CAMPOS_TEXTO.forEach(campo => {
+    const input = document.getElementById('f-' + campo);
+    if (input) datos[campo] = input.value.trim();
+  });
+  CAMPOS_RADIO.forEach(campo => { datos[campo] = valorRadio(campo); });
+
+  btnEnviar.disabled = true;
+  try {
+    const res = await fetch(cfg.PUBLICADORES_API_URL, {
+      method: 'POST',
+      credentials: 'omit',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(datos)
+    });
+    const data = await res.json();
+    if (!data || !data.ok) throw new Error((data && data.error) || 'Error al guardar');
+
+    mostrarMsg('¡Datos guardados correctamente!', true);
+    window.showToast('Datos personales guardados', 'success');
+  } catch (err){
+    console.error(err);
+    mostrarMsg('No se pudo guardar: ' + err.message, false);
+  } finally {
+    btnEnviar.disabled = false;
+  }
+});
+
+cargarPersonas();
+</script>
+
+</body>
+</html>

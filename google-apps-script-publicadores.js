@@ -33,6 +33,55 @@ const CARPETA_PUBLICADORES_ID = "12Emr_Qz7OZVTJKQRHmx_FnMUx0M4JT2V";
 const SUBCARPETA_DPA = "DPA";
 const SUBCARPETA_USO_DATOS = "Uso de Datos";
 
+// Hoja nueva (dentro de la misma planilla de Publicadores) donde se guardan
+// las respuestas del formulario de Datos Personales de datos-personales.html.
+// Espeja las preguntas del Google Form que reemplaza. Se crea sola la
+// primera vez que alguien envía el formulario.
+const NOMBRE_HOJA_DATOS_PERSONALES = "DatosPersonales";
+const ENCABEZADOS_DATOS_PERSONALES = [
+  "Marca temporal",
+  "Nombre completo",
+  "Correo electronico",
+  "Dirección",
+  "Número de teléfono fijo",
+  "Numero de teléfono celular",
+  "Fecha de nacimiento",
+  "Fecha de bautismo",
+  "Dato adicional",
+  "Servicio de salud - Mutualista",
+  "Cuenta con emergencia móvil",
+  "Nombre de la emergencia móvil / identificación como socio",
+  "Cuenta con servicio de acompañante",
+  "Medicación regular",
+  "Tiene DPA vigente",
+  "Otros datos de salud",
+  "Nombre del familiar de contacto",
+  "Relación con el familiar",
+  "Teléfono del familiar",
+];
+
+// Mapa encabezado de la hoja -> nombre del campo que manda datos-personales.html.
+const CAMPO_POR_ENCABEZADO_DATOS_PERSONALES = {
+  "Nombre completo": "nombre",
+  "Correo electronico": "correo",
+  "Dirección": "direccion",
+  "Número de teléfono fijo": "telefonoFijo",
+  "Numero de teléfono celular": "telefonoCelular",
+  "Fecha de nacimiento": "fechaNacimiento",
+  "Fecha de bautismo": "fechaBautismo",
+  "Dato adicional": "datoAdicional",
+  "Servicio de salud - Mutualista": "mutualista",
+  "Cuenta con emergencia móvil": "emergenciaMovil",
+  "Nombre de la emergencia móvil / identificación como socio": "nombreEmergenciaMovil",
+  "Cuenta con servicio de acompañante": "servicioAcompanante",
+  "Medicación regular": "medicacionRegular",
+  "Tiene DPA vigente": "tieneDPAVigente",
+  "Otros datos de salud": "otrosDatosSalud",
+  "Nombre del familiar de contacto": "nombreFamiliar",
+  "Relación con el familiar": "relacionFamiliar",
+  "Teléfono del familiar": "telefonoFamiliar",
+};
+
 function doPost(e) {
   // JSON (subir/borrar documento) vs FormData (envío de informe mensual).
   if (e.postData && e.postData.type === "application/json") {
@@ -83,10 +132,57 @@ function doGet(e) {
     if (e.parameter.action === "publicadores") {
       return respuesta({ status: "ok", publicadores: obtenerPublicadores() });
     }
+    if (e.parameter.action === "publicadoresDetalle") {
+      return respuesta({ status: "ok", publicadores: obtenerPublicadoresDetalle_() });
+    }
+    if (e.parameter.action === "datosPersonales") {
+      const r = obtenerDatosPersonalesDePersona_(e.parameter.nombre);
+      return respuesta({ status: r.ok ? "ok" : "error", datos: r.datos, message: r.error });
+    }
     return respuesta({ status: "error", message: "Acción no reconocida" });
   } catch (err) {
     return respuesta({ status: "error", message: err.message });
   }
+}
+
+// Versión completa de obtenerPublicadores(), pensada para reemplazar al CSV
+// público (PUBLICADORES_CSV_URL) que publicadores.html / app-publicadores.js
+// usaban antes: cuando Google bloquea el "Publicar en la web" (redirige a
+// login por política de la cuenta/organización), esta ruta sigue funcionando
+// porque el script corre con los permisos de quien lo desplegó, sin depender
+// de que la hoja esté publicada. Devuelve las mismas columnas que esperaba
+// el parseo del CSV (por nombre de encabezado, no por posición).
+function obtenerPublicadoresDetalle_() {
+  const sheet = getPublicadoresSheet_();
+  const cols = getHeaderMap_(sheet);
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+
+  const filas = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+  const leer = (fila, nombreCol) => {
+    const idx = cols[nombreCol];
+    if (!idx) return "";
+    const v = fila[idx - 1];
+    if (esFecha_(v)) return Utilities.formatDate(v, Session.getScriptTimeZone(), "dd/MM/yyyy");
+    return v === null || v === undefined ? "" : String(v);
+  };
+
+  const colNombre = cols["Nombre"];
+  return filas
+    .filter((fila) => colNombre && String(fila[colNombre - 1] || "").trim() !== "")
+    .map((fila) => ({
+      Grupo: leer(fila, "Grupo"),
+      Nombre: leer(fila, "Nombre"),
+      Estado: leer(fila, "Estado"),
+      DPA: leer(fila, "DPA"),
+      LinkDPA: leer(fila, "LinkDPA"),
+      FechaVenceDPA: leer(fila, "FechaVenceDPA"),
+      UsoDatos: leer(fila, "UsoDatos"),
+      LinkAutorizacion: leer(fila, "LinkAutorizacion"),
+      DatosPersonales: leer(fila, "DatosPersonales"),
+      DatosPersonalesFecha: leer(fila, "DatosPersonalesFecha"),
+      Notas: leer(fila, "Notas"),
+    }));
 }
 
 function obtenerPublicadores() {
@@ -138,6 +234,15 @@ function obtenerHojaRespuestas() {
   return hoja;
 }
 
+// Chequeo de "es una fecha" más confiable que `instanceof Date`: los valores
+// que devuelve getValues() para celdas de fecha a veces no pasan
+// `instanceof Date` en el contexto de una web app (aunque se comporten como
+// fecha), así que se compara por el nombre interno del tipo en vez de por
+// identidad de constructor.
+function esFecha_(v) {
+  return v !== null && typeof v === "object" && Object.prototype.toString.call(v) === "[object Date]";
+}
+
 function respuesta(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(
     ContentService.MimeType.JSON
@@ -156,9 +261,12 @@ function doPostDocumentos_(e) {
   try {
     const data = JSON.parse(e.postData.contents);
     switch (data.action) {
-      case "subirDocumento":  result = subirDocumento(data); break;
-      case "borrarDocumento": result = borrarDocumento(data); break;
-      default:                result = { ok: false, error: "Acción desconocida" };
+      case "subirDocumento":         result = subirDocumento(data); break;
+      case "borrarDocumento":        result = borrarDocumento(data); break;
+      case "guardarDatosPersonales":       result = guardarDatosPersonales(data); break;
+      case "actualizarDatosPersonalesAdmin": result = actualizarDatosPersonalesAdmin(data); break;
+      case "cambiarGrupo":                 result = cambiarGrupoPublicador(data); break;
+      default:                       result = { ok: false, error: "Acción desconocida" };
     }
   } catch (err) {
     result = { ok: false, error: String((err && err.message) || err) };
@@ -174,6 +282,7 @@ function getPublicadoresSheet_() {
 }
 
 function getHeaderMap_(sheet) {
+  if (sheet.getLastColumn() < 1) return {}; // hoja completamente vacía, sin encabezados todavía
   const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   const map = {};
   header.forEach((h, i) => { if (h) map[String(h).trim()] = i + 1; });
@@ -260,5 +369,169 @@ function borrarDocumento(data) {
     if (cols["LinkAutorizacion"]) sheet.getRange(row, cols["LinkAutorizacion"]).setValue("");
   }
 
+  return { ok: true };
+}
+
+// ===================================================================
+// Formulario de Datos Personales (nuevo, para datos-personales.html)
+//
+// Reemplaza al Google Form: las respuestas se guardan en la hoja
+// "DatosPersonales" de esta misma planilla, una fila por persona (si la
+// persona ya había enviado el formulario antes, se actualiza su fila en
+// vez de duplicarla). Solo se acepta el envío si esa persona ya tiene el
+// Uso de Datos cargado y aprobado (columna UsoDatos = "Si") con su link
+// (LinkAutorizacion) — se vuelve a validar acá aunque el front ya lo
+// chequee, por si alguien llama a la API directo.
+// ===================================================================
+function verificarUsoDatosListo_(nombre) {
+  const sheet = getPublicadoresSheet_();
+  const cols = getHeaderMap_(sheet);
+  if (!cols["Nombre"]) return { ok: false, error: 'La hoja "' + NOMBRE_HOJA_PUBLICADORES + '" no tiene columna "Nombre"' };
+
+  const row = findRowByNombre_(sheet, cols["Nombre"], nombre);
+  if (row === -1) return { ok: false, error: 'No se encontró a "' + nombre + '" en la planilla de Publicadores' };
+
+  const usoDatos = cols["UsoDatos"] ? String(sheet.getRange(row, cols["UsoDatos"]).getValue() || "").trim().toLowerCase() : "";
+  const linkAutorizacion = cols["LinkAutorizacion"] ? String(sheet.getRange(row, cols["LinkAutorizacion"]).getValue() || "").trim() : "";
+  // Alcanza con que la columna diga "Si": hay personas cargadas a mano en la
+  // planilla (antes de que existiera la subida de archivo) que tienen el
+  // "Si" pero nunca un LinkAutorizacion, y no corresponde bloquearlas por eso.
+  const listo = (usoDatos === "si" || usoDatos === "sí");
+
+  return { ok: true, listo, usoDatos, linkAutorizacion };
+}
+
+function getOrCreateDatosPersonalesSheet_() {
+  const libro = SpreadsheetApp.openById(ID_PLANILLA_PUBLICADORES);
+  let hoja = libro.getSheetByName(NOMBRE_HOJA_DATOS_PERSONALES);
+  if (!hoja) {
+    hoja = libro.insertSheet(NOMBRE_HOJA_DATOS_PERSONALES);
+  }
+  // Por si la hoja ya existía pero vacía (de alguna prueba anterior): escribe
+  // los encabezados igual, no solo cuando se acaba de crear la hoja.
+  if (hoja.getLastRow() === 0) {
+    hoja.appendRow(ENCABEZADOS_DATOS_PERSONALES);
+    hoja.getRange(1, 1, 1, ENCABEZADOS_DATOS_PERSONALES.length).setFontWeight("bold");
+  }
+  return hoja;
+}
+
+// Escribe/actualiza la fila de una persona en la hoja DatosPersonales.
+// Compartido entre el envío propio (guardarDatosPersonales, con gate de Uso
+// de Datos) y la edición desde el modal de admin (actualizarDatosPersonalesAdmin,
+// sin gate).
+function guardarFilaDatosPersonales_(nombre, data) {
+  const hoja = getOrCreateDatosPersonalesSheet_();
+  const cols = getHeaderMap_(hoja);
+  const colNombre = cols["Nombre completo"];
+
+  const fila = ENCABEZADOS_DATOS_PERSONALES.map((encabezado) => {
+    if (encabezado === "Marca temporal") return new Date();
+    const campo = CAMPO_POR_ENCABEZADO_DATOS_PERSONALES[encabezado];
+    return (campo && data[campo]) || "";
+  });
+
+  const filaExistente = colNombre ? findRowByNombre_(hoja, colNombre, nombre) : -1;
+  if (filaExistente === -1) {
+    hoja.appendRow(fila);
+  } else {
+    hoja.getRange(filaExistente, 1, 1, fila.length).setValues([fila]);
+  }
+}
+
+function guardarDatosPersonales(data) {
+  const nombre = data.nombre;
+  if (!nombre) return { ok: false, error: "Falta el nombre" };
+
+  const estado = verificarUsoDatosListo_(nombre);
+  if (!estado.ok) return estado;
+  if (!estado.listo) {
+    return { ok: false, error: "Todavía no tenés el Uso de Datos cargado y aprobado. Pedile a tu capitán/admin que lo suba primero en Publicadores." };
+  }
+
+  guardarFilaDatosPersonales_(nombre, data);
+  marcarDatosPersonalesEnPublicadores_(nombre);
+
+  return { ok: true };
+}
+
+// Edición desde el modal de publicadores.html (admin/capitán viendo la ficha
+// de la persona). No exige el gate de Uso de Datos: si ya está viendo el
+// modal con "Datos Personales: Sí" es porque ya existe el registro y lo está
+// corrigiendo, no enviándolo por primera vez.
+function actualizarDatosPersonalesAdmin(data) {
+  const nombre = data.nombre;
+  if (!nombre) return { ok: false, error: "Falta el nombre" };
+
+  guardarFilaDatosPersonales_(nombre, data);
+  marcarDatosPersonalesEnPublicadores_(nombre);
+
+  return { ok: true };
+}
+
+// Devuelve las respuestas guardadas de una persona (para mostrarlas/editarlas
+// en el modal de publicadores.html). datos:null si todavía no envió nada.
+function obtenerDatosPersonalesDePersona_(nombre) {
+  if (!nombre) return { ok: false, error: "Falta el nombre" };
+
+  const hoja = getOrCreateDatosPersonalesSheet_();
+  const cols = getHeaderMap_(hoja);
+  const colNombre = cols["Nombre completo"];
+  const row = colNombre ? findRowByNombre_(hoja, colNombre, nombre) : -1;
+  if (row === -1) return { ok: true, datos: null };
+
+  const valores = hoja.getRange(row, 1, 1, ENCABEZADOS_DATOS_PERSONALES.length).getValues()[0];
+  const datos = {};
+  ENCABEZADOS_DATOS_PERSONALES.forEach((encabezado, i) => {
+    const campo = CAMPO_POR_ENCABEZADO_DATOS_PERSONALES[encabezado];
+    if (!campo) return; // "Marca temporal" no tiene campo de formulario
+    let v = valores[i];
+    if (esFecha_(v)) v = Utilities.formatDate(v, Session.getScriptTimeZone(), "dd/MM/yyyy");
+    datos[campo] = v === null || v === undefined ? "" : String(v);
+  });
+
+  return { ok: true, datos };
+}
+
+// Marca "DatosPersonales" = "Si" (y la fecha, si existe esa columna) en la
+// hoja Publicadores — la misma hoja que ya se publica como CSV público para
+// que el sitio muestre el estado. Así el estado "hecho/pendiente" se ve sin
+// tener que publicar la hoja "DatosPersonales" (que sí tiene datos
+// sensibles: salud, dirección, contacto familiar, etc.) en ningún lado.
+function marcarDatosPersonalesEnPublicadores_(nombre) {
+  const sheet = getPublicadoresSheet_();
+  const cols = getHeaderMap_(sheet);
+  if (!cols["Nombre"]) return;
+  const row = findRowByNombre_(sheet, cols["Nombre"], nombre);
+  if (row === -1) return;
+
+  if (cols["DatosPersonales"]) sheet.getRange(row, cols["DatosPersonales"]).setValue("Si");
+  if (cols["DatosPersonalesFecha"]) {
+    sheet.getRange(row, cols["DatosPersonalesFecha"]).setValue(
+      Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "dd/MM/yyyy")
+    );
+  }
+}
+
+// ===================================================================
+// Organizar grupos (nuevo, para la pestaña "Organizar grupos" de
+// publicadores.html): mueve a una persona de su grupo actual a otro,
+// simplemente reescribiendo la columna "Grupo" de su fila.
+// ===================================================================
+function cambiarGrupoPublicador(data) {
+  const nombre = data.nombre;
+  const grupo = data.grupo;
+  if (!nombre) return { ok: false, error: "Falta el nombre" };
+  if (!grupo && grupo !== 0) return { ok: false, error: "Falta el grupo destino" };
+
+  const sheet = getPublicadoresSheet_();
+  const cols = getHeaderMap_(sheet);
+  if (!cols["Nombre"]) return { ok: false, error: 'La hoja no tiene columna "Nombre"' };
+  if (!cols["Grupo"]) return { ok: false, error: 'La hoja no tiene columna "Grupo"' };
+
+  const row = findRowByNombre_(sheet, cols["Nombre"], nombre);
+  if (row === -1) return { ok: false, error: 'No se encontró a "' + nombre + '" en la planilla' };
+
+  sheet.getRange(row, cols["Grupo"]).setValue(grupo);
   return { ok: true };
 }

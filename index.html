@@ -442,22 +442,34 @@ const ACCESOS = [
     roles: null
   },
   {
-    group: 'Territorio', icon: '🚐', title: 'Registro de Transporte',
+    group: 'Administración', icon: '🗂️', title: 'Publicadores',
+    desc: 'Estado de DPA, Autorización de Uso de Datos y Formulario de Datos Personales.',
+    href: './publicadores.html',
+    roles: ['admin','capitan']
+  },
+  {
+    group: 'Administración', icon: '🔀', title: 'Organizar grupos',
+    desc: 'Mover publicadores de un grupo a otro.',
+    href: './publicadores.html?vista=grupos',
+    roles: ['admin','capitan']
+  },
+  {
+    group: 'Administración', icon: '📊', title: 'Informes de predicación',
+    desc: 'Quién ya se registró este mes y situación (Precursor Regular / Auxiliar / Publicador) por grupo.',
+    href: './informes-predicacion/index.html',
+    roles: ['admin','capitan']
+  },
+  {
+    group: 'Otros', icon: '🚐', title: 'Registro de Transporte',
     desc: 'Coordinación y registro de transporte.',
     href: './traslado.html',
     roles: null
   },
   {
-    group: 'Territorio', icon: '📋', title: 'Informe de predicación',
+    group: 'Otros', icon: '📋', title: 'Informe de predicación',
     desc: 'Registro de horas y actividad de predicación.',
     href: './informes/index.html',
     roles: null
-  },
-  {
-    group: 'Administración', icon: '🗂️', title: 'Publicadores',
-    desc: 'Estado de DPA, Autorización de Uso de Datos y Formulario de Datos Personales.',
-    href: './publicadores.html',
-    roles: ['admin','capitan']
   }
 ];
 
