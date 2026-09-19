@@ -179,13 +179,20 @@
     background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
     padding: 14px 16px 16px;
   }
-  .pub-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+  .pub-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
   .pub-card-title {
     font-size: 1rem; font-weight: 600; border: none; background: transparent; color: var(--text-primary);
-    padding: 2px 4px; border-radius: 4px; width: 60%;
+    padding: 2px 4px; border-radius: 4px; width: 55%;
   }
   .pub-card-title:hover, .pub-card-title:focus { background: var(--page-plane); outline: none; }
   .pub-period-tag { font-size: 0.72rem; color: var(--text-muted); }
+  .pub-card-toggle {
+    flex: 0 0 auto; width: 24px; height: 24px; padding: 0; border-radius: 6px;
+    border: 1px solid var(--baseline); background: var(--surface-1); color: var(--text-secondary);
+    cursor: pointer; font-size: 0.75rem; line-height: 1;
+  }
+  .pub-card-toggle:hover { border-color: var(--text-secondary); }
+  .pub-card.pub-colapsado .pub-card-body { display: none; }
 
   .pub-stats { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
   .pub-chip {
@@ -824,31 +831,45 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
     var missingCls = view.missing.length === 0 ? "good" : (view.missing.length <= 2 ? "warn" : "crit");
     var canvasId = "pub-chart-g" + grupoNum;
 
+    var card = document.getElementById("pub-card-g" + grupoNum);
+    // El estado contraído/expandido vive como clase en `card`, que no se
+    // recrea entre renders (ver renderAll) — innerHTML solo pisa los hijos,
+    // así que se lee ANTES de reescribir para saber qué ícono dibujar.
+    var colapsado = card.classList.contains("pub-colapsado");
+
     var html =
       '<div class="pub-card-head">' +
+        '<button type="button" class="pub-card-toggle" aria-label="Contraer o expandir">' + (colapsado ? "▸" : "▾") + "</button>" +
         '<input class="pub-card-title" id="pub-title-g' + grupoNum + '" value="' + escapeHtml(displayName) + '">' +
         '<span class="pub-period-tag">' + (STATE.selectedPeriod != null ? periodLabel(STATE.selectedPeriod) : "") + "</span>" +
       "</div>" +
-      '<div class="pub-stats">' +
-        chip("", "cantidad total", view.roster.length) +
-        chip("good", "registrados", view.submitted.length) +
-        chip(missingCls, "faltan", view.missing.length) +
-      "</div>" +
-      '<div class="pub-section-label">Faltan registrarse' + (STATE.selectedPeriod != null ? " (" + periodLabel(STATE.selectedPeriod) + ")" : "") + "</div>" +
-      missingHtml +
-      (noActivityHtml ? '<div class="pub-section-label">Registraron, sin actividad este mes</div>' + noActivityHtml : "") +
-      '<div class="pub-section-label">Integrantes del grupo (click en un nombre para ver su ficha)</div>' +
-      '<div class="pub-roster-grid">' + view.roster.map(rosterItem).join("") + "</div>" +
-      '<div class="pub-section-label">Situación' + (STATE.selectedPeriod != null ? " (" + periodLabel(STATE.selectedPeriod) + ")" : "") + "</div>" +
-      '<div class="pub-mini-chart-wrap"><canvas id="' + canvasId + '"></canvas></div>';
+      '<div class="pub-card-body">' +
+        '<div class="pub-stats">' +
+          chip("", "cantidad total", view.roster.length) +
+          chip("good", "registrados", view.submitted.length) +
+          chip(missingCls, "faltan", view.missing.length) +
+        "</div>" +
+        '<div class="pub-section-label">Faltan registrarse' + (STATE.selectedPeriod != null ? " (" + periodLabel(STATE.selectedPeriod) + ")" : "") + "</div>" +
+        missingHtml +
+        (noActivityHtml ? '<div class="pub-section-label">Registraron, sin actividad este mes</div>' + noActivityHtml : "") +
+        '<div class="pub-section-label">Integrantes del grupo (click en un nombre para ver su ficha)</div>' +
+        '<div class="pub-roster-grid">' + view.roster.map(rosterItem).join("") + "</div>" +
+        '<div class="pub-section-label">Situación' + (STATE.selectedPeriod != null ? " (" + periodLabel(STATE.selectedPeriod) + ")" : "") + "</div>" +
+        '<div class="pub-mini-chart-wrap"><canvas id="' + canvasId + '"></canvas></div>' +
+      "</div>";
 
-    var card = document.getElementById("pub-card-g" + grupoNum);
     card.innerHTML = html;
 
     document.getElementById("pub-title-g" + grupoNum).addEventListener("change", function (e) {
       var val = e.target.value.trim() || ("Grupo " + grupoNum);
       saveGroupName(grupoNum, val);
       renderAll(); // recalcula todo, así el gráfico de resumen toma el nombre nuevo
+    });
+
+    card.querySelector(".pub-card-toggle").addEventListener("click", function (e) {
+      e.stopPropagation();
+      var ahora = card.classList.toggle("pub-colapsado");
+      e.target.textContent = ahora ? "▸" : "▾";
     });
 
     renderMiniChart(canvasId, view.counts);

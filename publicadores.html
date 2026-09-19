@@ -75,6 +75,10 @@
 
   .grupo-block{ margin-top:28px; }
   .grupo-block h2{ font-size:16px; margin:0 0 10px; color:#93c5fd; }
+  .grupo-toggle{ display:flex; align-items:center; gap:6px; cursor:pointer; user-select:none; }
+  .grupo-toggle:hover{ color:#bfdbfe; }
+  .grupo-toggle-caret{ font-size:12px; color:var(--muted); width:10px; display:inline-block; }
+  .grupo-block.colapsado .tabla-wrap{ display:none; }
 
   .tabla-wrap{ overflow-x:auto; border:1px solid var(--border); border-radius:12px; }
   table{ width:100%; border-collapse:collapse; font-size:14px; }
@@ -148,6 +152,8 @@
     padding:16px 18px; margin-bottom:14px;
   }
   .grupo-organizar-card h2{ font-size:15px; margin:0 0 10px; color:#93c5fd; }
+  .grupo-organizar-card.colapsado h2{ margin-bottom:0; }
+  .grupo-organizar-card.colapsado .grupo-organizar-body{ display:none; }
   .persona-mover{
     display:flex; align-items:center; gap:10px; flex-wrap:wrap;
     padding:8px 0; border-top:1px solid var(--border);
@@ -259,6 +265,7 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
 // sesión compartida (cookie) para decidir qué mostrar, y permite cerrarla.
 const ROLES_PERMITIDOS = ['admin', 'capitan'];
 let personasCache = [];
+const gruposColapsadosOrganizar = new Set();
 
 document.getElementById('btnLogout').addEventListener('click', () => {
   if (window.AuthApp && typeof window.AuthApp.logout === "function"){
@@ -665,13 +672,29 @@ function renderOrganizarGrupos(){
       `;
     }).join('');
 
+    const colapsado = gruposColapsadosOrganizar.has(String(g));
     return `
-      <div class="grupo-organizar-card">
-        <h2>Grupo ${g} <span class="muted">(${porGrupo.get(g).length})</span></h2>
-        ${filas}
+      <div class="grupo-organizar-card ${colapsado ? 'colapsado' : ''}">
+        <h2 class="grupo-toggle" data-grupo="${g}" tabindex="0" role="button" aria-expanded="${!colapsado}">
+          <span class="grupo-toggle-caret">${colapsado ? '▸' : '▾'}</span> Grupo ${g} <span class="muted">(${porGrupo.get(g).length})</span>
+        </h2>
+        <div class="grupo-organizar-body">${filas}</div>
       </div>
     `;
   }).join('');
+
+  cont.querySelectorAll('.grupo-toggle').forEach(h2 => {
+    const toggle = () => {
+      const g = h2.dataset.grupo;
+      if (gruposColapsadosOrganizar.has(g)) gruposColapsadosOrganizar.delete(g);
+      else gruposColapsadosOrganizar.add(g);
+      renderOrganizarGrupos();
+    };
+    h2.addEventListener('click', toggle);
+    h2.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+    });
+  });
 
   cont.querySelectorAll('.persona-mover').forEach(fila => {
     const persona = personasCache[Number(fila.dataset.idx)];

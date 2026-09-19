@@ -200,6 +200,12 @@
     return `<span class="badge badge-pend">${labelPend}</span>`;
   }
 
+  // Grupos contraídos en la tabla "Ver estado" (por nombre de grupo). Vive
+  // en este módulo para persistir mientras dure la carga de la página, ya
+  // que renderTabla se llama de nuevo en cada refresco / búsqueda y
+  // reescribe todo el innerHTML.
+  const gruposColapsadosTabla = new Set();
+
   function renderResumen(el, personas) {
     const total = personas.length;
     const c = {
@@ -249,9 +255,12 @@
       `;
       }).join("");
 
+      const colapsado = gruposColapsadosTabla.has(String(g));
       return `
-        <section class="grupo-block">
-          <h2>Grupo ${g}</h2>
+        <section class="grupo-block ${colapsado ? "colapsado" : ""}">
+          <h2 class="grupo-toggle" data-grupo="${g}" tabindex="0" role="button" aria-expanded="${!colapsado}">
+            <span class="grupo-toggle-caret">${colapsado ? "▸" : "▾"}</span> Grupo ${g}
+          </h2>
           <div class="tabla-wrap">
             <table>
               <thead>
@@ -263,6 +272,19 @@
         </section>
       `;
     }).join("");
+
+    el.querySelectorAll(".grupo-toggle").forEach(h2 => {
+      const toggle = () => {
+        const g = h2.dataset.grupo;
+        if (gruposColapsadosTabla.has(g)) gruposColapsadosTabla.delete(g);
+        else gruposColapsadosTabla.add(g);
+        renderTabla(el, personas, filtro, onClickPersona);
+      };
+      h2.addEventListener("click", toggle);
+      h2.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
+      });
+    });
 
     if (onClickPersona) {
       el.querySelectorAll(".fila-persona").forEach(tr => {
