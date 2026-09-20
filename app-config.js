@@ -16,7 +16,13 @@ window.APP_CONFIG = {
       // subir/borrar el DPA y el Uso de Datos desde el modal de Publicadores.
       // Dejar vacío si todavía no se desplegó: el modal muestra los datos igual,
       // solo sin la opción de subir/borrar.
-      PUBLICADORES_API_URL: 'https://script.google.com/macros/s/AKfycbzAG7WB9G1mGscY7CfGvVrJMo6vlQhFNKScSSA5LsFbmekZJS6zqM1sl73odxYwWCTG/exec',
+      PUBLICADORES_API_URL: 'https://script.google.com/macros/s/AKfycbxHOxsgkGnW1AZlc_wKmzPDw8FmK0X01Rb-CdBQ7q2z2zXWsnC1c39JqoK2XOR-O9Zw/exec',
+
+      // Apps Script del widget "Informes de predicación" (ver
+      // informes-predicacion/apps-script/Code.gs). Se usa acá para leer el
+      // estado de actividad (Activo/Irregular/Inactivo) de cada publicador
+      // y mostrarlo en el listado de Publicadores.
+      INFORMES_PREDICACION_API_URL: 'https://script.google.com/macros/s/AKfycbznuLplCadjhHpGRysU4xj1WfcAKPLty0faOsa__Gjm6Bu7zDr-FzshzNzeeGZXo0Fv/exec',
 
       // Ya NO hace falta: el backend (google-apps-script-publicadores.js,
       // guardarDatosPersonales) marca sola la columna "DatosPersonales" (y

@@ -8,6 +8,7 @@
 <script src="./app-config.js"></script>
 <script src="./app-auth.js"></script>
 <script src="./app-publicadores.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 
 <style>
   :root{
@@ -73,6 +74,28 @@
   .resumen-item .n{ font-size:20px; font-weight:700; }
   .resumen-item .l{ font-size:12px; color:var(--muted); }
 
+  .stats-cards{ display:flex; gap:12px; flex-wrap:wrap; margin-bottom:22px; }
+  .stats-card{
+    background:var(--card); border:1px solid var(--border); border-radius:12px;
+    padding:12px 16px; display:flex; flex-direction:column; min-width:130px; flex:1;
+  }
+  .stats-card .n{ font-size:22px; font-weight:700; }
+  .stats-card .l{ font-size:12px; color:var(--muted); }
+
+  .stats-grid{ display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px; }
+  @media (max-width:720px){ .stats-grid{ grid-template-columns:1fr; } }
+  .stats-box{
+    background:var(--card); border:1px solid var(--border); border-radius:12px;
+    padding:16px 18px; margin-bottom:16px;
+  }
+  .stats-box h3{ margin:0 0 14px; font-size:14px; color:#93c5fd; }
+
+  .stats-progreso{ display:flex; flex-direction:column; gap:12px; }
+  .stats-progreso-label{ font-size:12.5px; color:var(--muted); display:block; margin-bottom:5px; }
+  .stats-barra{ background:#1f2937; border-radius:999px; height:8px; overflow:hidden; }
+  .stats-barra-fill{ background:var(--accent); height:100%; border-radius:999px; }
+  .stats-alerta{ font-size:12.5px; color:var(--muted); margin:14px 0 0; padding-top:12px; border-top:1px solid var(--border); }
+
   .grupo-block{ margin-top:28px; }
   .grupo-block h2{ font-size:16px; margin:0 0 10px; color:#93c5fd; }
   .grupo-toggle{ display:flex; align-items:center; gap:6px; cursor:pointer; user-select:none; }
@@ -112,6 +135,11 @@
   .doc-fecha{ font-size:11.5px; color:var(--muted); }
   .btn-borrar-doc{ background:none; border:1px solid #7f1d1d; color:#f87171; border-radius:8px; padding:4px 10px; font-size:12px; cursor:pointer; }
   .btn-borrar-doc:hover{ background:rgba(239,68,68,.12); }
+  .btn-eliminar-publicador{
+    width:100%; background:none; border:1px solid #7f1d1d; color:#f87171; border-radius:8px;
+    padding:10px; font-size:13px; font-weight:600; cursor:pointer;
+  }
+  .btn-eliminar-publicador:hover{ background:rgba(239,68,68,.12); }
   .dropzone{
     border:1.5px dashed #334155; border-radius:10px; padding:16px; text-align:center;
     color:var(--muted); font-size:13px; cursor:pointer; transition:border-color .15s, background .15s;
@@ -131,6 +159,9 @@
   .modal-row{ display:flex; flex-direction:column; gap:4px; }
   .modal-row .l{ font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
   .modal-row .v{ font-size:14.5px; }
+  .estado-editar{ display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+  .estado-editar select{ flex:1 1 120px; width:auto; margin:0; padding:6px 8px; font-size:12.5px; border-radius:7px; }
+  .estado-editar #btn-guardar-estado{ flex:0 0 auto; width:auto; padding:6px 12px; font-size:12px; font-weight:600; }
 
   .badge{ display:inline-flex; align-items:center; gap:4px; padding:3px 9px; border-radius:999px; font-size:12px; font-weight:600; text-decoration:none; white-space:nowrap; }
   .badge-ok{ background:var(--ok-bg); color:#4ade80; border:1px solid rgba(74,222,128,.35); }
@@ -138,8 +169,17 @@
   a.badge-ok:hover{ background:rgba(22,163,74,.28); }
   .badge-pend{ background:var(--pend-bg); color:var(--muted); border:1px solid var(--border); }
 
-  .leyenda{ display:flex; gap:16px; flex-wrap:wrap; margin:6px 0 0; color:var(--muted); font-size:12px; }
-  .leyenda span{ display:inline-flex; align-items:center; gap:6px; }
+  .leyenda{
+    display:flex; flex-direction:column; gap:10px; margin:14px 0 20px;
+    padding:12px 16px; background:var(--card); border:1px solid var(--border); border-radius:10px;
+  }
+  .leyenda-fila{ display:flex; align-items:center; gap:16px; flex-wrap:wrap; font-size:12px; color:var(--muted); }
+  .leyenda-fila + .leyenda-fila{ border-top:1px solid var(--border); padding-top:10px; }
+  .leyenda-titulo{
+    flex:0 0 auto; min-width:150px; font-size:11px; font-weight:700;
+    text-transform:uppercase; letter-spacing:.04em; color:var(--text);
+  }
+  .leyenda-item{ display:inline-flex; align-items:center; gap:6px; white-space:nowrap; }
   .muted{ color:var(--muted); }
 
   .aviso{
@@ -215,14 +255,42 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
     <div id="view-estado">
       <div class="resumen" id="resumen"></div>
       <div class="leyenda">
-        <span><span class="badge badge-ok">✔ Sí</span> al día / firmado</span>
-        <span><span class="badge badge-pend">Pendiente</span> falta o sin confirmar</span>
-        <span>Un badge verde con enlace abre el archivo en Drive.</span>
+        <div class="leyenda-fila">
+          <span class="leyenda-titulo">Documentos</span>
+          <span class="leyenda-item"><span class="badge badge-ok">✔ Sí</span> al día / firmado</span>
+          <span class="leyenda-item"><span class="badge badge-pend">Pendiente</span> falta o sin confirmar</span>
+          <span class="leyenda-item">Un badge verde con enlace abre el archivo en Drive</span>
+        </div>
+        <div class="leyenda-fila">
+          <span class="leyenda-titulo">Actividad en la predicación</span>
+          <span class="leyenda-item"><span class="alerta-dpa alerta-amarilla" style="margin-left:0;">⚠</span> Irregular</span>
+          <span class="leyenda-item"><span class="alerta-dpa alerta-roja" style="margin-left:0;">⚠</span> Inactivo</span>
+          <span class="leyenda-item">Según Informes de predicación</span>
+        </div>
       </div>
 
       <div class="toolbar">
         <input id="buscador" class="form-input" type="search" placeholder="Buscar por nombre…" aria-label="Buscar publicador por nombre" />
+        <button id="btnAgregarPublicador" class="btn-primary" type="button">+ Agregar publicador</button>
         <button id="btnRefrescar" class="btn-cancel" type="button">Refrescar</button>
+      </div>
+
+      <div id="form-agregar-publicador" class="card" style="display:none;">
+        <label for="nuevo-nombre">Nombre y Apellido</label>
+        <input id="nuevo-nombre" class="form-input" type="text" placeholder="Nombre completo" style="width:100%; margin-bottom:14px;">
+        <label for="nuevo-grupo">Grupo</label>
+        <select id="nuevo-grupo" class="form-input" style="width:100%; margin-bottom:16px;">
+          <option value="">Elegí un grupo</option>
+          <option value="1">Grupo 1</option>
+          <option value="2">Grupo 2</option>
+          <option value="3">Grupo 3</option>
+          <option value="4">Grupo 4</option>
+          <option value="5">Grupo 5</option>
+        </select>
+        <div style="display:flex; gap:8px;">
+          <button id="btnConfirmarAgregar" class="btn-primary" type="button" style="flex:1;">Guardar</button>
+          <button id="btnCancelarAgregar" class="btn-cancel" type="button">Cancelar</button>
+        </div>
       </div>
 
       <div id="tablas">Cargando…</div>
@@ -231,6 +299,10 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
     <div id="view-grupos" style="display:none">
       <p class="subtitle" style="margin:0 0 16px;">Movés a alguien de un grupo a otro eligiendo el grupo destino y confirmando.</p>
       <div id="grupos-organizar">Cargando…</div>
+    </div>
+
+    <div id="view-estadisticas" style="display:none">
+      <div id="stats-contenido">Cargando…</div>
     </div>
   </div>
 </div>
@@ -337,22 +409,121 @@ function renderDocSection(tipo, p){
   </div>`;
 }
 
+function renderEstadoSection(p){
+  const opciones = (window.PublicadoresApp && window.PublicadoresApp.ESTADOS_VALIDOS) || [];
+  const actual = p.estado || [];
+  const opcionesHtml = (seleccionado) => `<option value="">—</option>` +
+    opciones.map(o => `<option value="${o}" ${o === seleccionado ? 'selected' : ''}>${o}</option>`).join('');
+  return `
+    <div class="estado-editar">
+      <select class="form-input sel-estado" data-slot="0">${opcionesHtml(actual[0] || '')}</select>
+      <select class="form-input sel-estado" data-slot="1">${opcionesHtml(actual[1] || '')}</select>
+      <button type="button" class="btn-cancel" id="btn-guardar-estado">Guardar estado</button>
+    </div>
+  `;
+}
+
+function actividadTexto(actividad){
+  if (!actividad || actividad.code === 'sin-info') return '<span class="v muted">Sin historial suficiente en Informes de predicación</span>';
+  const cls = actividad.code === 'inactivo' ? 'alerta-roja' : (actividad.code === 'irregular' ? 'alerta-amarilla' : '');
+  const icono = cls ? `<span class="alerta-dpa ${cls}" style="margin-left:0;margin-right:6px;">⚠</span>` : '✅ ';
+  return `<span class="v">${icono}${actividad.label}</span>`;
+}
+
 function abrirModalPersona(p){
   personaAbierta = p;
   modalPersonaTitulo.textContent = p.nombre;
-  const estados = (p.estado && p.estado.length) ? p.estado.join(', ') : '—';
   modalPersonaBody.innerHTML = `
     <div class="modal-row"><span class="l">Grupo</span><span class="v">${p.grupo || '—'}</span></div>
-    <div class="modal-row"><span class="l">Estado</span><span class="v">${estados}</span></div>
+    <div class="modal-row"><span class="l">Estado</span>${renderEstadoSection(p)}</div>
+    <div class="modal-row"><span class="l">Actividad (Informes de predicación)</span>${actividadTexto(p.actividad)}</div>
     <div class="modal-row"><span class="l">DPA</span>${renderDocSection('dpa', p)}</div>
     <div class="modal-row"><span class="l">Uso de Datos</span>${renderDocSection('usoDatos', p)}</div>
     <div class="modal-row"><span class="l">Datos Personales</span><span class="v">${window.PublicadoresApp.badge(p.datosPersonales, "", "Sí", "Pendiente")}${p.datosPersonalesFecha ? ` <span class="notas">${p.datosPersonalesFecha}</span>` : ''}${!p.datosPersonales ? ` <a class="badge badge-pend" href="./datos-personales.html?nombre=${encodeURIComponent(p.nombre)}" target="_blank" rel="noopener" style="text-decoration:none;">Completar formulario ↗</a>` : ''}</span></div>
     ${p.notas ? `<div class="modal-row"><span class="l">Notas</span><span class="v">${p.notas}</span></div>` : ''}
     ${p.datosPersonales ? `<div id="datos-personales-detalle" class="dp-detalle"></div>` : ''}
+    <div class="modal-row" style="border-top:1px solid var(--border);padding-top:14px;margin-top:4px;">
+      <button type="button" class="btn-eliminar-publicador" id="btn-eliminar-publicador">Eliminar publicador</button>
+    </div>
   `;
   wireDocSections();
+  wireEstadoSection();
+  document.getElementById('btn-eliminar-publicador').addEventListener('click', eliminarPublicadorActual);
   if (p.datosPersonales) cargarDatosPersonalesDetalle(p);
   modalPersonaOverlay.classList.add('open');
+}
+
+async function eliminarPublicadorActual(){
+  const persona = personaAbierta;
+  if (!persona) return;
+  if (!confirm(`¿Eliminar a ${persona.nombre} de la planilla de Publicadores? Esto borra su fila entera (grupo, DPA, estado, etc.) y no se puede deshacer.`)) return;
+
+  const cfg = window.APP_CONFIG || {};
+  if (!cfg.PUBLICADORES_API_URL){
+    window.showToast('Falta configurar PUBLICADORES_API_URL en app-config.js.', 'error');
+    return;
+  }
+  try {
+    const res = await fetch(cfg.PUBLICADORES_API_URL, {
+      method: 'POST',
+      credentials: 'omit',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'eliminarPublicador', nombre: persona.nombre })
+    });
+    const data = await res.json();
+    if (!data || !data.ok) throw new Error((data && data.error) || 'Error al eliminar');
+
+    personasCache = personasCache.filter(p => p.nombre !== persona.nombre);
+    window.showToast(`${persona.nombre} eliminado`, 'success');
+    cerrarModalPersona();
+    window.PublicadoresApp.renderResumen(document.getElementById('resumen'), personasCache);
+    window.PublicadoresApp.renderTabla(document.getElementById('tablas'), personasCache, document.getElementById('buscador').value, abrirModalPersona);
+    renderOrganizarGrupos();
+    renderEstadisticas();
+  } catch (err){
+    console.error(err);
+    window.showToast('No se pudo eliminar: ' + err.message, 'error');
+  }
+}
+
+function wireEstadoSection(){
+  const btn = document.getElementById('btn-guardar-estado');
+  if (btn) btn.addEventListener('click', guardarEstado);
+}
+
+async function guardarEstado(){
+  const persona = personaAbierta;
+  if (!persona) return;
+  const cfg = window.APP_CONFIG || {};
+  if (!cfg.PUBLICADORES_API_URL){
+    window.showToast('Falta configurar PUBLICADORES_API_URL en app-config.js.', 'error');
+    return;
+  }
+
+  const seleccionados = [...modalPersonaBody.querySelectorAll('.sel-estado')].map(s => s.value).filter(Boolean);
+  const estados = [...new Set(seleccionados)]; // por si eligieron el mismo en los dos selects
+
+  const btn = document.getElementById('btn-guardar-estado');
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch(cfg.PUBLICADORES_API_URL, {
+      method: 'POST',
+      credentials: 'omit',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'cambiarEstado', nombre: persona.nombre, estados })
+    });
+    const data = await res.json();
+    if (!data || !data.ok) throw new Error((data && data.error) || 'Error al guardar el estado');
+
+    persona.estado = estados;
+    window.showToast('Estado actualizado', 'success');
+    reRenderTrasCambio();
+  } catch (err){
+    console.error(err);
+    window.showToast('No se pudo guardar: ' + err.message, 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 const CAMPOS_DATOS_PERSONALES = [
@@ -570,8 +741,60 @@ async function borrarDocumento(tipo){
 function reRenderTrasCambio(){
   window.PublicadoresApp.renderResumen(document.getElementById('resumen'), personasCache);
   window.PublicadoresApp.renderTabla(document.getElementById('tablas'), personasCache, document.getElementById('buscador').value, abrirModalPersona);
+  renderEstadisticas();
   if (personaAbierta) abrirModalPersona(personaAbierta);
 }
+
+// --- Alta de publicador ---
+const formAgregarPublicador = document.getElementById('form-agregar-publicador');
+
+document.getElementById('btnAgregarPublicador').addEventListener('click', () => {
+  formAgregarPublicador.style.display = formAgregarPublicador.style.display === 'none' ? 'block' : 'none';
+  if (formAgregarPublicador.style.display === 'block') document.getElementById('nuevo-nombre').focus();
+});
+
+document.getElementById('btnCancelarAgregar').addEventListener('click', () => {
+  formAgregarPublicador.style.display = 'none';
+  document.getElementById('nuevo-nombre').value = '';
+  document.getElementById('nuevo-grupo').value = '';
+});
+
+document.getElementById('btnConfirmarAgregar').addEventListener('click', async () => {
+  const nombre = document.getElementById('nuevo-nombre').value.trim();
+  const grupo = document.getElementById('nuevo-grupo').value;
+  if (!nombre){ window.showToast('Ingresá el nombre.', 'error'); return; }
+  if (!grupo){ window.showToast('Elegí un grupo.', 'error'); return; }
+
+  const cfg = window.APP_CONFIG || {};
+  if (!cfg.PUBLICADORES_API_URL){
+    window.showToast('Falta configurar PUBLICADORES_API_URL en app-config.js.', 'error');
+    return;
+  }
+
+  const btn = document.getElementById('btnConfirmarAgregar');
+  btn.disabled = true;
+  try {
+    const res = await fetch(cfg.PUBLICADORES_API_URL, {
+      method: 'POST',
+      credentials: 'omit',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'agregarPublicador', nombre, grupo })
+    });
+    const data = await res.json();
+    if (!data || !data.ok) throw new Error((data && data.error) || 'Error al agregar');
+
+    window.showToast(`${nombre} agregado al Grupo ${grupo}`, 'success');
+    document.getElementById('nuevo-nombre').value = '';
+    document.getElementById('nuevo-grupo').value = '';
+    formAgregarPublicador.style.display = 'none';
+    await cargarYRenderizar();
+  } catch (err){
+    console.error(err);
+    window.showToast('No se pudo agregar: ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 document.getElementById('modal-persona-close').addEventListener('click', cerrarModalPersona);
 modalPersonaOverlay.addEventListener('click', (e) => { if (e.target === modalPersonaOverlay) cerrarModalPersona(); });
@@ -593,10 +816,21 @@ async function cargarYRenderizar(){
   avisoEl.style.display = 'none';
 
   try {
-    personasCache = await window.PublicadoresApp.cargarPublicadores();
+    const [personas, estadoActividad] = await Promise.all([
+      window.PublicadoresApp.cargarPublicadores(),
+      window.PublicadoresApp.cargarEstadoActividad(cfg.INFORMES_PREDICACION_API_URL)
+    ]);
+    // Cruza por nombre (normalizado) con la caché de Informes de predicación.
+    // Si el nombre no matchea exacto entre las dos planillas, queda sin
+    // ícono — mejor eso que mostrar un estado equivocado.
+    personas.forEach(p => {
+      p.actividad = estadoActividad.get(window.PublicadoresApp.normalizeName(p.nombre)) || null;
+    });
+    personasCache = personas;
     window.PublicadoresApp.renderResumen(document.getElementById('resumen'), personasCache);
     window.PublicadoresApp.renderTabla(document.getElementById('tablas'), personasCache, document.getElementById('buscador').value, abrirModalPersona);
     renderOrganizarGrupos();
+    renderEstadisticas();
   } catch (err){
     console.error(err);
     document.getElementById('tablas').innerHTML = `<p class="muted">No se pudo cargar la planilla de publicadores.</p>`;
@@ -607,24 +841,182 @@ document.getElementById('buscador').addEventListener('input', (e) => {
   window.PublicadoresApp.renderTabla(document.getElementById('tablas'), personasCache, e.target.value, abrirModalPersona);
 });
 
-// --- Vista: "Ver estado" o "Organizar grupos" ---
-// Son dos accesos separados en el sidebar del portal (index.html), cada uno
+// --- Vista: "Ver estado", "Organizar grupos" o "Estadísticas" ---
+// Son tres accesos separados en el sidebar del portal (index.html), cada uno
 // apunta a esta misma página pero con una URL distinta: publicadores.html
-// (estado) y publicadores.html?vista=grupos (organizar grupos). Acá adentro
-// ya no hay forma de pasar de uno a otro: la vista queda fija según por
-// dónde se entró.
+// (estado), publicadores.html?vista=grupos y publicadores.html?vista=estadisticas.
+// Acá adentro ya no hay forma de pasar de uno a otro: la vista queda fija
+// según por dónde se entró.
 const viewEstado = document.getElementById('view-estado');
 const viewGrupos = document.getElementById('view-grupos');
-const esVistaGrupos = new URLSearchParams(location.search).get('vista') === 'grupos';
+const viewEstadisticas = document.getElementById('view-estadisticas');
+const vistaActual = new URLSearchParams(location.search).get('vista');
 
-if (esVistaGrupos){
-  viewEstado.style.display = 'none';
+[viewEstado, viewGrupos, viewEstadisticas].forEach(v => v.style.display = 'none');
+if (vistaActual === 'grupos'){
   viewGrupos.style.display = 'block';
   document.getElementById('pagina-titulo').textContent = 'Organizar grupos';
   document.getElementById('pagina-subtitulo').textContent = 'Mové publicadores de un grupo a otro.';
+} else if (vistaActual === 'estadisticas'){
+  viewEstadisticas.style.display = 'block';
+  document.getElementById('pagina-titulo').textContent = 'Estadísticas';
+  document.getElementById('pagina-subtitulo').textContent = 'Conteo de ancianos, siervos ministeriales, precursores y estado general por grupo.';
 } else {
   viewEstado.style.display = 'block';
-  viewGrupos.style.display = 'none';
+}
+
+// --- Estadísticas ---
+let chartEstadosInstance = null;
+let chartGruposInstance = null;
+
+function renderEstadisticas(){
+  const cont = document.getElementById('stats-contenido');
+  if (!cont) return;
+
+  if (!personasCache.length){
+    cont.innerHTML = `<p class="muted">Todavía no hay publicadores cargados.</p>`;
+    return;
+  }
+
+  const ESTADOS = (window.PublicadoresApp && window.PublicadoresApp.ESTADOS_VALIDOS) || [];
+  const total = personasCache.length;
+  const pct = (n) => total ? Math.round((n / total) * 100) : 0;
+
+  // Anciano / Siervo Ministerial son un nombramiento en paralelo, no una
+  // categoría de publicador: alguien puede ser "Anciano" Y "Precursor
+  // Regular" a la vez, así que no compiten por el mismo lugar en el
+  // gráfico de categorías — se cuentan aparte (countsRol).
+  //
+  // Para la categoría de publicador: si la persona es Precursor Especial /
+  // Regular / Auxiliar o Publicador No Bautizado, esa es su categoría. Si
+  // no tiene ninguna de esas pero SÍ es Anciano o Siervo Ministerial,
+  // cuenta como "Publicador" (el nombramiento no cambia su categoría base).
+  const ROLES_PARALELOS = ['Anciano', 'Siervo Ministerial'];
+  const CATEGORIAS = ESTADOS.filter(e => !ROLES_PARALELOS.includes(e));
+  const CATEGORIAS_ESPECIFICAS = ['Precursor Especial', 'Precursor Regular', 'Precursor Auxiliar', 'Publicador No Bautizado'];
+
+  const countsRol = {};
+  ROLES_PARALELOS.forEach(r => { countsRol[r] = personasCache.filter(p => p.estado && p.estado.includes(r)).length; });
+
+  function categoriaDePersona(p){
+    const estado = p.estado || [];
+    const especifica = CATEGORIAS_ESPECIFICAS.find(c => estado.includes(c));
+    if (especifica) return especifica;
+    if (estado.includes('Publicador')) return 'Publicador';
+    if (estado.includes('Anciano') || estado.includes('Siervo Ministerial')) return 'Publicador';
+    return null;
+  }
+
+  const countsCategoria = {};
+  CATEGORIAS.forEach(c => { countsCategoria[c] = 0; });
+  let sinCategoria = 0;
+  personasCache.forEach(p => {
+    const cat = categoriaDePersona(p);
+    if (cat && countsCategoria.hasOwnProperty(cat)) countsCategoria[cat]++; else sinCategoria++;
+  });
+
+  const countsGrupo = new Map();
+  personasCache.forEach(p => {
+    const g = p.grupo || 'Sin grupo';
+    countsGrupo.set(g, (countsGrupo.get(g) || 0) + 1);
+  });
+  const gruposOrdenados = Array.from(countsGrupo.keys()).sort((a, b) => {
+    const na = parseInt(a, 10), nb = parseInt(b, 10);
+    if (isFinite(na) && isFinite(nb)) return na - nb;
+    return String(a).localeCompare(String(b), 'es');
+  });
+
+  const dpaOk = personasCache.filter(p => p.dpa).length;
+  const usoDatosOk = personasCache.filter(p => p.usoDatos).length;
+  const datosPersonalesOk = personasCache.filter(p => p.datosPersonales).length;
+  const dpaAlertaAmarilla = personasCache.filter(p => p.alertaDPA && p.alertaDPA.nivel === 'amarilla').length;
+  const dpaAlertaRoja = personasCache.filter(p => p.alertaDPA && p.alertaDPA.nivel === 'roja').length;
+
+  cont.innerHTML = `
+    <div class="stats-cards">
+      ${ROLES_PARALELOS.map(r => `<div class="stats-card"><span class="n">${countsRol[r]}</span><span class="l">${r}</span></div>`).join('')}
+    </div>
+
+    <div class="stats-cards">
+      <div class="stats-card"><span class="n">${total}</span><span class="l">Total publicadores</span></div>
+      ${CATEGORIAS.map(c => `<div class="stats-card"><span class="n">${countsCategoria[c]}</span><span class="l">${c}</span></div>`).join('')}
+      <div class="stats-card"><span class="n">${sinCategoria}</span><span class="l">Sin categoría asignada</span></div>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stats-box">
+        <h3>Personas por categoría de publicador</h3>
+        <canvas id="chart-estados" height="220"></canvas>
+      </div>
+      <div class="stats-box">
+        <h3>Publicadores por grupo</h3>
+        <canvas id="chart-grupos" height="220"></canvas>
+      </div>
+    </div>
+
+    <div class="stats-box">
+      <h3>Documentación al día</h3>
+      <div class="stats-progreso">
+        <div>
+          <span class="stats-progreso-label">DPA — ${dpaOk}/${total} (${pct(dpaOk)}%)</span>
+          <div class="stats-barra"><div class="stats-barra-fill" style="width:${pct(dpaOk)}%"></div></div>
+        </div>
+        <div>
+          <span class="stats-progreso-label">Uso de Datos — ${usoDatosOk}/${total} (${pct(usoDatosOk)}%)</span>
+          <div class="stats-barra"><div class="stats-barra-fill" style="width:${pct(usoDatosOk)}%"></div></div>
+        </div>
+        <div>
+          <span class="stats-progreso-label">Datos Personales — ${datosPersonalesOk}/${total} (${pct(datosPersonalesOk)}%)</span>
+          <div class="stats-barra"><div class="stats-barra-fill" style="width:${pct(datosPersonalesOk)}%"></div></div>
+        </div>
+      </div>
+      ${(dpaAlertaAmarilla + dpaAlertaRoja) > 0 ? `
+        <p class="stats-alerta">
+          ⚠️ ${dpaAlertaRoja ? `<b>${dpaAlertaRoja}</b> con DPA vencido o por vencer en menos de 30 días` : ''}
+          ${dpaAlertaRoja && dpaAlertaAmarilla ? ' · ' : ''}
+          ${dpaAlertaAmarilla ? `<b>${dpaAlertaAmarilla}</b> con DPA que vence en menos de 3 meses` : ''}
+        </p>` : ''}
+    </div>
+  `;
+
+  if (typeof Chart === 'undefined') return; // CDN de Chart.js no cargó (sin internet, bloqueado, etc.)
+
+  const colorTexto = '#94a3b8';
+  const colorGrid = 'rgba(255,255,255,0.08)';
+
+  if (chartEstadosInstance) chartEstadosInstance.destroy();
+  chartEstadosInstance = new Chart(document.getElementById('chart-estados'), {
+    type: 'bar',
+    data: {
+      labels: CATEGORIAS,
+      datasets: [{ data: CATEGORIAS.map(c => countsCategoria[c]), backgroundColor: '#2563eb', borderRadius: 4 }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: colorTexto, font: { size: 10 } }, grid: { display: false } },
+        y: { beginAtZero: true, ticks: { color: colorTexto, precision: 0 }, grid: { color: colorGrid } }
+      }
+    }
+  });
+
+  if (chartGruposInstance) chartGruposInstance.destroy();
+  chartGruposInstance = new Chart(document.getElementById('chart-grupos'), {
+    type: 'bar',
+    data: {
+      labels: gruposOrdenados.map(g => 'Grupo ' + g),
+      datasets: [{ data: gruposOrdenados.map(g => countsGrupo.get(g)), backgroundColor: '#16a34a', borderRadius: 4 }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: colorTexto }, grid: { display: false } },
+        y: { beginAtZero: true, ticks: { color: colorTexto, precision: 0 }, grid: { color: colorGrid } }
+      }
+    }
+  });
 }
 
 // --- Organizar grupos: mover a alguien de un grupo a otro ---
@@ -732,6 +1124,7 @@ async function moverPersonaDeGrupo(persona, grupoDestino, btn){
     window.PublicadoresApp.renderResumen(document.getElementById('resumen'), personasCache);
     window.PublicadoresApp.renderTabla(document.getElementById('tablas'), personasCache, document.getElementById('buscador').value, abrirModalPersona);
     renderOrganizarGrupos();
+    renderEstadisticas();
   } catch (err){
     console.error(err);
     window.showToast('No se pudo mover: ' + err.message, 'error');

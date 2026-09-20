@@ -1,5 +1,5 @@
 // Reemplazá esta URL por la de tu Web App de Google Apps Script (ver README.md)
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzAG7WB9G1mGscY7CfGvVrJMo6vlQhFNKScSSA5LsFbmekZJS6zqM1sl73odxYwWCTG/exec";
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxHOxsgkGnW1AZlc_wKmzPDw8FmK0X01Rb-CdBQ7q2z2zXWsnC1c39JqoK2XOR-O9Zw/exec";
 
 const form = document.getElementById("form-predicacion");
 const grupoSelect = document.getElementById("grupo");

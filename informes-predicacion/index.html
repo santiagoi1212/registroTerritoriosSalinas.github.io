@@ -253,6 +253,26 @@
   }
   .pub-roster-item .pub-flag { flex: 0 0 auto; }
 
+  /* Colapsable, para que la lista completa de integrantes no domine la
+     tarjeta — lo importante (quién falta) ya se ve arriba, sin plegar. */
+  .pub-roster-details { margin-top: 10px; }
+  .pub-roster-details summary {
+    cursor: pointer; font-size: 0.72rem; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--text-muted); list-style: none; padding: 2px 0;
+  }
+  .pub-roster-details summary::-webkit-details-marker { display: none; }
+  .pub-roster-details summary::before { content: "▸ "; }
+  .pub-roster-details[open] summary::before { content: "▾ "; }
+  .pub-roster-legend {
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    font-size: 0.72rem; color: var(--text-muted); margin: 8px 0;
+  }
+  .pub-roster-legend span { display: inline-flex; align-items: center; gap: 4px; }
+  .pub-roster-legend .pub-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); }
+  .pub-roster-legend .st-ok-dot { background: var(--status-good); }
+  .pub-roster-legend .st-warn-dot { background: var(--status-warning); }
+  .pub-roster-legend .st-crit-dot { background: var(--status-critical); }
+
   /* ---- Modal de ficha por persona ---- */
   .pub-modal-backdrop {
     position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex;
@@ -725,10 +745,8 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
   function rosterItem(name) {
     var status = personStatus(name);
     var cls = "pub-roster-item clickable " + statusBadgeClass(status.code);
-    var flag = status.code === "irregular" ? " ⚠" : (status.code === "inactivo" ? " ⛔" : "");
-    return '<button type="button" class="' + cls + '" data-person="' + escapeHtml(name) + '">' +
+    return '<button type="button" class="' + cls + '" data-person="' + escapeHtml(name) + '" title="' + escapeHtml(status.label) + '">' +
       '<span class="pub-dot"></span><span class="pub-name-text">' + escapeHtml(name) + "</span>" +
-      (flag ? '<span class="pub-flag">' + flag + "</span>" : "") +
       "</button>";
   }
 
@@ -852,8 +870,17 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
         '<div class="pub-section-label">Faltan registrarse' + (STATE.selectedPeriod != null ? " (" + periodLabel(STATE.selectedPeriod) + ")" : "") + "</div>" +
         missingHtml +
         (noActivityHtml ? '<div class="pub-section-label">Registraron, sin actividad este mes</div>' + noActivityHtml : "") +
-        '<div class="pub-section-label">Integrantes del grupo (click en un nombre para ver su ficha)</div>' +
-        '<div class="pub-roster-grid">' + view.roster.map(rosterItem).join("") + "</div>" +
+        "<details class=\"pub-roster-details\">" +
+          "<summary>Integrantes del grupo (" + view.roster.length + ")</summary>" +
+          '<p class="pub-roster-legend">' +
+            '<span><span class="pub-dot st-ok-dot"></span> Activo</span>' +
+            '<span><span class="pub-dot st-warn-dot"></span> Irregular</span>' +
+            '<span><span class="pub-dot st-crit-dot"></span> Inactivo</span>' +
+            '<span><span class="pub-dot"></span> Sin historial</span>' +
+            " · click en un nombre para ver su ficha" +
+          "</p>" +
+          '<div class="pub-roster-grid">' + view.roster.map(rosterItem).join("") + "</div>" +
+        "</details>" +
         '<div class="pub-section-label">Situación' + (STATE.selectedPeriod != null ? " (" + periodLabel(STATE.selectedPeriod) + ")" : "") + "</div>" +
         '<div class="pub-mini-chart-wrap"><canvas id="' + canvasId + '"></canvas></div>' +
       "</div>";

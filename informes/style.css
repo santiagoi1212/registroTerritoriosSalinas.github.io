@@ -1,14 +1,14 @@
 :root {
-  --color-primario: #1f3245;
-  --color-primario-oscuro: #14212e;
-  --color-texto: #23282e;
-  --color-texto-suave: #636b74;
-  --color-borde: #d5d8dc;
-  --color-fondo: #f4f5f6;
-  --color-superficie: #ffffff;
-  --color-error: #9b2f2f;
-  --color-ok: #2f6b3f;
-  --radio: 4px;
+  --bg: #0b1220;
+  --card: #0f172a;
+  --border: #263349;
+  --text: #e5e7eb;
+  --muted: #94a3b8;
+  --accent: #2563eb;
+  --accent-dark: #1d4ed8;
+  --ok: #4ade80;
+  --danger: #f87171;
+  --radio: 8px;
 }
 
 * {
@@ -17,9 +17,9 @@
 
 body {
   margin: 0;
-  font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
-  background: var(--color-fondo);
-  color: var(--color-texto);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+  background: radial-gradient(1200px 600px at 50% -10%, #14213d 0%, var(--bg) 60%);
+  color: var(--text);
   min-height: 100vh;
 }
 
@@ -32,8 +32,6 @@ body {
 .form-header {
   text-align: center;
   padding: 34px 16px 26px;
-  background: var(--color-superficie);
-  border-bottom: 1px solid var(--color-borde);
   margin-bottom: 32px;
 }
 
@@ -41,7 +39,7 @@ body {
   font-family: inherit;
   font-weight: 700;
   font-size: 21px;
-  color: var(--color-primario-oscuro);
+  color: var(--text);
   margin: 0 0 8px;
   letter-spacing: 0.1px;
 }
@@ -52,12 +50,12 @@ body {
   font-weight: 500;
   letter-spacing: 0.6px;
   text-transform: uppercase;
-  color: var(--color-texto-suave);
+  color: var(--muted);
 }
 
 form {
-  background: var(--color-superficie);
-  border: 1px solid var(--color-borde);
+  background: var(--card);
+  border: 1px solid var(--border);
   border-radius: var(--radio);
   padding: 32px 32px 28px;
 }
@@ -70,7 +68,7 @@ label {
   display: block;
   font-size: 13px;
   font-weight: 600;
-  color: var(--color-texto);
+  color: var(--text);
   margin-bottom: 6px;
 }
 
@@ -82,16 +80,16 @@ textarea {
   padding: 10px 12px;
   font-family: inherit;
   font-size: 14.5px;
-  color: var(--color-texto);
-  background: var(--color-superficie);
-  border: 1px solid var(--color-borde);
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid #334155;
   border-radius: var(--radio);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 select {
   appearance: none;
-  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%23636b74'%3e%3cpath fill-rule='evenodd' d='M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z' clip-rule='evenodd'/%3e%3c/svg%3e");
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%2394a3b8'%3e%3cpath fill-rule='evenodd' d='M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z' clip-rule='evenodd'/%3e%3c/svg%3e");
   background-repeat: no-repeat;
   background-position: right 12px center;
   background-size: 18px;
@@ -100,15 +98,15 @@ select {
 
 input::placeholder,
 textarea::placeholder {
-  color: #9aa1a8;
+  color: #64748b;
 }
 
 input:focus,
 select:focus,
 textarea:focus {
   outline: none;
-  border-color: var(--color-primario);
-  box-shadow: 0 0 0 2px rgba(31, 50, 69, 0.12);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
 }
 
 textarea {
@@ -131,7 +129,7 @@ fieldset[disabled] select,
 fieldset[disabled] input,
 fieldset[disabled] textarea {
   cursor: not-allowed;
-  background: #f1f2f3;
+  background: #1f2937;
 }
 
 .fila-doble {
@@ -160,19 +158,19 @@ fieldset[disabled] textarea {
   gap: 8px;
   font-weight: 500;
   font-size: 14.5px;
-  color: var(--color-texto);
+  color: var(--text);
   cursor: pointer;
 }
 
 .radio-option input {
   width: 17px;
   height: 17px;
-  accent-color: var(--color-primario);
+  accent-color: var(--accent);
   cursor: pointer;
 }
 
 #campos-participacion {
-  border-top: 1px solid var(--color-borde);
+  border-top: 1px solid var(--border);
   padding-top: 20px;
   margin-top: 4px;
 }
@@ -183,7 +181,7 @@ fieldset[disabled] textarea {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  color: var(--color-texto-suave);
+  color: var(--muted);
   margin: 0 0 18px;
 }
 
@@ -200,7 +198,7 @@ button {
   font-weight: 600;
   letter-spacing: 0.1px;
   color: #ffffff;
-  background: var(--color-primario);
+  background: var(--accent);
   border: none;
   border-radius: var(--radio);
   cursor: pointer;
@@ -208,11 +206,11 @@ button {
 }
 
 button:hover {
-  background: var(--color-primario-oscuro);
+  background: var(--accent-dark);
 }
 
 button:disabled {
-  background: #a7adb3;
+  background: #475569;
   cursor: not-allowed;
 }
 
@@ -225,17 +223,17 @@ button:disabled {
 }
 
 .mensaje.ok {
-  color: var(--color-ok);
+  color: var(--ok);
 }
 
 .mensaje.error {
-  color: var(--color-error);
+  color: var(--danger);
 }
 
 .nota-pie {
   text-align: center;
   font-size: 12px;
-  color: var(--color-texto-suave);
+  color: var(--muted);
   margin: 16px 0 0;
 }
 

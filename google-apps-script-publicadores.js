@@ -266,6 +266,9 @@ function doPostDocumentos_(e) {
       case "guardarDatosPersonales":       result = guardarDatosPersonales(data); break;
       case "actualizarDatosPersonalesAdmin": result = actualizarDatosPersonalesAdmin(data); break;
       case "cambiarGrupo":                 result = cambiarGrupoPublicador(data); break;
+      case "cambiarEstado":                result = cambiarEstadoPublicador(data); break;
+      case "agregarPublicador":            result = agregarPublicador(data); break;
+      case "eliminarPublicador":           result = eliminarPublicador(data); break;
       default:                       result = { ok: false, error: "Acción desconocida" };
     }
   } catch (err) {
@@ -533,5 +536,73 @@ function cambiarGrupoPublicador(data) {
   if (row === -1) return { ok: false, error: 'No se encontró a "' + nombre + '" en la planilla' };
 
   sheet.getRange(row, cols["Grupo"]).setValue(grupo);
+  return { ok: true };
+}
+
+// ===================================================================
+// Estado (nuevo, para el modal de publicadores.html): asigna/quita hasta
+// dos estados (Anciano, Siervo Ministerial, Publicador, Publicador No
+// Bautizado, Precursor Regular, Precursor Especial), reescribiendo la
+// columna "Estado" de la fila de esa persona. data.estados es un array
+// (0, 1 o 2 elementos); se guarda uno por otro, separados por ", ", igual
+// formato que ya venía usando la planilla (ej: "Anciano, Precursor Regular").
+// Un array vacío borra el estado.
+// ===================================================================
+function cambiarEstadoPublicador(data) {
+  const nombre = data.nombre;
+  const estados = Array.isArray(data.estados) ? data.estados.filter(Boolean).slice(0, 2) : [];
+  if (!nombre) return { ok: false, error: "Falta el nombre" };
+
+  const sheet = getPublicadoresSheet_();
+  const cols = getHeaderMap_(sheet);
+  if (!cols["Nombre"]) return { ok: false, error: 'La hoja no tiene columna "Nombre"' };
+  if (!cols["Estado"]) return { ok: false, error: 'La hoja no tiene columna "Estado"' };
+
+  const row = findRowByNombre_(sheet, cols["Nombre"], nombre);
+  if (row === -1) return { ok: false, error: 'No se encontró a "' + nombre + '" en la planilla' };
+
+  sheet.getRange(row, cols["Estado"]).setValue(estados.join(", "));
+  return { ok: true };
+}
+
+// ===================================================================
+// ABM de publicadores (nuevo, para el formulario "Agregar publicador" y el
+// botón "Eliminar" del modal en publicadores.html).
+// ===================================================================
+function agregarPublicador(data) {
+  const nombre = String(data.nombre || "").trim();
+  const grupo = data.grupo;
+  if (!nombre) return { ok: false, error: "Falta el nombre" };
+  if (!grupo && grupo !== 0) return { ok: false, error: "Falta el grupo" };
+
+  const sheet = getPublicadoresSheet_();
+  const cols = getHeaderMap_(sheet);
+  if (!cols["Nombre"]) return { ok: false, error: 'La hoja no tiene columna "Nombre"' };
+  if (!cols["Grupo"]) return { ok: false, error: 'La hoja no tiene columna "Grupo"' };
+
+  if (findRowByNombre_(sheet, cols["Nombre"], nombre) !== -1) {
+    return { ok: false, error: 'Ya existe "' + nombre + '" en la planilla' };
+  }
+
+  const fila = new Array(sheet.getLastColumn()).fill("");
+  fila[cols["Nombre"] - 1] = nombre;
+  fila[cols["Grupo"] - 1] = grupo;
+  sheet.appendRow(fila);
+
+  return { ok: true };
+}
+
+function eliminarPublicador(data) {
+  const nombre = data.nombre;
+  if (!nombre) return { ok: false, error: "Falta el nombre" };
+
+  const sheet = getPublicadoresSheet_();
+  const cols = getHeaderMap_(sheet);
+  if (!cols["Nombre"]) return { ok: false, error: 'La hoja no tiene columna "Nombre"' };
+
+  const row = findRowByNombre_(sheet, cols["Nombre"], nombre);
+  if (row === -1) return { ok: false, error: 'No se encontró a "' + nombre + '" en la planilla' };
+
+  sheet.deleteRow(row);
   return { ok: true };
 }

@@ -69,11 +69,12 @@
   }
 
   // ==========================
-  // Estado (publicador / precursor regular / precursor especial /
-  // siervo ministerial / anciano). Una persona puede tener hasta dos.
-  // En la planilla va en la columna "Estado", separados por "," o "|".
+  // Estado (anciano / siervo ministerial / publicador / publicador no
+  // bautizado / precursor regular / precursor especial). Una persona puede
+  // tener hasta dos. En la planilla va en la columna "Estado", separados
+  // por "," o "|".
   // ==========================
-  const ESTADOS_VALIDOS = ["Publicador", "Precursor Regular", "Precursor Especial", "Siervo Ministerial", "Anciano"];
+  const ESTADOS_VALIDOS = ["Anciano", "Siervo Ministerial", "Publicador", "Publicador No Bautizado", "Precursor Regular", "Precursor Especial"];
 
   function normalizeEstado(v) {
     const norm = normalizeName(v);
@@ -131,6 +132,82 @@
     if (!alerta || !alerta.nivel) return "";
     const cls = alerta.nivel === "roja" ? "alerta-roja" : "alerta-amarilla";
     return ` <span class="alerta-dpa ${cls} tooltip" tabindex="0" data-tooltip="${alerta.mensaje}">⚠</span>`;
+  }
+
+  // ==========================
+  // Estado de actividad (Activo / Irregular / Inactivo), tomado del mismo
+  // cálculo que ya usa el widget "Informes de predicación"
+  // (informes-predicacion/index.html, función personStatus): mira los
+  // últimos 6 períodos con datos de alguien y cuenta cuántos meses esa
+  // persona no participó. Acá se replica el mismo algoritmo sobre la
+  // "Cache" que expone ese mismo backend (?action=cache), para no
+  // duplicar/tocar ese widget.
+  // ==========================
+  function calcularEstadoActividad(historial, periodos, filasPorNombrePeriodo, claveNombre) {
+    if (historial.length < 2) return { code: "sin-info", label: "Sin historial suficiente" };
+
+    const primerPeriodoPropio = historial[0].periodKey;
+    const ventana = periodos.filter(p => p >= primerPeriodoPropio).slice(0, 6);
+
+    let consecutivosNo = 0, totalNo = 0, rachaCortada = false;
+    ventana.forEach(p => {
+      const fila = filasPorNombrePeriodo.get(claveNombre + "|" + p);
+      const noParticipo = !fila || fila.participo === false;
+      if (noParticipo) {
+        totalNo++;
+        if (!rachaCortada) consecutivosNo++;
+      } else {
+        rachaCortada = true;
+      }
+    });
+
+    if (consecutivosNo >= 6) return { code: "inactivo", label: "Inactivo" };
+    if (consecutivosNo >= 2 || totalNo >= 2) return { code: "irregular", label: "Irregular" };
+    return { code: "activo", label: "Activo" };
+  }
+
+  // Devuelve un Map nombre-normalizado -> {code,label} para todos los
+  // nombres presentes en la caché de informes-predicacion. Si no se puede
+  // cargar (URL sin configurar, sin red, etc.) devuelve un Map vacío — el
+  // llamador simplemente no muestra el ícono, sin romper nada.
+  async function cargarEstadoActividad(apiUrl) {
+    if (!apiUrl) return new Map();
+    try {
+      const separador = apiUrl.includes("?") ? "&" : "?";
+      const res = await fetch(apiUrl + separador + "action=cache&t=" + Date.now(), { cache: "no-store" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const data = await res.json();
+      const filas = Array.isArray(data.rows) ? data.rows : [];
+
+      const porNombre = new Map();
+      const porNombrePeriodo = new Map();
+      filas.forEach(r => {
+        const clave = normalizeName(r.nombre);
+        if (!porNombre.has(clave)) porNombre.set(clave, []);
+        porNombre.get(clave).push(r);
+        porNombrePeriodo.set(clave + "|" + r.periodKey, r);
+      });
+      porNombre.forEach(lista => lista.sort((a, b) => a.periodKey - b.periodKey));
+
+      const periodosSet = new Set();
+      filas.forEach(r => { if (r.periodKey != null) periodosSet.add(r.periodKey); });
+      const periodos = [...periodosSet].sort((a, b) => b - a);
+
+      const estados = new Map();
+      porNombre.forEach((historial, clave) => {
+        estados.set(clave, calcularEstadoActividad(historial, periodos, porNombrePeriodo, clave));
+      });
+      return estados;
+    } catch (err) {
+      console.warn("No se pudo cargar el estado de actividad (Informes de predicación):", err);
+      return new Map();
+    }
+  }
+
+  function alertaActividadHtml(actividad) {
+    if (!actividad || actividad.code === "activo" || actividad.code === "sin-info") return "";
+    const cls = actividad.code === "inactivo" ? "alerta-roja" : "alerta-amarilla";
+    return ` <span class="alerta-dpa ${cls} tooltip" tabindex="0" data-tooltip="${actividad.label} en la predicación">⚠</span>`;
   }
 
   // ==========================
@@ -247,7 +324,7 @@
         const estadoTxt = (p.estado && p.estado.length) ? ` <span class="estado-tag">(${p.estado.join(", ")})</span>` : "";
         return `
         <tr class="fila-persona" data-idx="${p.__idx}" tabindex="0" role="button" aria-haspopup="dialog">
-          <td>${p.nombre}${estadoTxt}${p.notas ? `<div class="notas">${p.notas}</div>` : ""}</td>
+          <td>${p.nombre}${alertaActividadHtml(p.actividad)}${estadoTxt}${p.notas ? `<div class="notas">${p.notas}</div>` : ""}</td>
           <td>${badge(p.dpa, p.linkDpa)}${alertaDpaHtml(p.alertaDPA)}</td>
           <td>${badge(p.usoDatos, p.linkAutorizacion)}</td>
           <td>${badge(p.datosPersonales, "", "Sí", "Pendiente")}${p.datosPersonalesFecha ? `<div class="notas">${p.datosPersonalesFecha}</div>` : ""}</td>
@@ -309,6 +386,10 @@
     badge,
     formatFecha,
     alertaDpaHtml,
-    calcularAlertaDPA
+    calcularAlertaDPA,
+    ESTADOS_VALIDOS,
+    parseEstados,
+    cargarEstadoActividad,
+    alertaActividadHtml
   };
 })();
