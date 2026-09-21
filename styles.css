@@ -288,7 +288,7 @@ body { font-family: var(--font-body); background: var(--bg); color: var(--text-p
 }
 .preview-header-print h1 { font-family: var(--font-display); font-size: 1.8rem; margin-bottom:0.25rem; }
 .preview-header-print p { color: var(--text-secondary); font-size:0.9rem; }
-.preview-dept-section { margin-bottom: 1.25rem; break-inside: avoid; }
+.preview-dept-section { margin-bottom: 1.25rem; break-inside: avoid; overflow-x: auto; }
 .preview-dept-title {
   font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em;
   padding: 0.5rem 0.9rem; border-radius: var(--radius-sm) var(--radius-sm) 0 0; margin-bottom:0;

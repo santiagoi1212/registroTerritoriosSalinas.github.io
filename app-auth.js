@@ -9,7 +9,8 @@
   let _state = {
     logged: false,
     username: null,
-    role: null // "admin" | "capitan" | "publicador" | etc.
+    role: null, // "admin" | "capitan" | "publicador" | etc.
+    nombreCompleto: null // "Nombre Apellido", si el backend lo mandó al loguear
   };
 
   let _lastActivityTouch = 0;
@@ -116,7 +117,7 @@
 
   function persistSession(){
     if (_state.logged){
-      setCookie(SESSION_COOKIE, JSON.stringify({ u: _state.username, r: _state.role }), SESSION_TIMEOUT_MIN);
+      setCookie(SESSION_COOKIE, JSON.stringify({ u: _state.username, r: _state.role, n: _state.nombreCompleto }), SESSION_TIMEOUT_MIN);
     } else {
       deleteCookie(SESSION_COOKIE);
     }
@@ -125,14 +126,14 @@
   function loadSessionFromStorage(){
     const raw = getCookie(SESSION_COOKIE);
     if (!raw){
-      _state = { logged:false, username:null, role:null };
+      _state = { logged:false, username:null, role:null, nombreCompleto:null };
       return;
     }
     try{
       const data = JSON.parse(raw);
-      _state = { logged:true, username: data.u || null, role: data.r || null };
+      _state = { logged:true, username: data.u || null, role: data.r || null, nombreCompleto: data.n || null };
     }catch(_){
-      _state = { logged:false, username:null, role:null };
+      _state = { logged:false, username:null, role:null, nombreCompleto:null };
     }
   }
 
@@ -143,7 +144,7 @@
     const now = Date.now();
     if (now - _lastActivityTouch < ACTIVITY_THROTTLE_MS) return;
     _lastActivityTouch = now;
-    setCookie(SESSION_COOKIE, JSON.stringify({ u: _state.username, r: _state.role }), SESSION_TIMEOUT_MIN);
+    setCookie(SESSION_COOKIE, JSON.stringify({ u: _state.username, r: _state.role, n: _state.nombreCompleto }), SESSION_TIMEOUT_MIN);
   }
 
   function startExpiryWatcher(){
@@ -191,6 +192,7 @@
     _state.logged   = true;
     _state.username = data.user || user;
     _state.role     = data.role  || "publicador"; // default si no viene
+    _state.nombreCompleto = [data.nombre, data.apellido].filter(Boolean).join(" ").trim() || null;
 
     _lastActivityTouch = Date.now();
     persistSession();
@@ -215,7 +217,7 @@
   }
 
   function logout(byTimeout){
-    _state = { logged:false, username:null, role:null };
+    _state = { logged:false, username:null, role:null, nombreCompleto:null };
     persistSession();
     applyAuthHeaderUI();
     applyRoleUI();
@@ -231,6 +233,8 @@
   function isLogged(){ return _state.logged; }
   function getUsername(){ return _state.username; }
   function getRole(){ return _state.role; }
+  // Nombre y apellido si el backend los mandó al loguear; si no, el usuario.
+  function getDisplayName(){ return _state.nombreCompleto || _state.username; }
 
   window.AuthApp = {
     doLogin,
@@ -239,6 +243,7 @@
     isLogged,
     getUsername,
     getRole,
+    getDisplayName,
     onChange
   };
 })();

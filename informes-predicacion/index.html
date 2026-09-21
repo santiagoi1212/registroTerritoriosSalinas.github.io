@@ -179,15 +179,21 @@
     background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
     padding: 14px 16px 16px;
   }
-  .pub-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+  .pub-card-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding-bottom: 10px; margin-bottom: 12px; border-bottom: 1px solid var(--border);
+  }
   .pub-card-title {
     font-size: 1rem; font-weight: 600; border: none; background: transparent; color: var(--text-primary);
     padding: 2px 4px; border-radius: 4px; width: 55%;
   }
   .pub-card-title:hover, .pub-card-title:focus { background: var(--page-plane); outline: none; }
-  .pub-period-tag { font-size: 0.72rem; color: var(--text-muted); }
+  .pub-period-tag {
+    font-size: 0.72rem; color: var(--text-secondary); white-space: nowrap;
+    padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border); background: var(--page-plane);
+  }
   .pub-card-toggle {
-    flex: 0 0 auto; width: 24px; height: 24px; padding: 0; border-radius: 6px;
+    flex: 0 0 auto; width: 32px; height: 32px; padding: 0; border-radius: 6px;
     border: 1px solid var(--baseline); background: var(--surface-1); color: var(--text-secondary);
     cursor: pointer; font-size: 0.75rem; line-height: 1;
   }
@@ -204,7 +210,10 @@
   .pub-chip.warn { border-color: var(--status-warning); }
   .pub-chip.crit { border-color: var(--status-critical); }
 
-  .pub-section-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin: 10px 0 4px; }
+  .pub-section-label {
+    font-size: 0.76rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--text-primary); margin: 14px 0 6px;
+  }
   .pub-names { display: flex; flex-wrap: wrap; gap: 6px; }
   .pub-name-chip {
     font-size: 0.78rem; padding: 3px 8px; border-radius: 6px; background: var(--page-plane);
@@ -221,15 +230,8 @@
   .pub-chart-box { position: relative; height: 300px; }
   .pub-note { font-size: 0.74rem; color: var(--text-muted); margin-top: 14px; }
 
-  /* ---- Chips de nombre clicables (abren la ficha de la persona) ---- */
-  .pub-name-chip.clickable { cursor: pointer; background: none; font: inherit; }
-  .pub-name-chip.clickable:hover { border-color: var(--text-secondary); }
-  .pub-name-chip.st-ok { color: var(--status-good); border-color: var(--status-good); }
-  .pub-name-chip.st-warn { color: var(--text-primary); border-color: var(--status-warning); }
-  .pub-name-chip.st-crit { border-color: var(--status-critical); color: var(--status-critical); }
-  .pub-name-chip .pub-flag { margin-left: 3px; }
-
-  /* ---- Grilla "Integrantes del grupo": lista prolija en filas/columnas,
+  /* ---- Grilla "Integrantes del grupo", "Faltan registrarse" y
+     "Registraron, sin actividad": lista prolija en filas/columnas,
      en vez de chips sueltos flotando dentro del área ---- */
   .pub-roster-grid {
     display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
@@ -287,7 +289,8 @@
   .pub-modal-head h3 { margin: 0; font-size: 1.15rem; }
   .pub-modal-close {
     font: inherit; font-size: 1rem; line-height: 1; border: none; background: transparent;
-    color: var(--text-secondary); cursor: pointer; padding: 4px 6px; border-radius: 6px;
+    color: var(--text-secondary); cursor: pointer; border-radius: 6px;
+    min-width: 36px; min-height: 36px; display: flex; align-items: center; justify-content: center;
   }
   .pub-modal-close:hover { background: var(--page-plane); }
   .pub-modal-sub { font-size: 0.8rem; color: var(--text-secondary); margin: 0 0 14px; }
@@ -728,25 +731,28 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
     return '<span class="pub-chip ' + cls + '"><b>' + value + '</b> ' + label + '</span>';
   }
 
-  // Chip de nombre clicable (abre la ficha de la persona), coloreado según
-  // su estado Activo/Irregular/Inactivo (punto 2).
-  function nameChip(name) {
-    var status = personStatus(name);
-    var cls = "pub-name-chip clickable " + statusBadgeClass(status.code);
-    var flag = status.code === "irregular" ? ' <span class="pub-flag">⚠</span>'
-      : (status.code === "inactivo" ? ' <span class="pub-flag">⛔</span>' : "");
-    return '<button type="button" class="' + cls + '" data-person="' + escapeHtml(name) + '">' +
-      escapeHtml(name) + flag + "</button>";
-  }
-
-  // Fila de la grilla "Integrantes del grupo": misma info que nameChip pero
-  // en formato de lista prolija (una fila por persona, alineada en columnas)
-  // en vez de chips sueltos que van fluyendo dentro del área.
+  // Fila de la grilla "Integrantes del grupo": una fila por persona,
+  // alineada en columnas, en vez de chips sueltos que van fluyendo dentro
+  // del área.
   function rosterItem(name) {
     var status = personStatus(name);
     var cls = "pub-roster-item clickable " + statusBadgeClass(status.code);
     return '<button type="button" class="' + cls + '" data-person="' + escapeHtml(name) + '" title="' + escapeHtml(status.label) + '">' +
       '<span class="pub-dot"></span><span class="pub-name-text">' + escapeHtml(name) + "</span>" +
+      "</button>";
+  }
+
+  // Igual que rosterItem (misma grilla prolija), pero agrega el ícono de
+  // advertencia/inactivo al lado del nombre — se usa en "Faltan
+  // registrarse" y "Registraron, sin actividad este mes", que antes usaban
+  // nameChip en un flex-wrap y quedaban como nombres sueltos flotando.
+  function nameGridItem(name) {
+    var status = personStatus(name);
+    var cls = "pub-roster-item clickable " + statusBadgeClass(status.code);
+    var flag = status.code === "irregular" ? ' <span class="pub-flag">⚠</span>'
+      : (status.code === "inactivo" ? ' <span class="pub-flag">⛔</span>' : "");
+    return '<button type="button" class="' + cls + '" data-person="' + escapeHtml(name) + '" title="' + escapeHtml(status.label) + '">' +
+      '<span class="pub-dot"></span><span class="pub-name-text">' + escapeHtml(name) + "</span>" + flag +
       "</button>";
   }
 
@@ -839,11 +845,11 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
 
   function renderCard(grupoNum, displayName, view) {
     var missingHtml = view.missing.length
-      ? '<div class="pub-names">' + view.missing.map(nameChip).join("") + "</div>"
+      ? '<div class="pub-roster-grid">' + view.missing.map(nameGridItem).join("") + "</div>"
       : '<div class="pub-empty-ok">✅ Todos los del grupo ya se registraron este mes</div>';
 
     var noActivityHtml = view.noActivity.length
-      ? '<div class="pub-names">' + view.noActivity.map(nameChip).join("") + "</div>"
+      ? '<div class="pub-roster-grid">' + view.noActivity.map(nameGridItem).join("") + "</div>"
       : "";
 
     var missingCls = view.missing.length === 0 ? "good" : (view.missing.length <= 2 ? "warn" : "crit");

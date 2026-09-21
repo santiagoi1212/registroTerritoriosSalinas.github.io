@@ -16,7 +16,7 @@ window.APP_CONFIG = {
       // subir/borrar el DPA y el Uso de Datos desde el modal de Publicadores.
       // Dejar vacío si todavía no se desplegó: el modal muestra los datos igual,
       // solo sin la opción de subir/borrar.
-      PUBLICADORES_API_URL: 'https://script.google.com/macros/s/AKfycbxHOxsgkGnW1AZlc_wKmzPDw8FmK0X01Rb-CdBQ7q2z2zXWsnC1c39JqoK2XOR-O9Zw/exec',
+      PUBLICADORES_API_URL: 'https://script.google.com/macros/s/AKfycbwdKsaQza0aTEzpsfHLdOwik1BH3cEhUEHoYiDeLpgnQ2ekFUirw2ztMaly48lRjcRu/exec',
 
       // Apps Script del widget "Informes de predicación" (ver
       // informes-predicacion/apps-script/Code.gs). Se usa acá para leer el

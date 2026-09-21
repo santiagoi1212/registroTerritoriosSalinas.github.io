@@ -66,6 +66,16 @@
   .toolbar{ display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin:16px 0 20px; }
   #buscador{ flex:1; min-width:200px; }
 
+  /* Truco para detectar el autocompletado del navegador en #buscador (ver
+     limpiarBuscador más abajo): Chrome dispara una animación CSS propia en
+     los inputs que autocompleta, sin importar cuándo lo haga (puede ser
+     bastante después de cargar la página) — así nos enteramos en el momento
+     exacto, en vez de adivinar con un setTimeout. */
+  #buscador:-webkit-autofill { animation-name: bd-autofill-start; }
+  #buscador:not(:-webkit-autofill) { animation-name: bd-autofill-cancel; }
+  @keyframes bd-autofill-start { from {} to {} }
+  @keyframes bd-autofill-cancel { from {} to {} }
+
   .resumen{ display:flex; gap:12px; flex-wrap:wrap; margin-bottom:8px; }
   .resumen-item{
     background:var(--card); border:1px solid var(--border); border-radius:12px;
@@ -140,6 +150,20 @@
     padding:10px; font-size:13px; font-weight:600; cursor:pointer;
   }
   .btn-eliminar-publicador:hover{ background:rgba(239,68,68,.12); }
+
+  .msg{ font-size:13px; margin-top:10px; padding:10px 12px; border-radius:8px; display:none; }
+  .msg.show{ display:block; }
+  .msg.ok{ background:rgba(22,163,74,.15); color:#4ade80; }
+  .msg.err{ background:rgba(239,68,68,.15); color:#f87171; }
+
+  .btn-mini-usuario{
+    background:#1f2937; border:1px solid #334155; color:var(--text); border-radius:6px;
+    padding:8px 12px; font-size:12px; font-weight:600; cursor:pointer; margin-right:4px; margin-bottom:4px;
+  }
+  .btn-mini-usuario:hover{ background:#263449; }
+  .btn-mini-usuario-danger{ border-color:#7f1d1d; color:#f87171; background:none; }
+  .btn-mini-usuario-danger:hover{ background:rgba(239,68,68,.12); }
+
   .dropzone{
     border:1.5px dashed #334155; border-radius:10px; padding:16px; text-align:center;
     color:var(--muted); font-size:13px; cursor:pointer; transition:border-color .15s, background .15s;
@@ -261,16 +285,10 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
           <span class="leyenda-item"><span class="badge badge-pend">Pendiente</span> falta o sin confirmar</span>
           <span class="leyenda-item">Un badge verde con enlace abre el archivo en Drive</span>
         </div>
-        <div class="leyenda-fila">
-          <span class="leyenda-titulo">Actividad en la predicación</span>
-          <span class="leyenda-item"><span class="alerta-dpa alerta-amarilla" style="margin-left:0;">⚠</span> Irregular</span>
-          <span class="leyenda-item"><span class="alerta-dpa alerta-roja" style="margin-left:0;">⚠</span> Inactivo</span>
-          <span class="leyenda-item">Según Informes de predicación</span>
-        </div>
       </div>
 
       <div class="toolbar">
-        <input id="buscador" class="form-input" type="search" placeholder="Buscar por nombre…" aria-label="Buscar publicador por nombre" />
+        <input id="buscador" class="form-input" type="search" placeholder="Buscar por nombre…" aria-label="Buscar publicador por nombre" autocomplete="off" />
         <button id="btnAgregarPublicador" class="btn-primary" type="button">+ Agregar publicador</button>
         <button id="btnRefrescar" class="btn-cancel" type="button">Refrescar</button>
       </div>
@@ -279,13 +297,19 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
         <label for="nuevo-nombre">Nombre y Apellido</label>
         <input id="nuevo-nombre" class="form-input" type="text" placeholder="Nombre completo" style="width:100%; margin-bottom:14px;">
         <label for="nuevo-grupo">Grupo</label>
-        <select id="nuevo-grupo" class="form-input" style="width:100%; margin-bottom:16px;">
+        <select id="nuevo-grupo" class="form-input" style="width:100%; margin-bottom:14px;">
           <option value="">Elegí un grupo</option>
           <option value="1">Grupo 1</option>
           <option value="2">Grupo 2</option>
           <option value="3">Grupo 3</option>
           <option value="4">Grupo 4</option>
           <option value="5">Grupo 5</option>
+        </select>
+        <label for="nuevo-sexo">Sexo</label>
+        <select id="nuevo-sexo" class="form-input" style="width:100%; margin-bottom:16px;">
+          <option value="">Elegí</option>
+          <option value="Masculino">Masculino</option>
+          <option value="Femenino">Femenino</option>
         </select>
         <div style="display:flex; gap:8px;">
           <button id="btnConfirmarAgregar" class="btn-primary" type="button" style="flex:1;">Guardar</button>
@@ -303,6 +327,48 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
 
     <div id="view-estadisticas" style="display:none">
       <div id="stats-contenido">Cargando…</div>
+    </div>
+
+    <div id="view-usuarios" style="display:none">
+      <div id="usuarios-gate" class="card" style="max-width:420px;">
+        <p class="subtitle" style="margin:0 0 14px;">Esta sección crea/edita/borra cuentas de acceso al portal — confirmá tu contraseña de administrador para continuar.</p>
+        <label for="usuarios-admin-pass">Tu contraseña</label>
+        <input type="password" id="usuarios-admin-pass" class="form-input" style="width:100%;" autocomplete="current-password">
+        <button type="button" id="btn-usuarios-confirmar" class="btn-primary" style="width:100%; margin-top:14px;">Continuar</button>
+        <div class="msg" id="usuarios-gate-msg" style="display:none;"></div>
+      </div>
+
+      <div id="usuarios-contenido" style="display:none;">
+        <div class="toolbar">
+          <span class="muted" style="flex:1;">Cuentas de acceso al portal (congregación Salinas).</span>
+          <button id="btnAgregarUsuario" class="btn-primary" type="button">+ Agregar administrador</button>
+          <button id="btnRefrescarUsuarios" class="btn-cancel" type="button">Refrescar</button>
+        </div>
+
+        <div id="form-agregar-usuario" class="card" style="display:none;">
+          <label for="nuevo-usuario-username">Usuario</label>
+          <input id="nuevo-usuario-username" class="form-input" type="text" placeholder="ej: mgarcia" style="width:100%; margin-bottom:14px;" autocomplete="off">
+          <label for="nuevo-usuario-password">Contraseña</label>
+          <input id="nuevo-usuario-password" class="form-input" type="text" placeholder="mínimo 6 caracteres" style="width:100%; margin-bottom:14px;" autocomplete="off">
+          <label for="nuevo-usuario-nombre">Nombre</label>
+          <input id="nuevo-usuario-nombre" class="form-input" type="text" style="width:100%; margin-bottom:14px;">
+          <label for="nuevo-usuario-apellido">Apellido</label>
+          <input id="nuevo-usuario-apellido" class="form-input" type="text" style="width:100%; margin-bottom:14px;">
+          <label for="nuevo-usuario-role">Rol</label>
+          <input id="nuevo-usuario-role" class="form-input" type="text" list="lista-roles" placeholder="admin / capitan / publicador" style="width:100%; margin-bottom:16px;">
+          <datalist id="lista-roles">
+            <option value="admin"></option>
+            <option value="capitan"></option>
+            <option value="publicador"></option>
+          </datalist>
+          <div style="display:flex; gap:8px;">
+            <button id="btnConfirmarAgregarUsuario" class="btn-primary" type="button" style="flex:1;">Guardar</button>
+            <button id="btnCancelarAgregarUsuario" class="btn-cancel" type="button">Cancelar</button>
+          </div>
+        </div>
+
+        <div id="tabla-usuarios">Cargando…</div>
+      </div>
     </div>
   </div>
 </div>
@@ -410,14 +476,21 @@ function renderDocSection(tipo, p){
 }
 
 function renderEstadoSection(p){
-  const opciones = (window.PublicadoresApp && window.PublicadoresApp.ESTADOS_VALIDOS) || [];
+  let opciones = (window.PublicadoresApp && window.PublicadoresApp.ESTADOS_VALIDOS) || [];
+  const esFemenino = p.sexo === 'Femenino';
+  // Anciano y Siervo Ministerial no aplican a una publicadora.
+  if (esFemenino) opciones = opciones.filter(o => o !== 'Anciano' && o !== 'Siervo Ministerial');
   const actual = p.estado || [];
   const opcionesHtml = (seleccionado) => `<option value="">—</option>` +
     opciones.map(o => `<option value="${o}" ${o === seleccionado ? 'selected' : ''}>${o}</option>`).join('');
+  // El segundo estado existe para combinar un rol (Anciano/Siervo Ministerial)
+  // con una categoría (Publicador/Precursor); como ninguno de esos roles
+  // aplica a una publicadora, para Femenino alcanza con un solo estado.
+  const segundoSelect = esFemenino ? '' : `<select class="form-input sel-estado" data-slot="1">${opcionesHtml(actual[1] || '')}</select>`;
   return `
     <div class="estado-editar">
       <select class="form-input sel-estado" data-slot="0">${opcionesHtml(actual[0] || '')}</select>
-      <select class="form-input sel-estado" data-slot="1">${opcionesHtml(actual[1] || '')}</select>
+      ${segundoSelect}
       <button type="button" class="btn-cancel" id="btn-guardar-estado">Guardar estado</button>
     </div>
   `;
@@ -435,6 +508,7 @@ function abrirModalPersona(p){
   modalPersonaTitulo.textContent = p.nombre;
   modalPersonaBody.innerHTML = `
     <div class="modal-row"><span class="l">Grupo</span><span class="v">${p.grupo || '—'}</span></div>
+    <div class="modal-row"><span class="l">Sexo</span><span class="v">${p.sexo || '—'}</span></div>
     <div class="modal-row"><span class="l">Estado</span>${renderEstadoSection(p)}</div>
     <div class="modal-row"><span class="l">Actividad (Informes de predicación)</span>${actividadTexto(p.actividad)}</div>
     <div class="modal-row"><span class="l">DPA</span>${renderDocSection('dpa', p)}</div>
@@ -474,6 +548,7 @@ async function eliminarPublicadorActual(){
     if (!data || !data.ok) throw new Error((data && data.error) || 'Error al eliminar');
 
     personasCache = personasCache.filter(p => p.nombre !== persona.nombre);
+    window.PublicadoresApp.actualizarCachePublicadores(personasCache);
     window.showToast(`${persona.nombre} eliminado`, 'success');
     cerrarModalPersona();
     window.PublicadoresApp.renderResumen(document.getElementById('resumen'), personasCache);
@@ -489,6 +564,36 @@ async function eliminarPublicadorActual(){
 function wireEstadoSection(){
   const btn = document.getElementById('btn-guardar-estado');
   if (btn) btn.addEventListener('click', guardarEstado);
+
+  const incompatibles = (window.PublicadoresApp && window.PublicadoresApp.ESTADO_INCOMPATIBLES) || {};
+  const selects = [...modalPersonaBody.querySelectorAll('.sel-estado')];
+  if (selects.length !== 2) return;
+
+  // Deshabilita en cada select las opciones que no pueden combinarse con lo
+  // que está elegido en el OTRO select (Anciano/Siervo Ministerial
+  // excluyentes entre sí, Publicador no combina con precursores ni con "No
+  // Bautizado", y "Publicador No Bautizado" no combina con nada más).
+  function actualizarRestricciones(){
+    selects.forEach((sel, i) => {
+      const otro = selects[1 - i];
+      const bloqueadas = incompatibles[otro.value] || [];
+      [...sel.options].forEach(opt => {
+        if (!opt.value) return; // "—" siempre disponible
+        opt.disabled = bloqueadas.includes(opt.value) || opt.value === otro.value;
+      });
+    });
+  }
+
+  selects.forEach((sel, i) => {
+    sel.addEventListener('change', () => {
+      const otro = selects[1 - i];
+      const bloqueadas = incompatibles[sel.value] || [];
+      if (otro.value && bloqueadas.includes(otro.value)) otro.value = '';
+      actualizarRestricciones();
+    });
+  });
+
+  actualizarRestricciones();
 }
 
 async function guardarEstado(){
@@ -739,6 +844,10 @@ async function borrarDocumento(tipo){
 }
 
 function reRenderTrasCambio(){
+  // El cambio ya está aplicado sobre el objeto en personasCache (dpa, estado,
+  // etc.) — se guarda en la caché de localStorage acá mismo, sin red, para
+  // que la próxima navegación entre vistas no muestre el dato viejo.
+  window.PublicadoresApp.actualizarCachePublicadores(personasCache);
   window.PublicadoresApp.renderResumen(document.getElementById('resumen'), personasCache);
   window.PublicadoresApp.renderTabla(document.getElementById('tablas'), personasCache, document.getElementById('buscador').value, abrirModalPersona);
   renderEstadisticas();
@@ -757,13 +866,16 @@ document.getElementById('btnCancelarAgregar').addEventListener('click', () => {
   formAgregarPublicador.style.display = 'none';
   document.getElementById('nuevo-nombre').value = '';
   document.getElementById('nuevo-grupo').value = '';
+  document.getElementById('nuevo-sexo').value = '';
 });
 
 document.getElementById('btnConfirmarAgregar').addEventListener('click', async () => {
   const nombre = document.getElementById('nuevo-nombre').value.trim();
   const grupo = document.getElementById('nuevo-grupo').value;
+  const sexo = document.getElementById('nuevo-sexo').value;
   if (!nombre){ window.showToast('Ingresá el nombre.', 'error'); return; }
   if (!grupo){ window.showToast('Elegí un grupo.', 'error'); return; }
+  if (!sexo){ window.showToast('Elegí el sexo.', 'error'); return; }
 
   const cfg = window.APP_CONFIG || {};
   if (!cfg.PUBLICADORES_API_URL){
@@ -778,7 +890,7 @@ document.getElementById('btnConfirmarAgregar').addEventListener('click', async (
       method: 'POST',
       credentials: 'omit',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action: 'agregarPublicador', nombre, grupo })
+      body: JSON.stringify({ action: 'agregarPublicador', nombre, grupo, sexo })
     });
     const data = await res.json();
     if (!data || !data.ok) throw new Error((data && data.error) || 'Error al agregar');
@@ -786,8 +898,9 @@ document.getElementById('btnConfirmarAgregar').addEventListener('click', async (
     window.showToast(`${nombre} agregado al Grupo ${grupo}`, 'success');
     document.getElementById('nuevo-nombre').value = '';
     document.getElementById('nuevo-grupo').value = '';
+    document.getElementById('nuevo-sexo').value = '';
     formAgregarPublicador.style.display = 'none';
-    await cargarYRenderizar();
+    await cargarYRenderizar({ forzar: true });
   } catch (err){
     console.error(err);
     window.showToast('No se pudo agregar: ' + err.message, 'error');
@@ -802,9 +915,14 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && modalPersonaOverlay.classList.contains('open')) cerrarModalPersona();
 });
 
-async function cargarYRenderizar(){
+async function cargarYRenderizar(opciones){
+  opciones = opciones || {};
   const cfg = window.APP_CONFIG || {};
   const avisoEl = document.getElementById('avisoConfig');
+
+  // "Administradores" no necesita nada de esto (planilla de Publicadores,
+  // actividad de Informes de predicación) — solo el gate de contraseña.
+  if (vistaActual === 'usuarios'){ initVistaUsuarios(); return; }
 
   if (!cfg.PUBLICADORES_API_URL && !cfg.PUBLICADORES_CSV_URL){
     avisoEl.style.display = 'block';
@@ -816,16 +934,11 @@ async function cargarYRenderizar(){
   avisoEl.style.display = 'none';
 
   try {
-    const [personas, estadoActividad] = await Promise.all([
-      window.PublicadoresApp.cargarPublicadores(),
-      window.PublicadoresApp.cargarEstadoActividad(cfg.INFORMES_PREDICACION_API_URL)
-    ]);
-    // Cruza por nombre (normalizado) con la caché de Informes de predicación.
-    // Si el nombre no matchea exacto entre las dos planillas, queda sin
-    // ícono — mejor eso que mostrar un estado equivocado.
-    personas.forEach(p => {
-      p.actividad = estadoActividad.get(window.PublicadoresApp.normalizeName(p.nombre)) || null;
-    });
+    // Usa la caché en localStorage (ver app-publicadores.js) si todavía está
+    // vigente, en vez de volver a pedir todo por red en cada navegación
+    // entre "Ver estado" / "Organizar grupos" / "Estadísticas" (son recargas
+    // de página distintas). opciones.forzar=true la ignora.
+    const { personas } = await window.PublicadoresApp.cargarDatosPublicadores(cfg, { forzar: !!opciones.forzar });
     personasCache = personas;
     window.PublicadoresApp.renderResumen(document.getElementById('resumen'), personasCache);
     window.PublicadoresApp.renderTabla(document.getElementById('tablas'), personasCache, document.getElementById('buscador').value, abrirModalPersona);
@@ -837,7 +950,29 @@ async function cargarYRenderizar(){
   }
 }
 
+// El navegador a veces completa este campo solo con el usuario logueado en
+// el portal (autocomplete="off" no alcanza: hay un input de contraseña más
+// abajo en la página —el de "Administradores"— y algunos navegadores lo
+// emparejan como si todo fuera un único formulario de login). Puede pasar
+// por más de un mecanismo a la vez (autofill de contraseñas, o el propio
+// historial de "búsquedas recientes" de los inputs type="search"), así que
+// se cubren los dos: la animación CSS que Chrome dispara al autocompletar
+// (bd-autofill-start, ver <style> más arriba) y, como red de seguridad
+// genérica, cualquier evento "input" que llegue ANTES de que la persona
+// haya tocado el campo a mano (keydown/paste) se trata como autocompletado
+// y se descarta.
+const inputBuscador = document.getElementById('buscador');
+let buscadorTocadoPorUsuario = false;
+inputBuscador.addEventListener('keydown', () => { buscadorTocadoPorUsuario = true; });
+inputBuscador.addEventListener('paste', () => { buscadorTocadoPorUsuario = true; });
+inputBuscador.addEventListener('animationstart', (e) => {
+  if (e.animationName === 'bd-autofill-start') limpiarBuscador();
+});
+
 document.getElementById('buscador').addEventListener('input', (e) => {
+  if (!buscadorTocadoPorUsuario && e.target.value){
+    e.target.value = '';
+  }
   window.PublicadoresApp.renderTabla(document.getElementById('tablas'), personasCache, e.target.value, abrirModalPersona);
 });
 
@@ -850,9 +985,10 @@ document.getElementById('buscador').addEventListener('input', (e) => {
 const viewEstado = document.getElementById('view-estado');
 const viewGrupos = document.getElementById('view-grupos');
 const viewEstadisticas = document.getElementById('view-estadisticas');
+const viewUsuarios = document.getElementById('view-usuarios');
 const vistaActual = new URLSearchParams(location.search).get('vista');
 
-[viewEstado, viewGrupos, viewEstadisticas].forEach(v => v.style.display = 'none');
+[viewEstado, viewGrupos, viewEstadisticas, viewUsuarios].forEach(v => v.style.display = 'none');
 if (vistaActual === 'grupos'){
   viewGrupos.style.display = 'block';
   document.getElementById('pagina-titulo').textContent = 'Organizar grupos';
@@ -861,6 +997,10 @@ if (vistaActual === 'grupos'){
   viewEstadisticas.style.display = 'block';
   document.getElementById('pagina-titulo').textContent = 'Estadísticas';
   document.getElementById('pagina-subtitulo').textContent = 'Conteo de ancianos, siervos ministeriales, precursores y estado general por grupo.';
+} else if (vistaActual === 'usuarios'){
+  viewUsuarios.style.display = 'block';
+  document.getElementById('pagina-titulo').textContent = 'Administradores';
+  document.getElementById('pagina-subtitulo').textContent = 'Cuentas que pueden iniciar sesión en el portal.';
 } else {
   viewEstado.style.display = 'block';
 }
@@ -1120,6 +1260,7 @@ async function moverPersonaDeGrupo(persona, grupoDestino, btn){
     if (!data || !data.ok) throw new Error((data && data.error) || 'Error al mover de grupo');
 
     persona.grupo = grupoDestino;
+    window.PublicadoresApp.actualizarCachePublicadores(personasCache);
     window.showToast(`${persona.nombre} pasó al Grupo ${grupoDestino}`, 'success');
     window.PublicadoresApp.renderResumen(document.getElementById('resumen'), personasCache);
     window.PublicadoresApp.renderTabla(document.getElementById('tablas'), personasCache, document.getElementById('buscador').value, abrirModalPersona);
@@ -1132,20 +1273,42 @@ async function moverPersonaDeGrupo(persona, grupoDestino, btn){
   }
 }
 
-document.getElementById('btnRefrescar').addEventListener('click', cargarYRenderizar);
+document.getElementById('btnRefrescar').addEventListener('click', () => cargarYRenderizar({ forzar: true }));
 
 async function refrescarVista(){
   const { logged, role } = actualizarAuthBar();
 
   document.getElementById('locked').style.display    = logged ? 'none' : 'block';
-  const permitido = logged && ROLES_PERMITIDOS.includes(role);
+  // "Administradores" es más sensible que el resto (crea/borra cuentas de
+  // login) — ahí exigimos específicamente el rol admin, no capitan.
+  const rolAlcanza = vistaActual === 'usuarios'
+    ? String(role || '').toLowerCase() === 'admin'
+    : ROLES_PERMITIDOS.includes(role);
+  const permitido = logged && rolAlcanza;
   document.getElementById('forbidden').style.display = (logged && !permitido) ? 'block' : 'none';
   document.getElementById('contenido').style.display  = permitido ? 'block' : 'none';
 
   if (permitido) await cargarYRenderizar();
 }
 
+// Ver el bloque de arriba (inputBuscador / buscadorTocadoPorUsuario) para el
+// detalle de por qué hace falta esto. Además de vaciar el campo, tiene que
+// volver a renderizar la tabla: si el navegador lo autocompletó DESPUÉS del
+// render inicial (por eso no alcanza con limpiarlo solo al cargar la
+// página), la tabla había quedado filtrada por ese valor y sin este re-render
+// se ve "Sin resultados" con el campo ya vacío.
+function limpiarBuscador(){
+  const input = document.getElementById('buscador');
+  if (input && input.value){
+    input.value = '';
+    if (personasCache.length){
+      window.PublicadoresApp.renderTabla(document.getElementById('tablas'), personasCache, '', abrirModalPersona);
+    }
+  }
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
+  limpiarBuscador();
   if (window.AuthApp && typeof window.AuthApp.onChange === "function"){
     window.AuthApp.onChange(refrescarVista);
   }
@@ -1153,7 +1316,217 @@ document.addEventListener('DOMContentLoaded', async () => {
     await window.AuthApp.restore();
   }
   await refrescarVista();
+  limpiarBuscador();
 });
+
+// --- Administradores: ABM de las cuentas que pueden loguearse al portal ---
+// Vive en AUTH_API_URL (google-apps-script-auth.js), no en PUBLICADORES_API_URL
+// — es un backend/hoja distinto. Cada acción manda de nuevo la contraseña del
+// admin logueado (adminAuthCache, solo en memoria — se pierde al recargar la
+// página) porque el backend la exige para autorizar cambios sobre cuentas de
+// login de todo el portal.
+let usuariosInicializado = false;
+let adminAuthCache = null;
+
+async function llamarUsuariosAPI(action, datos){
+  const cfg = window.APP_CONFIG || {};
+  if (!cfg.AUTH_API_URL) return { ok:false, error:'Falta configurar AUTH_API_URL en app-config.js.' };
+  try {
+    const res = await fetch(cfg.AUTH_API_URL, {
+      method: 'POST',
+      credentials: 'omit',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action, ...datos })
+    });
+    return await res.json();
+  } catch (err){
+    return { ok:false, error: (err && err.message) ? err.message : String(err) };
+  }
+}
+
+function mostrarMsgUsuariosGate(texto, ok){
+  const el = document.getElementById('usuarios-gate-msg');
+  el.textContent = texto;
+  el.className = 'msg show ' + (ok ? 'ok' : 'err');
+  el.style.display = 'block';
+}
+
+function initVistaUsuarios(){
+  if (usuariosInicializado) return;
+  usuariosInicializado = true;
+
+  const btnConfirmar = document.getElementById('btn-usuarios-confirmar');
+  const passInput = document.getElementById('usuarios-admin-pass');
+
+  const confirmar = async () => {
+    const password = passInput.value;
+    if (!password){ mostrarMsgUsuariosGate('Ingresá tu contraseña.', false); return; }
+    const adminUsername = (window.AuthApp && window.AuthApp.getUsername && window.AuthApp.getUsername()) || '';
+    if (!adminUsername){ mostrarMsgUsuariosGate('No se pudo detectar tu usuario logueado.', false); return; }
+
+    btnConfirmar.disabled = true;
+    const resultado = await llamarUsuariosAPI('listarUsuarios', { adminUsername, adminPassword: password });
+    btnConfirmar.disabled = false;
+
+    if (!resultado.ok){
+      mostrarMsgUsuariosGate(resultado.error || 'No se pudo verificar.', false);
+      return;
+    }
+    adminAuthCache = { adminUsername, adminPassword: password };
+    document.getElementById('usuarios-gate').style.display = 'none';
+    document.getElementById('usuarios-contenido').style.display = 'block';
+    renderTablaUsuarios(resultado.usuarios);
+  };
+
+  btnConfirmar.addEventListener('click', confirmar);
+  passInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') confirmar(); });
+
+  document.getElementById('btnRefrescarUsuarios').addEventListener('click', recargarUsuarios);
+
+  document.getElementById('btnAgregarUsuario').addEventListener('click', () => {
+    const form = document.getElementById('form-agregar-usuario');
+    form.style.display = form.style.display === 'none' ? 'block' : 'none';
+  });
+  document.getElementById('btnCancelarAgregarUsuario').addEventListener('click', () => {
+    document.getElementById('form-agregar-usuario').style.display = 'none';
+    limpiarFormAgregarUsuario();
+  });
+  document.getElementById('btnConfirmarAgregarUsuario').addEventListener('click', confirmarAgregarUsuario);
+}
+
+async function recargarUsuarios(){
+  if (!adminAuthCache) return;
+  const resultado = await llamarUsuariosAPI('listarUsuarios', adminAuthCache);
+  if (!resultado.ok){
+    window.showToast('No se pudo refrescar: ' + resultado.error, 'error');
+    return;
+  }
+  renderTablaUsuarios(resultado.usuarios);
+}
+
+function limpiarFormAgregarUsuario(){
+  ['nuevo-usuario-username', 'nuevo-usuario-password', 'nuevo-usuario-nombre', 'nuevo-usuario-apellido', 'nuevo-usuario-role'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+}
+
+async function confirmarAgregarUsuario(){
+  const username = document.getElementById('nuevo-usuario-username').value.trim();
+  const password = document.getElementById('nuevo-usuario-password').value;
+  const nombre = document.getElementById('nuevo-usuario-nombre').value.trim();
+  const apellido = document.getElementById('nuevo-usuario-apellido').value.trim();
+  const role = document.getElementById('nuevo-usuario-role').value.trim();
+
+  if (!username){ window.showToast('Ingresá el usuario.', 'error'); return; }
+  if (!password || password.length < 6){ window.showToast('La contraseña tiene que tener al menos 6 caracteres.', 'error'); return; }
+
+  const btn = document.getElementById('btnConfirmarAgregarUsuario');
+  btn.disabled = true;
+  const resultado = await llamarUsuariosAPI('crearUsuario', { ...adminAuthCache, username, password, nombre, apellido, role });
+  btn.disabled = false;
+
+  if (!resultado.ok){
+    window.showToast('No se pudo crear: ' + resultado.error, 'error');
+    return;
+  }
+  window.showToast(`Usuario "${username}" creado`, 'success');
+  document.getElementById('form-agregar-usuario').style.display = 'none';
+  limpiarFormAgregarUsuario();
+  recargarUsuarios();
+}
+
+function renderTablaUsuarios(usuarios){
+  const cont = document.getElementById('tabla-usuarios');
+  if (!usuarios || !usuarios.length){
+    cont.innerHTML = '<p class="muted">Todavía no hay usuarios.</p>';
+    return;
+  }
+  cont.innerHTML = `
+    <div class="tabla-wrap">
+      <table>
+        <thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Congregación</th><th></th></tr></thead>
+        <tbody>
+          ${usuarios.map((u, idx) => `
+            <tr data-idx="${idx}">
+              <td>${u.username}</td>
+              <td>${[u.nombre, u.apellido].filter(Boolean).join(' ') || '—'}</td>
+              <td>${u.role || '—'}</td>
+              <td>${u.congregacion}</td>
+              <td style="white-space:nowrap;">
+                <button type="button" class="btn-mini-usuario" data-accion="editar">Editar</button>
+                <button type="button" class="btn-mini-usuario" data-accion="resetear">Resetear contraseña</button>
+                <button type="button" class="btn-mini-usuario btn-mini-usuario-danger" data-accion="eliminar">Eliminar</button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  cont.querySelectorAll('tr[data-idx]').forEach(tr => {
+    const u = usuarios[Number(tr.dataset.idx)];
+    tr.querySelectorAll('button[data-accion]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const accion = btn.dataset.accion;
+        if (accion === 'editar') abrirEdicionUsuario(u);
+        else if (accion === 'resetear') resetearPasswordUsuario(u);
+        else if (accion === 'eliminar') eliminarUsuario(u);
+      });
+    });
+  });
+}
+
+async function abrirEdicionUsuario(u){
+  const nuevoUsername = prompt('Usuario:', u.username);
+  if (nuevoUsername === null) return;
+  const nombre = prompt('Nombre:', u.nombre || '');
+  if (nombre === null) return;
+  const apellido = prompt('Apellido:', u.apellido || '');
+  if (apellido === null) return;
+  const role = prompt('Rol:', u.role || '');
+  if (role === null) return;
+
+  const resultado = await llamarUsuariosAPI('actualizarUsuario', {
+    ...adminAuthCache,
+    usernameActual: u.username,
+    nuevoUsername: nuevoUsername.trim(),
+    nombre: nombre.trim(),
+    apellido: apellido.trim(),
+    role: role.trim()
+  });
+  if (!resultado.ok){
+    window.showToast('No se pudo editar: ' + resultado.error, 'error');
+    return;
+  }
+  window.showToast('Usuario actualizado', 'success');
+  recargarUsuarios();
+}
+
+async function resetearPasswordUsuario(u){
+  const nuevaPassword = prompt(`Nueva contraseña para "${u.username}" (mínimo 6 caracteres):`);
+  if (nuevaPassword === null) return;
+  if (nuevaPassword.length < 6){ window.showToast('Mínimo 6 caracteres.', 'error'); return; }
+
+  const resultado = await llamarUsuariosAPI('resetearPassword', { ...adminAuthCache, username: u.username, nuevaPassword });
+  if (!resultado.ok){
+    window.showToast('No se pudo resetear: ' + resultado.error, 'error');
+    return;
+  }
+  window.showToast(`Contraseña de "${u.username}" actualizada`, 'success');
+}
+
+async function eliminarUsuario(u){
+  if (!confirm(`¿Eliminar la cuenta "${u.username}"? No va a poder iniciar sesión nunca más hasta que se la vuelva a crear.`)) return;
+
+  const resultado = await llamarUsuariosAPI('eliminarUsuario', { ...adminAuthCache, username: u.username });
+  if (!resultado.ok){
+    window.showToast('No se pudo eliminar: ' + resultado.error, 'error');
+    return;
+  }
+  window.showToast(`Usuario "${u.username}" eliminado`, 'success');
+  recargarUsuarios();
+}
 </script>
 
 </body>

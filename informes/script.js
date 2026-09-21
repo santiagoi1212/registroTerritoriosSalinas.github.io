@@ -1,5 +1,5 @@
 // Reemplazá esta URL por la de tu Web App de Google Apps Script (ver README.md)
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxHOxsgkGnW1AZlc_wKmzPDw8FmK0X01Rb-CdBQ7q2z2zXWsnC1c39JqoK2XOR-O9Zw/exec";
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwdKsaQza0aTEzpsfHLdOwik1BH3cEhUEHoYiDeLpgnQ2ekFUirw2ztMaly48lRjcRu/exec";
 
 const form = document.getElementById("form-predicacion");
 const grupoSelect = document.getElementById("grupo");
@@ -79,8 +79,59 @@ function urlPublicadores() {
   return SCRIPT_URL + separador + "action=publicadores";
 }
 
+// Caché en localStorage de la lista grupo/nombre: es la que tarda en
+// cargar (pega al Apps Script de Publicadores) y casi no cambia de un
+// envío a otro, así que se reusa mientras no pasen CACHE_TTL_PUBLICADORES_MS
+// desde la última carga real.
+const CACHE_KEY_PUBLICADORES = "salinas_informe_publicadores_cache_v1";
+const CACHE_TTL_PUBLICADORES_MS = 30 * 60 * 1000; // 30 minutos
+
+function leerCachePublicadores_() {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY_PUBLICADORES);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || !parsed.publicadoresPorGrupo || !parsed.timestamp) return null;
+    return parsed;
+  } catch (err) {
+    return null;
+  }
+}
+
+function guardarCachePublicadores_(datos) {
+  try {
+    localStorage.setItem(
+      CACHE_KEY_PUBLICADORES,
+      JSON.stringify({ timestamp: Date.now(), publicadoresPorGrupo: datos })
+    );
+  } catch (err) {
+    // localStorage lleno/bloqueado: seguimos sin caché.
+  }
+}
+
+function poblarSelectGrupos() {
+  const grupos = Object.keys(publicadoresPorGrupo).sort((a, b) =>
+    a.localeCompare(b, undefined, { numeric: true })
+  );
+
+  grupoSelect.innerHTML = '<option value="" disabled selected>Elegir</option>';
+  grupos.forEach((grupo) => {
+    const opcion = document.createElement("option");
+    opcion.value = grupo;
+    opcion.textContent = "Grupo " + grupo;
+    grupoSelect.appendChild(opcion);
+  });
+}
+
 async function cargarPublicadores() {
   if (SCRIPT_URL.includes("PEGA_AQUI")) {
+    return;
+  }
+
+  const cache = leerCachePublicadores_();
+  if (cache && (Date.now() - cache.timestamp) < CACHE_TTL_PUBLICADORES_MS) {
+    publicadoresPorGrupo = cache.publicadoresPorGrupo;
+    poblarSelectGrupos();
     return;
   }
 
@@ -100,17 +151,8 @@ async function cargarPublicadores() {
       publicadoresPorGrupo[grupo].push(nombre);
     });
 
-    const grupos = Object.keys(publicadoresPorGrupo).sort((a, b) =>
-      a.localeCompare(b, undefined, { numeric: true })
-    );
-
-    grupoSelect.innerHTML = '<option value="" disabled selected>Elegir</option>';
-    grupos.forEach((grupo) => {
-      const opcion = document.createElement("option");
-      opcion.value = grupo;
-      opcion.textContent = "Grupo " + grupo;
-      grupoSelect.appendChild(opcion);
-    });
+    guardarCachePublicadores_(publicadoresPorGrupo);
+    poblarSelectGrupos();
   } catch (err) {
     console.error(err);
     mostrarMensaje(

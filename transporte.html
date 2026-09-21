@@ -82,7 +82,7 @@
     box-shadow:0 0 0 3px rgba(37,99,235,.2);
   }
 
-  .choice-group{display:flex;gap:10px;margin-bottom:16px;}
+  .choice-group{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:16px;}
   .choice{
     flex:1;
     border:1.5px solid #334155;
@@ -242,15 +242,48 @@ function urlConfigurada(){
   return WEBAPP_URL && WEBAPP_URL.indexOf('http') === 0;
 }
 
-async function cargarRegistros(){
+// Caché en localStorage de los registros (misma clave que podría usar
+// traslado.html, ya que comparten WEBAPP_URL y muestran los mismos datos).
+// Evita pegarle al Apps Script en cada carga/refresco de la página cuando
+// los datos todavía están frescos — es lo que hacía tardar la pantalla.
+const CACHE_KEY_REGISTROS = 'salinas_traslado_registros_cache_v1';
+const CACHE_TTL_REGISTROS_MS = 2 * 60 * 1000; // 2 minutos
+
+function leerCacheRegistros_(){
+  try {
+    const raw = localStorage.getItem(CACHE_KEY_REGISTROS);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || !Array.isArray(parsed.registros) || !parsed.timestamp) return null;
+    return parsed;
+  } catch(e){ return null; }
+}
+
+function guardarCacheRegistros_(datos){
+  try { localStorage.setItem(CACHE_KEY_REGISTROS, JSON.stringify({ timestamp: Date.now(), registros: datos })); }
+  catch(e){ /* localStorage lleno/bloqueado: seguimos sin caché */ }
+}
+
+async function cargarRegistros(opciones){
+  opciones = opciones || {};
   if(!urlConfigurada()){
     registros = [];
     return registros;
   }
+
+  if (!opciones.forzar){
+    const cache = leerCacheRegistros_();
+    if (cache && (Date.now() - cache.timestamp) < CACHE_TTL_REGISTROS_MS){
+      registros = cache.registros;
+      return registros;
+    }
+  }
+
   try{
     const res = await fetch(WEBAPP_URL + '?t=' + Date.now());
     const data = await res.json();
     registros = Array.isArray(data) ? data : [];
+    guardarCacheRegistros_(registros);
   }catch(e){
     registros = [];
   }
@@ -335,14 +368,14 @@ document.getElementById('btn-registrar').addEventListener('click', async () => {
     choiceNecesita.classList.remove('selected');
     choiceTiene.classList.remove('selected');
     campoAsientos.style.display = 'none';
-    refrescarTodo();
+    refrescarTodo({ forzar: true });
   } else {
     mostrarMsg('No se pudo guardar: ' + resultado.error, false);
   }
 });
 
 // --- Lista + resumen ---
-async function refrescarTodo(){
+async function refrescarTodo(opciones){
   const lista = document.getElementById('lista-registros');
   if(!urlConfigurada()){
     lista.innerHTML = '<div class="empty">Falta configurar WEBAPP_URL en el código con la URL de tu Google Apps Script.</div>';
@@ -351,7 +384,7 @@ async function refrescarTodo(){
     return;
   }
 
-  const datos = await cargarRegistros();
+  const datos = await cargarRegistros(opciones);
 
   const grupos = {};
   for(let g = 1; g <= 5; g++){
@@ -429,7 +462,7 @@ function escapeHtml(s){
 
 document.getElementById('btn-refrescar').addEventListener('click', (e) => {
   e.preventDefault();
-  refrescarTodo();
+  refrescarTodo({ forzar: true });
 });
 
 // Init

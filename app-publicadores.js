@@ -91,6 +91,19 @@
       .slice(0, 2);
   }
 
+  // Qué estados NO se pueden combinar entre sí (una persona puede tener
+  // hasta dos): Anciano y Siervo Ministerial son excluyentes entre sí;
+  // Publicador no combina con ningún precursor ni con "Publicador No
+  // Bautizado"; "Publicador No Bautizado" no combina con nada más (va solo).
+  const ESTADO_INCOMPATIBLES = {
+    "Anciano": ["Siervo Ministerial", "Publicador No Bautizado"],
+    "Siervo Ministerial": ["Anciano", "Publicador No Bautizado"],
+    "Publicador": ["Precursor Regular", "Precursor Especial", "Publicador No Bautizado"],
+    "Precursor Regular": ["Publicador", "Publicador No Bautizado"],
+    "Precursor Especial": ["Publicador", "Publicador No Bautizado"],
+    "Publicador No Bautizado": ["Anciano", "Siervo Ministerial", "Publicador", "Precursor Regular", "Precursor Especial"]
+  };
+
   // ==========================
   // FechaVenceDPA: el DPA vence 2 años después de subirse.
   // Alerta amarilla si quedan <= 3 meses, roja si quedan <= 1 mes o ya venció.
@@ -254,6 +267,7 @@
       return {
         grupo: r.Grupo || "",
         nombre: r.Nombre || "",
+        sexo: r.Sexo || "",
         estado: parseEstados(r.Estado),
         dpa, linkDpa: r.LinkDPA || "",
         fechaVenceDPA, alertaDPA: calcularAlertaDPA(fechaVenceDPA),
@@ -262,6 +276,84 @@
         notas: r.Notas || ""
       };
     });
+  }
+
+  // ==========================
+  // Caché en localStorage (Publicadores + actividad ya cruzados).
+  //
+  // publicadores.html vive como varias URLs distintas (?vista=grupos,
+  // ?vista=estadisticas, etc.) que son recargas de página completas, así que
+  // sin esto cada clic entre esas vistas volvía a pegarle a los dos Apps
+  // Script (Publicadores + Informes de predicación) desde cero — el segundo
+  // en particular es lento. Con la caché, mientras no pasen CACHE_TTL_MS
+  // desde la última carga real, se usan los datos guardados en localStorage
+  // sin red. Las acciones que modifican datos (agregar, eliminar, mover de
+  // grupo, subir documento, etc.) actualizan la caché "in place" con
+  // actualizarCachePublicadores para que la próxima carga no muestre algo
+  // viejo, sin necesidad de volver a pedir todo por red.
+  // ==========================
+  const CACHE_KEY = "salinas_publicadores_cache_v2"; // v2: agrega el campo "sexo"
+  const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
+
+  function leerCache_() {
+    try {
+      const raw = localStorage.getItem(CACHE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || !Array.isArray(parsed.personas) || !parsed.timestamp) return null;
+      // JSON.stringify/parse convierte fechaVenceDPA (un objeto Date) en un
+      // string plano — hay que reconstruirlo como Date acá, si no
+      // formatFecha() explota al llamar d.getDate() sobre un string.
+      parsed.personas.forEach(p => {
+        p.fechaVenceDPA = p.fechaVenceDPA ? new Date(p.fechaVenceDPA) : null;
+      });
+      return parsed;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function guardarCache_(personas) {
+    try {
+      localStorage.setItem(CACHE_KEY, JSON.stringify({ timestamp: Date.now(), personas }));
+    } catch (err) {
+      // localStorage lleno, bloqueado (modo privado) o inexistente: seguimos
+      // sin caché, no rompe nada.
+    }
+  }
+
+  // Trae Publicadores + actividad, usando la caché si todavía está vigente.
+  // opciones.forzar=true ignora la caché y siempre pega por red (se usa en
+  // "Refrescar" y justo después de agregar un publicador nuevo).
+  async function cargarDatosPublicadores(cfg, opciones) {
+    opciones = opciones || {};
+    if (!opciones.forzar) {
+      const cache = leerCache_();
+      if (cache && (Date.now() - cache.timestamp) < CACHE_TTL_MS) {
+        return { personas: cache.personas, desdeCache: true };
+      }
+    }
+
+    const [personas, estadoActividad] = await Promise.all([
+      cargarPublicadores(),
+      cargarEstadoActividad(cfg.INFORMES_PREDICACION_API_URL)
+    ]);
+    personas.forEach(p => {
+      p.actividad = estadoActividad.get(normalizeName(p.nombre)) || null;
+    });
+
+    guardarCache_(personas);
+    return { personas, desdeCache: false };
+  }
+
+  // Para usar después de una edición local (ya reflejada en el array de
+  // personas en memoria) sin tener que volver a pedir todo por red.
+  function actualizarCachePublicadores(personas) {
+    guardarCache_(personas);
+  }
+
+  function invalidarCachePublicadores() {
+    try { localStorage.removeItem(CACHE_KEY); } catch (err) {}
   }
 
   // ==========================
@@ -388,8 +480,12 @@
     alertaDpaHtml,
     calcularAlertaDPA,
     ESTADOS_VALIDOS,
+    ESTADO_INCOMPATIBLES,
     parseEstados,
     cargarEstadoActividad,
-    alertaActividadHtml
+    alertaActividadHtml,
+    cargarDatosPublicadores,
+    actualizarCachePublicadores,
+    invalidarCachePublicadores
   };
 })();

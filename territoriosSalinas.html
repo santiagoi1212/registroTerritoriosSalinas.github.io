@@ -13,9 +13,9 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
 
   <style>
-    #map { height: 900px; width: 100%; }
+    #map { height: 100vh; width: 100%; }
     #info-panel {
-      position: fixed; width: 10%; top: 50%; left: 50px; height: 10%;
+      position: fixed; min-width: 180px; max-width: 90vw; top: 50%; left: 50px; height: auto;
       overflow-y: auto; background: rgba(0,0,0,.8); color: #fff;
       padding: 15px; border-radius: 10px; font-family: Arial, sans-serif;
       box-shadow: 2px 2px 10px rgba(0,0,0,.5); z-index: 1000;
@@ -32,6 +32,13 @@
     #referencias { top: 10px; left: 50px; width: 250px; max-height: 400px; overflow-y: auto; }
     #ranking-container { top: 10px; right: 10px; width: 250px; max-height: 400px; overflow-y: auto; }
     #contador-poligonos { bottom: 10px; right: 10px; width: 250px; max-height: 400px; overflow-y: auto; }
+
+    /* En celular los tres paneles fijos de 250px (izquierda, derecha arriba y
+       derecha abajo) se superponen entre sí y tapan el mapa — se ocultan,
+       mismo criterio que ya usa mapa.html para su panel de referencias. */
+    @media (max-width: 768px) {
+      #referencias, #ranking-container, #contador-poligonos { display: none; }
+    }
 
     .referencias { display: flex; flex-direction: column; gap: 10px; margin-top: 0; }
     .referencia { display: flex; align-items: center; gap: 10px; }

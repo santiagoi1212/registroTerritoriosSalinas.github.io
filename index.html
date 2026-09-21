@@ -75,7 +75,8 @@
   .user-meta{ display:flex; flex-direction:column; overflow:hidden; flex:1; }
   .user-name{ font-size:13.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .user-role{ font-size:11.5px; color:var(--muted); text-transform:capitalize; }
-  .btn-icon{ border:none; background:transparent; color:var(--muted); font-size:17px; cursor:pointer; padding:6px; border-radius:8px; line-height:1; }
+  .btn-icon{ border:none; background:transparent; color:var(--muted); font-size:17px; cursor:pointer; padding:8px; min-width:36px; min-height:36px; border-radius:8px; line-height:1; display:flex; align-items:center; justify-content:center; }
+  .btn-icon svg{ display:block; }
   .btn-icon:hover{ background:var(--danger-soft); color:var(--danger); }
 
 
@@ -161,7 +162,7 @@
   .modal-hero-icon{ width:52px; height:52px; border-radius:50%; background:var(--accent-soft); border:1px solid rgba(37,99,235,.35); display:flex; align-items:center; justify-content:center; font-size:24px; }
   .modal-title{ margin:0; font:700 18px/1.2 system-ui; }
   .modal-subtitle{ margin:0; font-size:13px; color:var(--muted); }
-  .modal-close-btn{ position:absolute; top:14px; right:14px; border:none; background:rgba(255,255,255,.06); color:var(--muted); font-size:15px; cursor:pointer; width:28px; height:28px; border-radius:8px; }
+  .modal-close-btn{ position:absolute; top:14px; right:14px; border:none; background:rgba(255,255,255,.06); color:var(--muted); font-size:15px; cursor:pointer; width:36px; height:36px; border-radius:8px; display:flex; align-items:center; justify-content:center; }
   .modal-close-btn:hover{ background:rgba(255,255,255,.12); color:var(--text); }
 
   .modal-body{ padding:4px 24px 24px; display:grid; gap:14px; position:relative; }
@@ -232,7 +233,9 @@
         <span id="user-name" class="user-name"></span>
         <span id="user-role" class="user-role"></span>
       </div>
-      <button id="btnLogout" class="btn-icon auth-hidden" type="button" title="Cerrar sesión">⏻</button>
+      <button id="btnLogout" class="btn-icon auth-hidden" type="button" title="Cerrar sesión">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      </button>
     </div>
   </aside>
 
@@ -454,27 +457,39 @@ const ACCESOS = [
     roles: ['admin','capitan']
   },
   {
-    group: 'Administración', icon: '📊', title: 'Informes de predicación',
+    group: 'Administración', icon: '🔑', title: 'Administradores',
+    desc: 'Cuentas que pueden iniciar sesión en el portal: crear, editar, resetear contraseña.',
+    href: './publicadores.html?vista=usuarios',
+    roles: ['admin']
+  },
+  {
+    group: 'Administración', icon: '📝', title: 'Llenar datos personales',
+    desc: 'Formulario de datos personales (contacto, salud, emergencia).',
+    href: './datos-personales.html',
+    roles: null
+  },
+  {
+    group: 'Predicación', icon: '📊', title: 'Informes de predicación',
     desc: 'Quién ya se registró este mes y situación (Precursor Regular / Auxiliar / Publicador) por grupo.',
     href: './informes-predicacion/index.html',
     roles: ['admin','capitan']
   },
   {
-    group: 'Administración', icon: '📈', title: 'Estadísticas',
+    group: 'Predicación', icon: '📈', title: 'Estadísticas',
     desc: 'Conteo de ancianos, siervos ministeriales, precursores y estado general por grupo.',
     href: './publicadores.html?vista=estadisticas',
     roles: ['admin','capitan']
   },
   {
-    group: 'Otros', icon: '🚐', title: 'Registro de Transporte',
-    desc: 'Coordinación y registro de transporte.',
-    href: './traslado.html',
+    group: 'Predicación', icon: '📋', title: 'Informe de predicación',
+    desc: 'Registro de horas y actividad de predicación.',
+    href: './informes/index.html',
     roles: null
   },
   {
-    group: 'Otros', icon: '📋', title: 'Informe de predicación',
-    desc: 'Registro de horas y actividad de predicación.',
-    href: './informes/index.html',
+    group: 'Otros', icon: '🚐', title: 'Registro de Transporte',
+    desc: 'Coordinación y registro de transporte.',
+    href: './traslado.html',
     roles: null
   }
 ];
@@ -594,7 +609,8 @@ function renderPortalUI(){
     document.getElementById('user-avatar').textContent = initialsFrom(user);
     document.getElementById('user-name').textContent = user;
     document.getElementById('user-role').textContent = role;
-    document.getElementById('home-username').textContent = user;
+    const nombreMostrado = (window.AuthApp && AuthApp.getDisplayName && AuthApp.getDisplayName()) || user;
+    document.getElementById('home-username').textContent = nombreMostrado;
     renderSidebarNav(role);
   } else {
     sidebarUser.classList.add('auth-hidden');

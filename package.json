@@ -1,0 +1,8 @@
+{
+  "name": "registro-territorios-salinas",
+  "private": true,
+  "description": "Sitio estático (GitHub Pages) del portal del salón de Salinas. Sin build/bundler: los tests corren directo con el runner nativo de Node.",
+  "scripts": {
+    "test": "node --test tests/"
+  }
+}

@@ -173,6 +173,7 @@ function obtenerPublicadoresDetalle_() {
     .map((fila) => ({
       Grupo: leer(fila, "Grupo"),
       Nombre: leer(fila, "Nombre"),
+      Sexo: leer(fila, "Sexo"),
       Estado: leer(fila, "Estado"),
       DPA: leer(fila, "DPA"),
       LinkDPA: leer(fila, "LinkDPA"),
@@ -547,6 +548,11 @@ function cambiarGrupoPublicador(data) {
 // (0, 1 o 2 elementos); se guarda uno por otro, separados por ", ", igual
 // formato que ya venía usando la planilla (ej: "Anciano, Precursor Regular").
 // Un array vacío borra el estado.
+//
+// Si la persona es Femenino (columna "Sexo"), se rechaza Anciano/Siervo
+// Ministerial — son estados que no aplican a una publicadora. Esto es
+// además de la restricción que ya aplica publicadores.html en el modal;
+// queda acá también por si alguna vez se llama a esta acción de otro lado.
 // ===================================================================
 function cambiarEstadoPublicador(data) {
   const nombre = data.nombre;
@@ -561,6 +567,13 @@ function cambiarEstadoPublicador(data) {
   const row = findRowByNombre_(sheet, cols["Nombre"], nombre);
   if (row === -1) return { ok: false, error: 'No se encontró a "' + nombre + '" en la planilla' };
 
+  if (cols["Sexo"]) {
+    const sexo = String(sheet.getRange(row, cols["Sexo"]).getValue() || "").trim();
+    if (sexo === "Femenino" && estados.some(e => e === "Anciano" || e === "Siervo Ministerial")) {
+      return { ok: false, error: "Anciano y Siervo Ministerial no aplican a una publicadora" };
+    }
+  }
+
   sheet.getRange(row, cols["Estado"]).setValue(estados.join(", "));
   return { ok: true };
 }
@@ -572,6 +585,7 @@ function cambiarEstadoPublicador(data) {
 function agregarPublicador(data) {
   const nombre = String(data.nombre || "").trim();
   const grupo = data.grupo;
+  const sexo = String(data.sexo || "").trim();
   if (!nombre) return { ok: false, error: "Falta el nombre" };
   if (!grupo && grupo !== 0) return { ok: false, error: "Falta el grupo" };
 
@@ -587,6 +601,7 @@ function agregarPublicador(data) {
   const fila = new Array(sheet.getLastColumn()).fill("");
   fila[cols["Nombre"] - 1] = nombre;
   fila[cols["Grupo"] - 1] = grupo;
+  if (sexo && cols["Sexo"]) fila[cols["Sexo"] - 1] = sexo;
   sheet.appendRow(fila);
 
   return { ok: true };
