@@ -106,6 +106,20 @@
   .stats-barra-fill{ background:var(--accent); height:100%; border-radius:999px; }
   .stats-alerta{ font-size:12.5px; color:var(--muted); margin:14px 0 0; padding-top:12px; border-top:1px solid var(--border); }
 
+  .alerta-lista-titulo{ font-size:13px; font-weight:600; margin:18px 0 8px; display:flex; align-items:center; gap:6px; }
+  .alerta-lista{ display:flex; flex-direction:column; gap:6px; }
+  .alerta-lista-item{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding:8px 12px; border-radius:8px; background:#0d1526; border:1px solid var(--border);
+    border-left:3px solid var(--muted); cursor:pointer; font-size:13px;
+  }
+  .alerta-lista-item:hover{ border-color:var(--muted); }
+  .alerta-lista-item.roja{ border-left-color:#f87171; }
+  .alerta-lista-item.amarilla{ border-left-color:#facc15; }
+  .alerta-lista-item .nombre{ font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .alerta-lista-item .razones{ color:var(--muted); font-size:12px; text-align:right; }
+  .alerta-lista-vacio{ font-size:12.5px; color:var(--muted); }
+
   .grupo-block{ margin-top:28px; }
   .grupo-block h2{ font-size:16px; margin:0 0 10px; color:#93c5fd; }
   .grupo-toggle{ display:flex; align-items:center; gap:6px; cursor:pointer; user-select:none; }
@@ -383,6 +397,16 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
   </div>
 </div>
 
+<div id="modal-usuario-overlay" class="modal-overlay">
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-usuario-titulo">
+    <div class="modal-header">
+      <h3 id="modal-usuario-titulo">Editar administrador</h3>
+      <button id="modal-usuario-close" class="modal-close-btn" aria-label="Cerrar" type="button">✕</button>
+    </div>
+    <div class="modal-body" id="modal-usuario-body"></div>
+  </div>
+</div>
+
 <div id="toast-stack"></div>
 
 <script>
@@ -537,6 +561,20 @@ async function eliminarPublicadorActual(){
     window.showToast('Falta configurar PUBLICADORES_API_URL en app-config.js.', 'error');
     return;
   }
+
+  // Optimista: desaparece de la lista y del modal ya mismo; recién después
+  // se confirma en segundo plano. Si falla, se la vuelve a insertar (en su
+  // posición original) y se avisa — mejor eso que dejarla "borrada" en
+  // pantalla cuando en realidad no se borró en la planilla.
+  const indiceOriginal = personasCache.indexOf(persona);
+  personasCache = personasCache.filter(p => p !== persona);
+  window.PublicadoresApp.actualizarCachePublicadores(personasCache);
+  cerrarModalPersona();
+  window.PublicadoresApp.renderResumen(document.getElementById('resumen'), personasCache);
+  window.PublicadoresApp.renderTabla(document.getElementById('tablas'), personasCache, document.getElementById('buscador').value, abrirModalPersona);
+  renderOrganizarGrupos();
+  renderEstadisticas();
+
   try {
     const res = await fetch(cfg.PUBLICADORES_API_URL, {
       method: 'POST',
@@ -546,18 +584,16 @@ async function eliminarPublicadorActual(){
     });
     const data = await res.json();
     if (!data || !data.ok) throw new Error((data && data.error) || 'Error al eliminar');
-
-    personasCache = personasCache.filter(p => p.nombre !== persona.nombre);
-    window.PublicadoresApp.actualizarCachePublicadores(personasCache);
     window.showToast(`${persona.nombre} eliminado`, 'success');
-    cerrarModalPersona();
+  } catch (err){
+    console.error('eliminarPublicadorActual', err);
+    personasCache.splice(Math.min(indiceOriginal, personasCache.length), 0, persona);
+    window.PublicadoresApp.actualizarCachePublicadores(personasCache);
     window.PublicadoresApp.renderResumen(document.getElementById('resumen'), personasCache);
     window.PublicadoresApp.renderTabla(document.getElementById('tablas'), personasCache, document.getElementById('buscador').value, abrirModalPersona);
     renderOrganizarGrupos();
     renderEstadisticas();
-  } catch (err){
-    console.error(err);
-    window.showToast('No se pudo eliminar: ' + err.message, 'error');
+    window.showToast(`No se pudo eliminar a ${persona.nombre}: ` + ((err && err.message) || err), 'error');
   }
 }
 
@@ -607,9 +643,20 @@ async function guardarEstado(){
 
   const seleccionados = [...modalPersonaBody.querySelectorAll('.sel-estado')].map(s => s.value).filter(Boolean);
   const estados = [...new Set(seleccionados)]; // por si eligieron el mismo en los dos selects
+  const estadoAnterior = persona.estado;
 
-  const btn = document.getElementById('btn-guardar-estado');
-  if (btn) btn.disabled = true;
+  // Actualización optimista: se aplica YA en memoria + caché + UI (se ve al
+  // instante, sin esperar la ida y vuelta al Apps Script, que puede tardar
+  // un par de segundos) y recién después se confirma en segundo plano. Si el
+  // guardado falla, se deshace el cambio y se avisa con un toast — antes,
+  // un error acá (red, JSON inválido, lo que sea) podía quedar sin mostrarse
+  // porque pasaba después de que el modal ya se había vuelto a dibujar con
+  // otro botón "Guardar estado" (el de la corrida anterior, ya desconectado
+  // del DOM).
+  persona.estado = estados;
+  window.PublicadoresApp.actualizarCachePublicadores(personasCache);
+  reRenderTrasCambio();
+
   try {
     const res = await fetch(cfg.PUBLICADORES_API_URL, {
       method: 'POST',
@@ -619,15 +666,13 @@ async function guardarEstado(){
     });
     const data = await res.json();
     if (!data || !data.ok) throw new Error((data && data.error) || 'Error al guardar el estado');
-
-    persona.estado = estados;
     window.showToast('Estado actualizado', 'success');
-    reRenderTrasCambio();
   } catch (err){
-    console.error(err);
-    window.showToast('No se pudo guardar: ' + err.message, 'error');
-  } finally {
-    if (btn) btn.disabled = false;
+    console.error('guardarEstado', err);
+    persona.estado = estadoAnterior;
+    window.PublicadoresApp.actualizarCachePublicadores(personasCache);
+    reRenderTrasCambio();
+    window.showToast('No se pudo guardar el estado: ' + ((err && err.message) || err), 'error');
   }
 }
 
@@ -895,12 +940,27 @@ document.getElementById('btnConfirmarAgregar').addEventListener('click', async (
     const data = await res.json();
     if (!data || !data.ok) throw new Error((data && data.error) || 'Error al agregar');
 
+    // Se agrega directo en memoria + caché en vez de volver a pedir toda la
+    // planilla por red (que ya confirmó el alta, no hace falta releer todo
+    // de nuevo para saber que esta fila nueva existe).
+    personasCache.push({
+      grupo, nombre, sexo, estado: [],
+      dpa: false, linkDpa: '', fechaVenceDPA: null, alertaDPA: { nivel: null, mensaje: '' },
+      usoDatos: false, linkAutorizacion: '',
+      datosPersonales: false, datosPersonalesFecha: '',
+      notas: '', actividad: null
+    });
+    window.PublicadoresApp.actualizarCachePublicadores(personasCache);
+    window.PublicadoresApp.renderResumen(document.getElementById('resumen'), personasCache);
+    window.PublicadoresApp.renderTabla(document.getElementById('tablas'), personasCache, document.getElementById('buscador').value, abrirModalPersona);
+    renderOrganizarGrupos();
+    renderEstadisticas();
+
     window.showToast(`${nombre} agregado al Grupo ${grupo}`, 'success');
     document.getElementById('nuevo-nombre').value = '';
     document.getElementById('nuevo-grupo').value = '';
     document.getElementById('nuevo-sexo').value = '';
     formAgregarPublicador.style.display = 'none';
-    await cargarYRenderizar({ forzar: true });
   } catch (err){
     console.error(err);
     window.showToast('No se pudo agregar: ' + err.message, 'error');
@@ -1072,6 +1132,50 @@ function renderEstadisticas(){
   const dpaAlertaAmarilla = personasCache.filter(p => p.alertaDPA && p.alertaDPA.nivel === 'amarilla').length;
   const dpaAlertaRoja = personasCache.filter(p => p.alertaDPA && p.alertaDPA.nivel === 'roja').length;
 
+  // Listado de alertas por persona: rojo = DPA vencido o sin tener, sin Uso
+  // de Datos, o sin Datos Personales; amarillo = DPA por vencer pronto (y
+  // ninguno de los motivos rojos). Cada persona aparece en un solo listado
+  // (el rojo tiene prioridad si tiene motivos de los dos tipos).
+  function razonesAlerta(p){
+    const razones = [];
+    if (!p.dpa) razones.push({ nivel: 'roja', texto: 'DPA pendiente' });
+    else if (p.alertaDPA && p.alertaDPA.nivel === 'roja') razones.push({ nivel: 'roja', texto: 'DPA vencido' });
+    else if (p.alertaDPA && p.alertaDPA.nivel === 'amarilla') razones.push({ nivel: 'amarilla', texto: 'DPA por vencer' });
+    if (!p.usoDatos) razones.push({ nivel: 'roja', texto: 'Uso de Datos pendiente' });
+    if (!p.datosPersonales) razones.push({ nivel: 'roja', texto: 'Datos Personales pendiente' });
+    return razones;
+  }
+
+  const conAlerta = personasCache.map(p => ({ p, razones: razonesAlerta(p) })).filter(x => x.razones.length);
+  const listaRoja = conAlerta.filter(x => x.razones.some(r => r.nivel === 'roja'))
+    .sort((a, b) => a.p.nombre.localeCompare(b.p.nombre, 'es'));
+  const listaAmarilla = conAlerta.filter(x => !x.razones.some(r => r.nivel === 'roja'))
+    .sort((a, b) => a.p.nombre.localeCompare(b.p.nombre, 'es'));
+
+  function renderItemAlerta(x){
+    const nivel = x.razones.some(r => r.nivel === 'roja') ? 'roja' : 'amarilla';
+    return `
+      <div class="alerta-lista-item ${nivel}" data-nombre="${escapeAttr(x.p.nombre)}" tabindex="0" role="button">
+        <span class="nombre">${x.p.nombre}${x.p.grupo ? ` <span class="muted" style="font-weight:400;">· Grupo ${x.p.grupo}</span>` : ''}</span>
+        <span class="razones">${x.razones.map(r => r.texto).join(' · ')}</span>
+      </div>
+    `;
+  }
+
+  const htmlAlertas = `
+    <div class="stats-box">
+      <h3>Publicadores que requieren atención</h3>
+      <div class="alerta-lista-titulo"><span class="alerta-dpa alerta-roja" style="margin-left:0;">⚠</span> Sin DPA / DPA vencido, sin Uso de Datos o sin Datos Personales (${listaRoja.length})</div>
+      ${listaRoja.length
+        ? `<div class="alerta-lista">${listaRoja.map(renderItemAlerta).join('')}</div>`
+        : `<p class="alerta-lista-vacio">✅ Nadie en esta situación.</p>`}
+      <div class="alerta-lista-titulo"><span class="alerta-dpa alerta-amarilla" style="margin-left:0;">⚠</span> DPA por vencer pronto (${listaAmarilla.length})</div>
+      ${listaAmarilla.length
+        ? `<div class="alerta-lista">${listaAmarilla.map(renderItemAlerta).join('')}</div>`
+        : `<p class="alerta-lista-vacio">✅ Nadie en esta situación.</p>`}
+    </div>
+  `;
+
   cont.innerHTML = `
     <div class="stats-cards">
       ${ROLES_PARALELOS.map(r => `<div class="stats-card"><span class="n">${countsRol[r]}</span><span class="l">${r}</span></div>`).join('')}
@@ -1117,7 +1221,17 @@ function renderEstadisticas(){
           ${dpaAlertaAmarilla ? `<b>${dpaAlertaAmarilla}</b> con DPA que vence en menos de 3 meses` : ''}
         </p>` : ''}
     </div>
+
+    ${htmlAlertas}
   `;
+
+  cont.querySelectorAll('.alerta-lista-item').forEach(item => {
+    const persona = personasCache.find(p => p.nombre === item.dataset.nombre);
+    if (!persona) return;
+    const abrir = () => abrirModalPersona(persona);
+    item.addEventListener('click', abrir);
+    item.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); abrir(); } });
+  });
 
   if (typeof Chart === 'undefined') return; // CDN de Chart.js no cargó (sin internet, bloqueado, etc.)
 
@@ -1248,7 +1362,18 @@ async function moverPersonaDeGrupo(persona, grupoDestino, btn){
     window.showToast('Falta configurar PUBLICADORES_API_URL en app-config.js.', 'error');
     return;
   }
-  if (btn) btn.disabled = true;
+
+  // Optimista: se ve el cambio de grupo ya mismo (mueve a la persona de
+  // sección en "Organizar grupos" al toque); recién después se confirma en
+  // segundo plano. Si falla, vuelve a su grupo anterior y avisa.
+  const grupoAnterior = persona.grupo;
+  persona.grupo = grupoDestino;
+  window.PublicadoresApp.actualizarCachePublicadores(personasCache);
+  window.PublicadoresApp.renderResumen(document.getElementById('resumen'), personasCache);
+  window.PublicadoresApp.renderTabla(document.getElementById('tablas'), personasCache, document.getElementById('buscador').value, abrirModalPersona);
+  renderOrganizarGrupos();
+  renderEstadisticas();
+
   try {
     const res = await fetch(cfg.PUBLICADORES_API_URL, {
       method: 'POST',
@@ -1258,18 +1383,16 @@ async function moverPersonaDeGrupo(persona, grupoDestino, btn){
     });
     const data = await res.json();
     if (!data || !data.ok) throw new Error((data && data.error) || 'Error al mover de grupo');
-
-    persona.grupo = grupoDestino;
-    window.PublicadoresApp.actualizarCachePublicadores(personasCache);
     window.showToast(`${persona.nombre} pasó al Grupo ${grupoDestino}`, 'success');
+  } catch (err){
+    console.error('moverPersonaDeGrupo', err);
+    persona.grupo = grupoAnterior;
+    window.PublicadoresApp.actualizarCachePublicadores(personasCache);
     window.PublicadoresApp.renderResumen(document.getElementById('resumen'), personasCache);
     window.PublicadoresApp.renderTabla(document.getElementById('tablas'), personasCache, document.getElementById('buscador').value, abrirModalPersona);
     renderOrganizarGrupos();
     renderEstadisticas();
-  } catch (err){
-    console.error(err);
-    window.showToast('No se pudo mover: ' + err.message, 'error');
-    if (btn) btn.disabled = false;
+    window.showToast(`No se pudo mover a ${persona.nombre}: ` + ((err && err.message) || err), 'error');
   }
 }
 
@@ -1477,43 +1600,114 @@ function renderTablaUsuarios(usuarios){
   });
 }
 
-async function abrirEdicionUsuario(u){
-  const nuevoUsername = prompt('Usuario:', u.username);
-  if (nuevoUsername === null) return;
-  const nombre = prompt('Nombre:', u.nombre || '');
-  if (nombre === null) return;
-  const apellido = prompt('Apellido:', u.apellido || '');
-  if (apellido === null) return;
-  const role = prompt('Rol:', u.role || '');
-  if (role === null) return;
+// --- Modal "Editar administrador" / "Resetear contraseña" ---
+// Antes usaban prompt() encadenados (un cartel nativo por campo); ahora es
+// un modal con inputs de verdad, mismo estilo que el de la ficha de
+// publicador (#modal-persona-overlay).
+const modalUsuarioOverlay = document.getElementById('modal-usuario-overlay');
+const modalUsuarioTitulo = document.getElementById('modal-usuario-titulo');
+const modalUsuarioBody = document.getElementById('modal-usuario-body');
 
+function cerrarModalUsuario(){
+  modalUsuarioOverlay.classList.remove('open');
+}
+document.getElementById('modal-usuario-close').addEventListener('click', cerrarModalUsuario);
+modalUsuarioOverlay.addEventListener('click', (e) => { if (e.target === modalUsuarioOverlay) cerrarModalUsuario(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && modalUsuarioOverlay.classList.contains('open')) cerrarModalUsuario();
+});
+
+function escapeAttr(s){
+  return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+}
+
+function abrirEdicionUsuario(u){
+  modalUsuarioTitulo.textContent = `Editar "${u.username}"`;
+  modalUsuarioBody.innerHTML = `
+    <div class="modal-row">
+      <span class="l">Usuario</span>
+      <input id="edit-usuario-username" class="form-input" type="text" value="${escapeAttr(u.username)}" style="width:100%;" autocomplete="off">
+    </div>
+    <div class="modal-row">
+      <span class="l">Nombre</span>
+      <input id="edit-usuario-nombre" class="form-input" type="text" value="${escapeAttr(u.nombre || '')}" style="width:100%;">
+    </div>
+    <div class="modal-row">
+      <span class="l">Apellido</span>
+      <input id="edit-usuario-apellido" class="form-input" type="text" value="${escapeAttr(u.apellido || '')}" style="width:100%;">
+    </div>
+    <div class="modal-row">
+      <span class="l">Rol</span>
+      <input id="edit-usuario-role" class="form-input" type="text" list="lista-roles" value="${escapeAttr(u.role || '')}" style="width:100%;">
+    </div>
+    <div style="display:flex; gap:8px;">
+      <button type="button" id="btn-guardar-edicion-usuario" class="btn-primary" style="flex:1;">Guardar</button>
+      <button type="button" id="btn-cancelar-edicion-usuario" class="btn-cancel">Cancelar</button>
+    </div>
+  `;
+  document.getElementById('btn-cancelar-edicion-usuario').addEventListener('click', cerrarModalUsuario);
+  document.getElementById('btn-guardar-edicion-usuario').addEventListener('click', () => guardarEdicionUsuario(u));
+  modalUsuarioOverlay.classList.add('open');
+}
+
+async function guardarEdicionUsuario(u){
+  const nuevoUsername = document.getElementById('edit-usuario-username').value.trim();
+  const nombre = document.getElementById('edit-usuario-nombre').value.trim();
+  const apellido = document.getElementById('edit-usuario-apellido').value.trim();
+  const role = document.getElementById('edit-usuario-role').value.trim();
+  if (!nuevoUsername){ window.showToast('Ingresá el usuario.', 'error'); return; }
+
+  const btn = document.getElementById('btn-guardar-edicion-usuario');
+  btn.disabled = true;
   const resultado = await llamarUsuariosAPI('actualizarUsuario', {
     ...adminAuthCache,
     usernameActual: u.username,
-    nuevoUsername: nuevoUsername.trim(),
-    nombre: nombre.trim(),
-    apellido: apellido.trim(),
-    role: role.trim()
+    nuevoUsername, nombre, apellido, role
   });
+  if (btn) btn.disabled = false;
+
   if (!resultado.ok){
     window.showToast('No se pudo editar: ' + resultado.error, 'error');
     return;
   }
   window.showToast('Usuario actualizado', 'success');
+  cerrarModalUsuario();
   recargarUsuarios();
 }
 
-async function resetearPasswordUsuario(u){
-  const nuevaPassword = prompt(`Nueva contraseña para "${u.username}" (mínimo 6 caracteres):`);
-  if (nuevaPassword === null) return;
-  if (nuevaPassword.length < 6){ window.showToast('Mínimo 6 caracteres.', 'error'); return; }
+function resetearPasswordUsuario(u){
+  modalUsuarioTitulo.textContent = `Resetear contraseña de "${u.username}"`;
+  modalUsuarioBody.innerHTML = `
+    <div class="modal-row">
+      <span class="l">Nueva contraseña</span>
+      <input id="reset-usuario-password" class="form-input" type="text" placeholder="mínimo 6 caracteres" style="width:100%;" autocomplete="off">
+    </div>
+    <div style="display:flex; gap:8px;">
+      <button type="button" id="btn-guardar-reset-usuario" class="btn-primary" style="flex:1;">Guardar</button>
+      <button type="button" id="btn-cancelar-reset-usuario" class="btn-cancel">Cancelar</button>
+    </div>
+  `;
+  document.getElementById('btn-cancelar-reset-usuario').addEventListener('click', cerrarModalUsuario);
+  document.getElementById('btn-guardar-reset-usuario').addEventListener('click', () => guardarResetPasswordUsuario(u));
+  modalUsuarioOverlay.classList.add('open');
+  document.getElementById('reset-usuario-password').focus();
+}
 
+async function guardarResetPasswordUsuario(u){
+  const nuevaPassword = document.getElementById('reset-usuario-password').value;
+  if (!nuevaPassword || nuevaPassword.length < 6){ window.showToast('Mínimo 6 caracteres.', 'error'); return; }
+
+  const btn = document.getElementById('btn-guardar-reset-usuario');
+  btn.disabled = true;
   const resultado = await llamarUsuariosAPI('resetearPassword', { ...adminAuthCache, username: u.username, nuevaPassword });
+  if (btn) btn.disabled = false;
+
   if (!resultado.ok){
     window.showToast('No se pudo resetear: ' + resultado.error, 'error');
     return;
   }
   window.showToast(`Contraseña de "${u.username}" actualizada`, 'success');
+  cerrarModalUsuario();
 }
 
 async function eliminarUsuario(u){

@@ -7,6 +7,7 @@
 
 <script src="./app-config.js"></script>
 <script src="./app-auth.js"></script>
+<script src="./app-publicadores.js"></script>
 
 <style>
   :root{
@@ -105,6 +106,7 @@
   /* ===== Contenido principal ===== */
   .main-content{ flex:1; min-width:0; display:flex; flex-direction:column; }
   .wrap{ max-width:760px; margin:0 auto; padding:60px 24px 40px; }
+  .wrap-wide{ max-width:1400px; margin:0 auto; padding:0 24px 40px; }
 
   /* ===== Vista embebida (sitios/sistemas dentro de la misma página) ===== */
   .embed-view{ flex:1; display:none; flex-direction:column; min-height:0; }
@@ -260,14 +262,26 @@
       </div>
     </div>
 
-    <div id="home" class="wrap" style="display:none">
-      <div class="hero">
-        <h1>Hola, <span id="home-username"></span> 👋</h1>
-        <p>Elegí una opción del menú lateral para comenzar.</p>
+    <div id="home" style="display:none">
+      <div class="wrap" style="padding-bottom:0;">
+        <div class="hero">
+          <h1>Hola, <span id="home-username"></span> 👋</h1>
+          <p>Elegí una opción del menú lateral para comenzar.</p>
+        </div>
+        <div class="home-hint">
+          <span>💡</span>
+          <span>Por seguridad, tu sesión se cierra automáticamente luego de 30 minutos sin actividad.</span>
+        </div>
       </div>
-      <div class="home-hint">
-        <span>💡</span>
-        <span>Por seguridad, tu sesión se cierra automáticamente luego de 30 minutos sin actividad.</span>
+
+      <!-- Mismo contenido que antes mostraba "Estadísticas" en el sidebar
+           (ese acceso ya no está — quedó acá), para admin/capitán. Ancho
+           completo (wrap-wide, no wrap) para que los rectángulos de
+           resumen entren varios por fila en vez de apilarse angostos.
+           Se muestra/oculta desde renderPortalUI según el rol — un
+           publicador no llega a ver esto. -->
+      <div id="home-stats-wrap" class="wrap-wide" style="display:none; margin-top:8px;">
+        <iframe id="home-stats-frame" title="Estadísticas" style="width:100%; height:80vh; min-height:600px; border:1px solid var(--border); border-radius:12px; display:block;"></iframe>
       </div>
     </div>
 
@@ -475,12 +489,6 @@ const ACCESOS = [
     roles: ['admin','capitan']
   },
   {
-    group: 'Predicación', icon: '📈', title: 'Estadísticas',
-    desc: 'Conteo de ancianos, siervos ministeriales, precursores y estado general por grupo.',
-    href: './publicadores.html?vista=estadisticas',
-    roles: ['admin','capitan']
-  },
-  {
     group: 'Predicación', icon: '📋', title: 'Informe de predicación',
     desc: 'Registro de horas y actividad de predicación.',
     href: './informes/index.html',
@@ -584,10 +592,52 @@ function renderSidebarNav(role){
   markActiveNav();
 }
 
+let homeStatsFrameIniciado = false;
+
+// Carga el iframe de Estadísticas en el home recién la primera vez que hace
+// falta (no en cada render de renderPortalUI).
+//
+// A propósito el iframe NO se agranda para que quepa todo el contenido sin
+// scroll interno (se probó eso primero): los modales de publicadores.html
+// (la ficha de cada persona) usan position:fixed, que dentro de un iframe
+// queda fijo respecto del viewport/scroll PROPIO del iframe, no de la
+// página de afuera. Si el iframe no tiene scroll propio (porque se hizo
+// tan alto como su contenido), el modal termina apareciendo pegado a la
+// parte de arriba del iframe en vez de en el lugar de la pantalla donde
+// estás parado. Por eso acá se deja con altura fija y scroll propio: así
+// "position:fixed" queda fijo relativo a ESE scroll, que es el que se ve.
+function iniciarHomeStatsFrame(){
+  if (homeStatsFrameIniciado) return;
+  homeStatsFrameIniciado = true;
+
+  const iframe = document.getElementById('home-stats-frame');
+  iframe.src = './publicadores.html?vista=estadisticas';
+}
+
+let publicadoresPrecargados = false;
+
+// Precarga Publicadores (con todos sus datos: DPA, Uso de Datos, Datos
+// Personales, actividad) apenas se loguea, en segundo plano, sin bloquear
+// nada — así cuando se entra a Publicadores / Organizar grupos /
+// Estadísticas la primera vez ya está todo en la caché de localStorage
+// (ver app-publicadores.js) en vez de esperar la ida y vuelta a los Apps
+// Script recién en ese momento. Solo tiene sentido para admin/capitán,
+// que son los únicos roles con acceso a esas pantallas.
+function precargarPublicadores(role){
+  if (publicadoresPrecargados) return;
+  if (!['admin', 'capitan'].includes(String(role || '').toLowerCase())) return;
+  if (!window.PublicadoresApp || typeof window.PublicadoresApp.cargarDatosPublicadores !== 'function') return;
+  publicadoresPrecargados = true;
+  window.PublicadoresApp.cargarDatosPublicadores(window.APP_CONFIG || {}, {})
+    .catch(err => console.warn('No se pudo precargar Publicadores al loguear:', err));
+}
+
 function renderPortalUI(){
   const logged = !!(window.AuthApp && AuthApp.isLogged && AuthApp.isLogged());
   const role   = (window.AuthApp && AuthApp.getRole && AuthApp.getRole()) || '';
   const user   = (window.AuthApp && AuthApp.getUsername && AuthApp.getUsername()) || '';
+
+  if (logged) precargarPublicadores(role);
 
   document.getElementById('locked').style.display = logged ? 'none' : 'flex';
   document.getElementById('sidebar-nav').style.display = logged ? 'block' : 'none';
@@ -598,6 +648,13 @@ function renderPortalUI(){
     document.getElementById('home').style.display = 'none';
   } else if (!currentSection){
     document.getElementById('home').style.display = 'block';
+  }
+
+  const rolAlcanzaHomeStats = ['admin', 'capitan'].includes(String(role || '').toLowerCase());
+  const homeStatsWrap = document.getElementById('home-stats-wrap');
+  homeStatsWrap.style.display = (logged && rolAlcanzaHomeStats) ? 'block' : 'none';
+  if (logged && rolAlcanzaHomeStats){
+    iniciarHomeStatsFrame();
   }
 
   const sidebarUser = document.getElementById('sidebar-user');
