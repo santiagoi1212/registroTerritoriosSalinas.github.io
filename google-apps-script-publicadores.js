@@ -152,13 +152,70 @@ function doGet(e) {
 // porque el script corre con los permisos de quien lo desplegó, sin depender
 // de que la hoja esté publicada. Devuelve las mismas columnas que esperaba
 // el parseo del CSV (por nombre de encabezado, no por posición).
+// Mismo criterio de "sin acentos, minúscula" que normalizeName() del lado
+// del cliente (app-publicadores.js) — se usa acá para cruzar nombres entre
+// la pestaña "publicadores" y la pestaña "Respuestas" (informe mensual) sin
+// que un tilde o una mayúscula distinta rompa el cruce.
+function normalizarNombre_(s) {
+  return String(s || "")
+    .normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Último informe mensual (pestaña "Respuestas") de cada persona: el más
+// reciente por "Fecha de envío". Devuelve un Map clave-normalizada ->
+// {nombre, grupo, situacion}. Se usa para (a) el gráfico de categorías de
+// Estadísticas (Precursor Regular/Auxiliar/Especial/Publicador, tal como la
+// persona lo reportó ese mes) y (b) como respaldo del grupo para alguien
+// que todavía no tiene fila en "publicadores".
+function obtenerUltimosInformesPorPersona_() {
+  const libro = SpreadsheetApp.openById(ID_PLANILLA_PUBLICADORES);
+  const hoja = libro.getSheetByName(NOMBRE_HOJA_RESPUESTAS);
+  const resultado = new Map();
+  if (!hoja) return resultado;
+  const lastRow = hoja.getLastRow();
+  if (lastRow < 2) return resultado;
+
+  // Columnas fijas (ver obtenerHojaRespuestas()): A Fecha envío, B Grupo,
+  // C Nombre, D Mes, E Año, F Participó, G Situación, H Cursos, I Horas, J Comentarios.
+  const filas = hoja.getRange(2, 1, lastRow - 1, 10).getValues();
+  filas.forEach((fila) => {
+    const nombre = String(fila[2] || "").trim();
+    if (!nombre) return;
+    const clave = normalizarNombre_(nombre);
+    const fecha = fila[0];
+    const fechaMs = esFecha_(fecha) ? fecha.getTime() : 0;
+
+    const actual = resultado.get(clave);
+    if (actual && actual.fechaMs > fechaMs) return; // ya hay uno más reciente
+
+    resultado.set(clave, {
+      fechaMs,
+      nombre,
+      grupo: fila[1] === "" || fila[1] === null || fila[1] === undefined ? "" : String(fila[1]),
+      situacion: String(fila[6] || "").trim(),
+    });
+  });
+  return resultado;
+}
+
+// Combina la pestaña "publicadores" (DPA, Uso de Datos, Datos Personales,
+// Sexo, Estado/rol — todo lo que se edita a mano desde el modal) con la
+// pestaña "Respuestas" (informe mensual): la lista final es la UNIÓN de
+// ambas, para no perder de vista a nadie que ya estaba siendo trackeado
+// aunque todavía no haya enviado ningún informe. El grupo mostrado es el de
+// "publicadores" si esa persona tiene fila ahí (así "Organizar grupos"
+// sigue funcionando); si no tiene fila, se usa el grupo de su último
+// informe. SituacionInforme es la categoría (Precursor Regular/Auxiliar/
+// Especial/Publicador) que esa persona reportó en su informe más reciente
+// — se usa en el gráfico de categorías de Estadísticas en vez de "Estado".
 function obtenerPublicadoresDetalle_() {
   const sheet = getPublicadoresSheet_();
   const cols = getHeaderMap_(sheet);
   const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return [];
 
-  const filas = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
   const leer = (fila, nombreCol) => {
     const idx = cols[nombreCol];
     if (!idx) return "";
@@ -167,23 +224,48 @@ function obtenerPublicadoresDetalle_() {
     return v === null || v === undefined ? "" : String(v);
   };
 
-  const colNombre = cols["Nombre"];
-  return filas
-    .filter((fila) => colNombre && String(fila[colNombre - 1] || "").trim() !== "")
-    .map((fila) => ({
-      Grupo: leer(fila, "Grupo"),
-      Nombre: leer(fila, "Nombre"),
-      Sexo: leer(fila, "Sexo"),
-      Estado: leer(fila, "Estado"),
-      DPA: leer(fila, "DPA"),
-      LinkDPA: leer(fila, "LinkDPA"),
-      FechaVenceDPA: leer(fila, "FechaVenceDPA"),
-      UsoDatos: leer(fila, "UsoDatos"),
-      LinkAutorizacion: leer(fila, "LinkAutorizacion"),
-      DatosPersonales: leer(fila, "DatosPersonales"),
-      DatosPersonalesFecha: leer(fila, "DatosPersonalesFecha"),
-      Notas: leer(fila, "Notas"),
-    }));
+  const porNombrePublicadores = new Map(); // clave normalizada -> fila cruda de "publicadores"
+  if (lastRow >= 2) {
+    const colNombre = cols["Nombre"];
+    const filas = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+    filas.forEach((fila) => {
+      const nombre = colNombre ? String(fila[colNombre - 1] || "").trim() : "";
+      if (!nombre) return;
+      porNombrePublicadores.set(normalizarNombre_(nombre), fila);
+    });
+  }
+
+  const ultimosInformes = obtenerUltimosInformesPorPersona_();
+  const claves = new Set([...porNombrePublicadores.keys(), ...ultimosInformes.keys()]);
+
+  const resultado = [];
+  claves.forEach((clave) => {
+    const filaPub = porNombrePublicadores.get(clave);
+    const ultimoInforme = ultimosInformes.get(clave);
+    const leerPub = (nombreCol) => (filaPub ? leer(filaPub, nombreCol) : "");
+
+    const grupoPub = leerPub("Grupo");
+    const grupo = grupoPub !== "" ? grupoPub : (ultimoInforme ? ultimoInforme.grupo : "");
+    const nombre = filaPub ? leerPub("Nombre") : (ultimoInforme ? ultimoInforme.nombre : "");
+
+    resultado.push({
+      Grupo: grupo,
+      Nombre: nombre,
+      Sexo: leerPub("Sexo"),
+      Estado: leerPub("Estado"),
+      DPA: leerPub("DPA"),
+      LinkDPA: leerPub("LinkDPA"),
+      FechaVenceDPA: leerPub("FechaVenceDPA"),
+      UsoDatos: leerPub("UsoDatos"),
+      LinkAutorizacion: leerPub("LinkAutorizacion"),
+      DatosPersonales: leerPub("DatosPersonales"),
+      DatosPersonalesFecha: leerPub("DatosPersonalesFecha"),
+      Notas: leerPub("Notas"),
+      SituacionInforme: ultimoInforme ? ultimoInforme.situacion : "",
+    });
+  });
+
+  return resultado;
 }
 
 function obtenerPublicadores() {

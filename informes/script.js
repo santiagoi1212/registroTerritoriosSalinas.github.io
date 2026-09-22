@@ -316,5 +316,13 @@ form.addEventListener("submit", async (e) => {
   }
 });
 
-cargarPublicadores();
+// No se muestra el formulario hasta que el combo de Grupo termine de
+// cargar (haya salido bien o mal) — mientras tanto se ve "Cargando
+// página…" en vez de un formulario con el select de grupo vacío.
+(async () => {
+  await cargarPublicadores();
+  document.getElementById("pagina-cargando").style.display = "none";
+  document.getElementById("header-formulario").style.display = "";
+  document.getElementById("contenedor-formulario").style.display = "";
+})();
 preseleccionarMesAnio();

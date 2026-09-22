@@ -273,7 +273,13 @@
         fechaVenceDPA, alertaDPA: calcularAlertaDPA(fechaVenceDPA),
         usoDatos, linkAutorizacion: r.LinkAutorizacion || "",
         datosPersonales, datosPersonalesFecha,
-        notas: r.Notas || ""
+        notas: r.Notas || "",
+        // Última "Situación" que la persona reportó en su informe mensual
+        // (pestaña "Respuestas"): Precursor Regular/Auxiliar 15h/Auxiliar
+        // 30h/Especial/Publicador. Se usa para el gráfico de categorías en
+        // Estadísticas — es independiente de "estado" (el rol que carga el
+        // admin a mano: Anciano/Siervo Ministerial/etc).
+        situacionInforme: r.SituacionInforme || ""
       };
     });
   }
@@ -292,7 +298,7 @@
   // actualizarCachePublicadores para que la próxima carga no muestre algo
   // viejo, sin necesidad de volver a pedir todo por red.
   // ==========================
-  const CACHE_KEY = "salinas_publicadores_cache_v2"; // v2: agrega el campo "sexo"
+  const CACHE_KEY = "salinas_publicadores_cache_v3"; // v3: agrega "situacionInforme"
   const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
 
   function leerCache_() {
@@ -342,7 +348,16 @@
       p.actividad = estadoActividad.get(normalizeName(p.nombre)) || null;
     });
 
-    guardarCache_(personas);
+    // Si hay INFORMES_PREDICACION_API_URL configurada pero el Map de
+    // actividad vino vacío, seguramente fue un problema transitorio de red
+    // (cargarEstadoActividad ya loguea el error y devuelve un Map vacío en
+    // vez de tirar) — no conviene guardar esto en la caché: quedaría
+    // "actividad vacía para todo el mundo" pegado ahí hasta que venza el
+    // TTL (5 minutos), en vez de reintentar en la próxima carga.
+    const actividadDegradada = !!cfg.INFORMES_PREDICACION_API_URL && estadoActividad.size === 0;
+    if (!actividadDegradada) {
+      guardarCache_(personas);
+    }
     return { personas, desdeCache: false };
   }
 
@@ -354,6 +369,37 @@
 
   function invalidarCachePublicadores() {
     try { localStorage.removeItem(CACHE_KEY); } catch (err) {}
+  }
+
+  // Avisa cuando OTRA pestaña/ventana del mismo navegador (misma URL de
+  // origen) cambia la caché de Publicadores — por ejemplo, un admin editó
+  // algo en otra pestaña de publicadores.html, o alguien completó
+  // datos-personales.html (que invalida la caché al enviar). El evento
+  // "storage" del navegador solo llega a las OTRAS pestañas, nunca a la que
+  // hizo el cambio (por eso no hace falta filtrar esa). callback recibe el
+  // array de personas ya actualizado, o null si la caché se invalidó del
+  // todo (hay que volver a pedir todo por red).
+  //
+  // Esto es sincronización entre pestañas del MISMO navegador vía
+  // localStorage — no hay forma de empujar cambios a otro dispositivo/
+  // navegador sin un backend con push en tiempo real, que este sitio (sin
+  // servidor propio, solo Apps Script) no tiene.
+  function suscribirseACambiosDeCache(callback) {
+    window.addEventListener("storage", (e) => {
+      if (e.key !== CACHE_KEY) return;
+      if (!e.newValue) { callback(null); return; }
+      try {
+        const parsed = JSON.parse(e.newValue);
+        if (!parsed || !Array.isArray(parsed.personas)) return;
+        parsed.personas.forEach(p => {
+          p.fechaVenceDPA = p.fechaVenceDPA ? new Date(p.fechaVenceDPA) : null;
+        });
+        callback(parsed.personas);
+      } catch (err) {
+        // JSON corrupto o lo que sea: no pasa nada, la próxima carga normal
+        // (TTL o "Refrescar") lo arregla solo.
+      }
+    });
   }
 
   // ==========================
@@ -486,6 +532,7 @@
     alertaActividadHtml,
     cargarDatosPublicadores,
     actualizarCachePublicadores,
-    invalidarCachePublicadores
+    invalidarCachePublicadores,
+    suscribirseACambiosDeCache
   };
 })();

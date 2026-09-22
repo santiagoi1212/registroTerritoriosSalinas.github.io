@@ -20,9 +20,28 @@ function crearLocalStorageEnMemoria() {
   };
 }
 
+// Stub mínimo de addEventListener/dispatchEvent (para suscribirseACambiosDeCache,
+// que escucha el evento "storage" del navegador) — no hace falta un
+// EventTarget real, solo guardar los handlers por tipo de evento y poder
+// dispararlos a mano desde un test.
+function crearWindowFalso() {
+  const handlers = {};
+  return {
+    APP_CONFIG: {},
+    addEventListener(tipo, fn) {
+      (handlers[tipo] = handlers[tipo] || []).push(fn);
+    },
+    dispatchEvent(evento) {
+      (handlers[evento.type] || []).forEach(fn => fn(evento));
+    }
+  };
+}
+
 function loadPublicadoresApp() {
-  global.window = global.window || {};
-  global.window.APP_CONFIG = global.window.APP_CONFIG || {};
+  // Siempre uno nuevo (no reusar entre tests): así los listeners de
+  // "storage" que registra suscribirseACambiosDeCache en un test no quedan
+  // pegados y no interfieren con el siguiente.
+  global.window = crearWindowFalso();
   global.localStorage = crearLocalStorageEnMemoria();
 
   // Vuelve a ejecutar el archivo cada vez (en vez de servir del cache de

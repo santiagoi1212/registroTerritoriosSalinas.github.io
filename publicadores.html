@@ -220,6 +220,14 @@
   .leyenda-item{ display:inline-flex; align-items:center; gap:6px; white-space:nowrap; }
   .muted{ color:var(--muted); }
 
+  .cargando-inline{ display:flex; align-items:center; gap:10px; color:var(--muted); padding:24px 4px; }
+  .spinner-sm{
+    width:18px; height:18px; border-radius:50%; flex-shrink:0;
+    border:2px solid var(--border); border-top-color:var(--accent);
+    animation:girar .8s linear infinite;
+  }
+  @keyframes girar{ to{ transform:rotate(360deg); } }
+
   .aviso{
     background:rgba(234,179,8,.1); border:1px solid rgba(234,179,8,.35); color:#fde68a;
     padding:10px 14px; border-radius:10px; font-size:13px; margin-bottom:18px;
@@ -331,16 +339,16 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
         </div>
       </div>
 
-      <div id="tablas">Cargando…</div>
+      <div id="tablas"><div class="cargando-inline"><span class="spinner-sm"></span> Cargando…</div></div>
     </div>
 
     <div id="view-grupos" style="display:none">
       <p class="subtitle" style="margin:0 0 16px;">Movés a alguien de un grupo a otro eligiendo el grupo destino y confirmando.</p>
-      <div id="grupos-organizar">Cargando…</div>
+      <div id="grupos-organizar"><div class="cargando-inline"><span class="spinner-sm"></span> Cargando…</div></div>
     </div>
 
     <div id="view-estadisticas" style="display:none">
-      <div id="stats-contenido">Cargando…</div>
+      <div id="stats-contenido"><div class="cargando-inline"><span class="spinner-sm"></span> Cargando…</div></div>
     </div>
 
     <div id="view-usuarios" style="display:none">
@@ -381,7 +389,7 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
           </div>
         </div>
 
-        <div id="tabla-usuarios">Cargando…</div>
+        <div id="tabla-usuarios"><div class="cargando-inline"><span class="spinner-sm"></span> Cargando…</div></div>
       </div>
     </div>
   </div>
@@ -712,7 +720,7 @@ async function cargarDatosPersonalesDetalle(p){
   const cfg = window.APP_CONFIG || {};
   if (!cont || !cfg.PUBLICADORES_API_URL) return;
 
-  cont.innerHTML = `<p class="muted">Cargando datos personales…</p>`;
+  cont.innerHTML = `<div class="cargando-inline"><span class="spinner-sm"></span> Cargando datos personales…</div>`;
   try {
     const res = await fetch(cfg.PUBLICADORES_API_URL + '?action=datosPersonales&nombre=' + encodeURIComponent(p.nombre) + '&t=' + Date.now(), { cache: 'no-store' });
     const data = await res.json();
@@ -763,7 +771,16 @@ async function guardarDatosPersonalesDetalle(p){
     });
     const data = await res.json();
     if (!data || !data.ok) throw new Error((data && data.error) || 'Error al guardar');
+
+    // El backend también actualiza DatosPersonales="Si" y la fecha en la
+    // planilla al editar (marcarDatosPersonalesEnPublicadores_) — se refleja
+    // acá mismo para que la fecha mostrada no quede vieja hasta el próximo
+    // refresco, y para que la caché (y otras pestañas, vía
+    // suscribirseACambiosDeCache) se enteren.
+    p.datosPersonales = true;
+    p.datosPersonalesFecha = window.PublicadoresApp.formatFecha(new Date());
     window.showToast('Datos personales actualizados', 'success');
+    reRenderTrasCambio();
   } catch (err){
     console.error(err);
     window.showToast('No se pudo guardar: ' + err.message, 'error');
@@ -1078,25 +1095,24 @@ function renderEstadisticas(){
     return;
   }
 
-  const ESTADOS = (window.PublicadoresApp && window.PublicadoresApp.ESTADOS_VALIDOS) || [];
   const total = personasCache.length;
   const pct = (n) => total ? Math.round((n / total) * 100) : 0;
 
   // Anciano / Siervo Ministerial son un nombramiento en paralelo, no una
-  // categoría de publicador: alguien puede ser "Anciano" Y "Precursor
-  // Regular" a la vez, así que no compiten por el mismo lugar en el
-  // gráfico de categorías — se cuentan aparte (countsRol).
-  //
-  // Para la categoría de publicador: si la persona es Precursor Especial /
-  // Regular / Auxiliar o Publicador No Bautizado, esa es su categoría. Si
-  // no tiene ninguna de esas pero SÍ es Anciano o Siervo Ministerial,
-  // cuenta como "Publicador" (el nombramiento no cambia su categoría base).
+  // categoría de publicador (se cuentan aparte, countsRol) — esto sigue
+  // viniendo del campo "Estado" que carga el admin a mano en el modal.
   const ROLES_PARALELOS = ['Anciano', 'Siervo Ministerial'];
-  const CATEGORIAS = ESTADOS.filter(e => !ROLES_PARALELOS.includes(e));
-  const CATEGORIAS_ESPECIFICAS = ['Precursor Especial', 'Precursor Regular', 'Precursor Auxiliar', 'Publicador No Bautizado'];
-
   const countsRol = {};
   ROLES_PARALELOS.forEach(r => { countsRol[r] = personasCache.filter(p => p.estado && p.estado.includes(r)).length; });
+
+  // La categoría de publicador sale del campo "Estado" de la pestaña
+  // "publicadores" (lo que carga el admin a mano) — volvió acá porque la
+  // mayoría todavía no envió ningún informe mensual, así que basarla en
+  // situacionInforme (pestaña "Respuestas") dejaba a casi todos como "Sin
+  // informe reciente" en vez de mostrar su categoría real.
+  const ESTADOS = (window.PublicadoresApp && window.PublicadoresApp.ESTADOS_VALIDOS) || [];
+  const CATEGORIAS = ESTADOS.filter(e => !ROLES_PARALELOS.includes(e));
+  const CATEGORIAS_ESPECIFICAS = ['Precursor Especial', 'Precursor Regular', 'Precursor Auxiliar', 'Publicador No Bautizado'];
 
   function categoriaDePersona(p){
     const estado = p.estado || [];
@@ -1131,6 +1147,16 @@ function renderEstadisticas(){
   const datosPersonalesOk = personasCache.filter(p => p.datosPersonales).length;
   const dpaAlertaAmarilla = personasCache.filter(p => p.alertaDPA && p.alertaDPA.nivel === 'amarilla').length;
   const dpaAlertaRoja = personasCache.filter(p => p.alertaDPA && p.alertaDPA.nivel === 'roja').length;
+
+  // Activo/Irregular/Inactivo: ya se calcula por persona (p.actividad, ver
+  // cargarEstadoActividad en app-publicadores.js, con datos de Informes de
+  // predicación / la misma familia de hojas que "Respuestas"/"Historico"/
+  // "Cache") — acá solo se suman para mostrar el total.
+  const actividadCounts = { activo: 0, irregular: 0, inactivo: 0, 'sin-info': 0 };
+  personasCache.forEach(p => {
+    const code = (p.actividad && p.actividad.code) || 'sin-info';
+    actividadCounts[code] = (actividadCounts[code] || 0) + 1;
+  });
 
   // Listado de alertas por persona: rojo = DPA vencido o sin tener, sin Uso
   // de Datos, o sin Datos Personales; amarillo = DPA por vencer pronto (y
@@ -1220,6 +1246,17 @@ function renderEstadisticas(){
           ${dpaAlertaRoja && dpaAlertaAmarilla ? ' · ' : ''}
           ${dpaAlertaAmarilla ? `<b>${dpaAlertaAmarilla}</b> con DPA que vence en menos de 3 meses` : ''}
         </p>` : ''}
+    </div>
+
+    <div class="stats-box">
+      <h3>Actividad en la predicación</h3>
+      <div class="stats-cards">
+        <div class="stats-card"><span class="n" style="color:#4ade80;">${actividadCounts.activo}</span><span class="l">Activo</span></div>
+        <div class="stats-card"><span class="n" style="color:#facc15;">${actividadCounts.irregular}</span><span class="l">Irregular</span></div>
+        <div class="stats-card"><span class="n" style="color:#f87171;">${actividadCounts.inactivo}</span><span class="l">Inactivo</span></div>
+        <div class="stats-card"><span class="n">${actividadCounts['sin-info']}</span><span class="l">Sin historial</span></div>
+      </div>
+      <p class="stats-alerta" style="margin-top:8px; padding-top:0; border-top:none;">Según Informes de predicación.</p>
     </div>
 
     ${htmlAlertas}
@@ -1440,6 +1477,27 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   await refrescarVista();
   limpiarBuscador();
+
+  // Si otra pestaña de publicadores.html (o datos-personales.html, que
+  // invalida la caché al enviar) cambia los datos, esta pantalla se
+  // actualiza sola — sin esto, alguien mirando "Ver estado" no se enteraba
+  // de un cambio hecho en otra pestaña hasta apretar "Refrescar" a mano.
+  if (window.PublicadoresApp && typeof window.PublicadoresApp.suscribirseACambiosDeCache === 'function'){
+    window.PublicadoresApp.suscribirseACambiosDeCache((personas) => {
+      if (vistaActual === 'usuarios') return; // esa vista no usa personasCache
+      if (personas){
+        personasCache = personas;
+        window.PublicadoresApp.renderResumen(document.getElementById('resumen'), personasCache);
+        window.PublicadoresApp.renderTabla(document.getElementById('tablas'), personasCache, document.getElementById('buscador').value, abrirModalPersona);
+        renderOrganizarGrupos();
+        renderEstadisticas();
+      } else {
+        // Caché invalidada desde otra pestaña (ej: alguien completó
+        // datos-personales.html) — pedir todo de nuevo.
+        cargarYRenderizar({ forzar: true });
+      }
+    });
+  }
 });
 
 // --- Administradores: ABM de las cuentas que pueden loguearse al portal ---

@@ -7,12 +7,17 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header class="form-header">
+  <div id="pagina-cargando">
+    <div class="spinner"></div>
+    <p>Cargando página…</p>
+  </div>
+
+  <header class="form-header" id="header-formulario" style="display:none">
     <h1>Informe Predicación Salinas</h1>
     <p class="subtitulo">Congregación · Registro mensual de actividad de predicación</p>
   </header>
 
-  <div class="container">
+  <div class="container" id="contenedor-formulario" style="display:none">
     <form id="form-predicacion" novalidate>
       <div class="field">
         <label for="grupo">Número de grupo *</label>

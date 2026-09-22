@@ -118,7 +118,19 @@
   .embed-title .nav-icon{ width:auto; font-size:17px; }
   .embed-title span:last-child{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .embed-actions{ display:flex; gap:6px; flex-shrink:0; }
-  .embed-frame{ flex:1; width:100%; border:none; background:#fff; }
+  .embed-frame-wrap{ position:relative; flex:1; min-height:0; }
+  .embed-frame{ position:absolute; inset:0; width:100%; height:100%; border:none; background:#fff; }
+  .embed-loading{
+    position:absolute; inset:0; display:none; align-items:center; justify-content:center;
+    gap:12px; flex-direction:column; background:var(--bg); color:var(--muted); font-size:13.5px;
+  }
+  .embed-loading.show{ display:flex; }
+  .embed-loading .spinner{
+    width:30px; height:30px; border-radius:50%;
+    border:3px solid var(--border); border-top-color:var(--accent);
+    animation:girar .8s linear infinite;
+  }
+  @keyframes girar{ to{ transform:rotate(360deg); } }
 
   .locked-state{ display:flex; align-items:center; justify-content:center; min-height:80vh; padding:24px; }
   .locked-card{ text-align:center; max-width:380px; }
@@ -296,7 +308,10 @@
           <button id="embed-close" class="btn-icon" type="button" title="Volver al inicio">✕</button>
         </div>
       </div>
-      <iframe id="embed-frame" class="embed-frame" title="Contenido del sistema"></iframe>
+      <div class="embed-frame-wrap">
+        <div id="embed-loading" class="embed-loading"><div class="spinner"></div><p>Cargando…</p></div>
+        <iframe id="embed-frame" class="embed-frame" title="Contenido del sistema"></iframe>
+      </div>
     </div>
   </main>
 </div>
@@ -517,12 +532,21 @@ function openSection(a){
   document.getElementById('embed-title-text').textContent = a.title;
   document.getElementById('embed-open-new').href = a.href;
   const frame = document.getElementById('embed-frame');
-  if (frame.dataset.src !== a.href){ frame.src = a.href; frame.dataset.src = a.href; }
+  const loading = document.getElementById('embed-loading');
+  if (frame.dataset.src !== a.href){
+    loading.classList.add('show');
+    frame.src = a.href;
+    frame.dataset.src = a.href;
+  }
   document.getElementById('embed-view').style.display = 'flex';
   markActiveNav();
   sidebarEl.classList.remove('open');
   backdropEl.classList.remove('show');
 }
+
+document.getElementById('embed-frame').addEventListener('load', () => {
+  document.getElementById('embed-loading').classList.remove('show');
+});
 
 function closeSection(){
   currentSection = null;

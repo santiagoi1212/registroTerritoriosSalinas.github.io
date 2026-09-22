@@ -215,7 +215,7 @@ test("cargarDatosPublicadores: la segunda llamada usa la caché (no vuelve a peg
       json: async () => ({
         status: "ok",
         publicadores: [
-          { Grupo: "1", Nombre: "Ana Gomez", Sexo: "Femenino", Estado: "Publicador", DPA: "Si", UsoDatos: "", DatosPersonales: "" }
+          { Grupo: "1", Nombre: "Ana Gomez", Sexo: "Femenino", Estado: "Publicador", DPA: "Si", UsoDatos: "", DatosPersonales: "", SituacionInforme: "Precursor Regular" }
         ]
       })
     };
@@ -232,6 +232,7 @@ test("cargarDatosPublicadores: la segunda llamada usa la caché (no vuelve a peg
   assert.equal(r1.personas.length, 1);
   assert.equal(r1.personas[0].nombre, "Ana Gomez");
   assert.equal(r1.personas[0].sexo, "Femenino");
+  assert.equal(r1.personas[0].situacionInforme, "Precursor Regular");
   const llamadasTrasPrimeraCarga = fetchCalls;
 
   const r2 = await app.cargarDatosPublicadores(cfg, {});
@@ -241,4 +242,78 @@ test("cargarDatosPublicadores: la segunda llamada usa la caché (no vuelve a peg
   const r3 = await app.cargarDatosPublicadores(cfg, { forzar: true });
   assert.equal(r3.desdeCache, false);
   assert.ok(fetchCalls > llamadasTrasPrimeraCarga, "forzar:true sí debería pegarle a la red de nuevo");
+});
+
+test("cargarDatosPublicadores: si la actividad viene vacía (falla transitoria) no queda pegada en caché", async () => {
+  const app = loadPublicadoresApp();
+  app.invalidarCachePublicadores();
+
+  let fetchCalls = 0;
+  global.fetch = async (url) => {
+    fetchCalls++;
+    if (String(url).includes("action=publicadoresDetalle")) {
+      return {
+        ok: true,
+        json: async () => ({
+          status: "ok",
+          publicadores: [{ Grupo: "1", Nombre: "Ana Gomez" }]
+        })
+      };
+    }
+    // action=cache (Informes de predicación): falla, como una red caída.
+    throw new Error("network down");
+  };
+
+  const cfg = { PUBLICADORES_API_URL: "https://fake.example/pub", INFORMES_PREDICACION_API_URL: "https://fake.example/informes" };
+  global.window.APP_CONFIG = cfg;
+
+  const r1 = await app.cargarDatosPublicadores(cfg, {});
+  assert.equal(r1.personas[0].actividad, null);
+  const llamadasTrasPrimeraCarga = fetchCalls;
+
+  // Como la actividad vino vacía, la SEGUNDA llamada (sin forzar) debería
+  // reintentar por red en vez de reusar esa caché degradada.
+  const r2 = await app.cargarDatosPublicadores(cfg, {});
+  assert.equal(r2.desdeCache, false, "no debería haber usado una caché con actividad vacía");
+  assert.ok(fetchCalls > llamadasTrasPrimeraCarga, "debería haber vuelto a pegarle a la red");
+});
+
+test("suscribirseACambiosDeCache: avisa con las personas actualizadas cuando otra pestaña cambia la caché", () => {
+  const app = loadPublicadoresApp();
+
+  let recibido = "no llamado";
+  app.suscribirseACambiosDeCache((personas) => { recibido = personas; });
+
+  const personas = [{ nombre: "Ana Gomez", grupo: "1", fechaVenceDPA: "2028-09-18T00:00:00.000Z" }];
+  global.window.dispatchEvent({
+    type: "storage",
+    key: "salinas_publicadores_cache_v3",
+    newValue: JSON.stringify({ timestamp: Date.now(), personas })
+  });
+
+  assert.ok(Array.isArray(recibido));
+  assert.equal(recibido[0].nombre, "Ana Gomez");
+  assert.ok(recibido[0].fechaVenceDPA instanceof Date, "fechaVenceDPA debería reconstruirse como Date");
+});
+
+test("suscribirseACambiosDeCache: avisa con null cuando la caché se invalida desde otra pestaña", () => {
+  const app = loadPublicadoresApp();
+
+  let recibido = "no llamado";
+  app.suscribirseACambiosDeCache((personas) => { recibido = personas; });
+
+  global.window.dispatchEvent({ type: "storage", key: "salinas_publicadores_cache_v3", newValue: null });
+
+  assert.equal(recibido, null);
+});
+
+test("suscribirseACambiosDeCache: ignora cambios de storage de OTRAS claves (no es la caché de Publicadores)", () => {
+  const app = loadPublicadoresApp();
+
+  let llamado = false;
+  app.suscribirseACambiosDeCache(() => { llamado = true; });
+
+  global.window.dispatchEvent({ type: "storage", key: "otra_clave_cualquiera", newValue: "{}" });
+
+  assert.equal(llamado, false);
 });

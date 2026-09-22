@@ -23,6 +23,31 @@ body {
   min-height: 100vh;
 }
 
+/* Pantalla de carga: tapa el formulario hasta que el combo de Grupo (y el
+   padrón de nombres por grupo detrás) terminó de cargar, para que nadie
+   llegue a tocar el formulario mientras el select todavía está vacío. */
+#pagina-cargando {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  color: var(--muted);
+  font-size: 14.5px;
+}
+.spinner {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  animation: girar 0.8s linear infinite;
+}
+@keyframes girar {
+  to { transform: rotate(360deg); }
+}
+
 .container {
   max-width: 580px;
   margin: 0 auto;
