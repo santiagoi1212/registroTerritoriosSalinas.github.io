@@ -43,16 +43,39 @@
     return parseCSV(text);
   }
 
+  // Google Apps Script devuelve de vez en cuando un 404/"Failed to fetch"
+  // transitorio (propagación después de un deploy, o el límite de
+  // ejecuciones simultáneas del script bajo uso real) que se resuelve solo
+  // unos cientos de ms después. Reintentar UNA vez con una pausa chiquita
+  // evita que ese blip se vea como un error real del lado del usuario.
+  function esperar_(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+  async function conReintento_(fn, intentos = 2, esperaMs = 700) {
+    let ultimoError;
+    for (let i = 0; i < intentos; i++) {
+      try {
+        return await fn();
+      } catch (err) {
+        ultimoError = err;
+        if (i < intentos - 1) await esperar_(esperaMs);
+      }
+    }
+    throw ultimoError;
+  }
+
   // Vía preferida: el mismo Apps Script (PUBLICADORES_API_URL) que ya se usa
   // para subir documentos, corriendo con los permisos de quien lo desplegó.
   // Evita depender de "Publicar en la web", que algunas cuentas/organizaciones
   // terminan bloqueando (redirige a un login de Google en vez de servir el CSV).
   async function fetchPublicadoresAPI(apiUrl) {
-    const res = await fetch(apiUrl + "?action=publicadoresDetalle&t=" + Date.now(), { cache: "no-store" });
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    const data = await res.json();
-    if (!data || data.status !== "ok") throw new Error((data && data.message) || "Error al cargar publicadores");
-    return data.publicadores || [];
+    return conReintento_(async () => {
+      const res = await fetch(apiUrl + "?action=publicadoresDetalle&t=" + Date.now(), { cache: "no-store" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const data = await res.json();
+      if (!data || data.status !== "ok") throw new Error((data && data.message) || "Error al cargar publicadores");
+      return data.publicadores || [];
+    });
   }
 
   function normalizeName(s) {
@@ -187,9 +210,11 @@
     if (!apiUrl) return new Map();
     try {
       const separador = apiUrl.includes("?") ? "&" : "?";
-      const res = await fetch(apiUrl + separador + "action=cache&t=" + Date.now(), { cache: "no-store" });
-      if (!res.ok) throw new Error("HTTP " + res.status);
-      const data = await res.json();
+      const data = await conReintento_(async () => {
+        const res = await fetch(apiUrl + separador + "action=cache&t=" + Date.now(), { cache: "no-store" });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        return res.json();
+      });
       const filas = Array.isArray(data.rows) ? data.rows : [];
 
       const porNombre = new Map();

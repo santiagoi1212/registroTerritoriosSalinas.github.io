@@ -638,30 +638,21 @@ function iniciarHomeStatsFrame(){
   iframe.src = './publicadores.html?vista=estadisticas';
 }
 
-let publicadoresPrecargados = false;
-
-// Precarga Publicadores (con todos sus datos: DPA, Uso de Datos, Datos
-// Personales, actividad) apenas se loguea, en segundo plano, sin bloquear
-// nada — así cuando se entra a Publicadores / Organizar grupos /
-// Estadísticas la primera vez ya está todo en la caché de localStorage
-// (ver app-publicadores.js) en vez de esperar la ida y vuelta a los Apps
-// Script recién en ese momento. Solo tiene sentido para admin/capitán,
-// que son los únicos roles con acceso a esas pantallas.
-function precargarPublicadores(role){
-  if (publicadoresPrecargados) return;
-  if (!['admin', 'capitan'].includes(String(role || '').toLowerCase())) return;
-  if (!window.PublicadoresApp || typeof window.PublicadoresApp.cargarDatosPublicadores !== 'function') return;
-  publicadoresPrecargados = true;
-  window.PublicadoresApp.cargarDatosPublicadores(window.APP_CONFIG || {}, {})
-    .catch(err => console.warn('No se pudo precargar Publicadores al loguear:', err));
-}
+// NOTA: hubo acá una precarga separada de Publicadores al loguear
+// (precargarPublicadores), pensada para que la caché ya estuviera tibia
+// antes de entrar a Publicadores/Organizar grupos/Estadísticas. Se sacó
+// porque corría en paralelo con iniciarHomeStatsFrame() de acá abajo —
+// ambas terminaban pegándole EXACTAMENTE a los mismos dos Apps Script al
+// mismo tiempo en cada login, y esa duplicación disparaba 404 por el
+// límite de ejecuciones simultáneas de Apps Script. iniciarHomeStatsFrame()
+// ya calienta la caché sola (carga publicadores.html?vista=estadisticas en
+// el home para admin/capitán, que son los únicos roles a los que esto
+// aplicaba), así que la precarga aparte era pura carga duplicada.
 
 function renderPortalUI(){
   const logged = !!(window.AuthApp && AuthApp.isLogged && AuthApp.isLogged());
   const role   = (window.AuthApp && AuthApp.getRole && AuthApp.getRole()) || '';
   const user   = (window.AuthApp && AuthApp.getUsername && AuthApp.getUsername()) || '';
-
-  if (logged) precargarPublicadores(role);
 
   document.getElementById('locked').style.display = logged ? 'none' : 'flex';
   document.getElementById('sidebar-nav').style.display = logged ? 'block' : 'none';
