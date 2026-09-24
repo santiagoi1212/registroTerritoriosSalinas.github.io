@@ -116,9 +116,17 @@
   .alerta-lista-item:hover{ border-color:var(--muted); }
   .alerta-lista-item.roja{ border-left-color:#f87171; }
   .alerta-lista-item.amarilla{ border-left-color:#facc15; }
-  .alerta-lista-item .nombre{ font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .alerta-lista-item .razones{ color:var(--muted); font-size:12px; text-align:right; }
+  .alerta-lista-item .nombre{ font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; flex:1 1 auto; }
+  .alerta-lista-item .razones{ color:var(--muted); font-size:12px; text-align:right; flex:0 0 auto; }
   .alerta-lista-vacio{ font-size:12.5px; color:var(--muted); }
+  /* En celular, nombre + motivos (que puede ser un texto largo, ej. "DPA
+     pendiente · Uso de Datos pendiente · Datos Personales pendiente") no
+     entran cómodos en una sola fila — se apilan. */
+  @media (max-width:480px){
+    .alerta-lista-item{ flex-direction:column; align-items:flex-start; gap:4px; }
+    .alerta-lista-item .nombre{ white-space:normal; }
+    .alerta-lista-item .razones{ text-align:left; }
+  }
 
   .grupo-block{ margin-top:28px; }
   .grupo-block h2{ font-size:16px; margin:0 0 10px; color:#93c5fd; }
@@ -189,9 +197,9 @@
   .modal-overlay{ position:fixed; inset:0; background:rgba(0,0,0,.55); display:none; align-items:center; justify-content:center; z-index:4000; padding:20px; }
   .modal-overlay.open{ display:flex; }
   .modal-card{ width:100%; max-width:440px; background:var(--card); border:1px solid var(--border); border-radius:14px; box-shadow:0 20px 60px rgba(0,0,0,.4); overflow:hidden; max-height:90vh; overflow-y:auto; }
-  .modal-header{ display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--border); position:sticky; top:0; background:var(--card); }
-  .modal-header h3{ margin:0; font-size:17px; }
-  .modal-close-btn{ background:none; border:none; color:var(--muted); font-size:18px; cursor:pointer; width:44px; height:44px; border-radius:8px; }
+  .modal-header{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:16px 18px; border-bottom:1px solid var(--border); position:sticky; top:0; background:var(--card); }
+  .modal-header h3{ margin:0; font-size:17px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; flex:1 1 auto; }
+  .modal-close-btn{ background:none; border:none; color:var(--muted); font-size:18px; cursor:pointer; width:44px; height:44px; border-radius:8px; flex:0 0 auto; }
   .modal-close-btn:hover{ background:rgba(255,255,255,.08); color:#fff; }
   .modal-body{ padding:18px; display:grid; gap:14px; }
   .modal-row{ display:flex; flex-direction:column; gap:4px; }
@@ -1053,6 +1061,23 @@ document.getElementById('buscador').addEventListener('input', (e) => {
   window.PublicadoresApp.renderTabla(document.getElementById('tablas'), personasCache, e.target.value, abrirModalPersona);
 });
 
+// Red de seguridad final: si a pesar de todo lo de arriba el campo sigue
+// apareciendo con un valor puesto solo (pasó más de una vez, seguramente
+// algún mecanismo del navegador que ni dispara la animación de autofill ni
+// un evento "input" — ej. lo completa directo al construir la página),
+// se lo controla e limpia a mano cada 200ms durante los primeros segundos,
+// sin importar CÓMO haya llegado ahí. Se corta apenas la persona escribe
+// o pega algo de verdad.
+let intentosControlBuscador = 0;
+const intervaloControlBuscador = setInterval(() => {
+  if (buscadorTocadoPorUsuario || intentosControlBuscador >= 25){ // ~5s a 200ms
+    clearInterval(intervaloControlBuscador);
+    return;
+  }
+  intentosControlBuscador++;
+  limpiarBuscador();
+}, 200);
+
 // --- Vista: "Ver estado", "Organizar grupos" o "Estadísticas" ---
 // Son tres accesos separados en el sidebar del portal (index.html), cada uno
 // apunta a esta misma página pero con una URL distinta: publicadores.html
@@ -1476,6 +1501,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     await window.AuthApp.restore();
   }
   await refrescarVista();
+
+  // Esta página vive embebida en un <iframe> (el de "Estadísticas" en
+  // Inicio, o el que abre el sidebar del portal). Por si justo después de
+  // loguearse el iframe llega a correr este script antes de que la cookie
+  // de sesión esté visible acá adentro, se reintenta un par de segundos
+  // (no solo una vez) antes de darlo por no-logueado de verdad. La causa
+  // más común de "Iniciá sesión" pegado después de loguearse en realidad
+  // era otra (ver btnLogout en index.html — el iframe no se recargaba al
+  // volver a loguearse en la misma pestaña), pero este reintento no está
+  // de más como red de seguridad adicional.
+  let intentosAuth = 0;
+  while (!(window.AuthApp && AuthApp.isLogged && AuthApp.isLogged()) && intentosAuth < 6){
+    await new Promise(resolve => setTimeout(resolve, 300));
+    if (window.AuthApp && typeof window.AuthApp.restore === "function"){
+      await window.AuthApp.restore();
+    }
+    await refrescarVista();
+    intentosAuth++;
+  }
+
   limpiarBuscador();
 
   // Si otra pestaña de publicadores.html (o datos-personales.html, que

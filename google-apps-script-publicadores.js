@@ -82,7 +82,45 @@ const CAMPO_POR_ENCABEZADO_DATOS_PERSONALES = {
   "Teléfono del familiar": "telefonoFamiliar",
 };
 
+// Caché de publicadoresDetalle: armarlo lee "publicadores" + TODA la pestaña
+// "Respuestas" y tardaba entre 10 y 60 segundos (a veces Google cortaba con
+// 404). Se guarda el JSON ya armado una hora; cualquier doPost (informe
+// nuevo, cambio de grupo, DPA, etc.) lo borra, así que después de un cambio
+// hecho desde el sitio la próxima lectura ya trae los datos nuevos. Lo que
+// se edite A MANO en la planilla tarda hasta una hora en verse.
+const CACHE_KEY_DETALLE = "publicadoresDetalle";
+const CACHE_SEGUNDOS_DETALLE = 3600;
+
+function obtenerPublicadoresDetalleConCache_() {
+  const cache = CacheService.getScriptCache();
+  const guardado = cache.get(CACHE_KEY_DETALLE);
+  if (guardado) return JSON.parse(guardado);
+
+  const lista = obtenerPublicadoresDetalle_();
+  try {
+    cache.put(CACHE_KEY_DETALLE, JSON.stringify(lista), CACHE_SEGUNDOS_DETALLE);
+  } catch (err) {
+    // más de 100KB (límite de CacheService): se sirve igual, sin cachear
+  }
+  return lista;
+}
+
+function invalidarCacheDetalle_() {
+  try {
+    CacheService.getScriptCache().remove(CACHE_KEY_DETALLE);
+  } catch (err) {}
+}
+
 function doPost(e) {
+  // Cualquier escritura puede cambiar lo que devuelve publicadoresDetalle.
+  // Se invalida DESPUÉS de escribir: si fuera antes, una lectura que cayera
+  // en el medio volvería a cachear los datos viejos.
+  const salida = doPostDespachar_(e);
+  invalidarCacheDetalle_();
+  return salida;
+}
+
+function doPostDespachar_(e) {
   // JSON (subir/borrar documento) vs FormData (envío de informe mensual).
   if (e.postData && e.postData.type === "application/json") {
     return doPostDocumentos_(e);
@@ -133,7 +171,7 @@ function doGet(e) {
       return respuesta({ status: "ok", publicadores: obtenerPublicadores() });
     }
     if (e.parameter.action === "publicadoresDetalle") {
-      return respuesta({ status: "ok", publicadores: obtenerPublicadoresDetalle_() });
+      return respuesta({ status: "ok", publicadores: obtenerPublicadoresDetalleConCache_() });
     }
     if (e.parameter.action === "datosPersonales") {
       const r = obtenerDatosPersonalesDePersona_(e.parameter.nombre);
@@ -203,12 +241,11 @@ function obtenerUltimosInformesPorPersona_() {
 
 // Combina la pestaña "publicadores" (DPA, Uso de Datos, Datos Personales,
 // Sexo, Estado/rol — todo lo que se edita a mano desde el modal) con la
-// pestaña "Respuestas" (informe mensual): la lista final es la UNIÓN de
-// ambas, para no perder de vista a nadie que ya estaba siendo trackeado
-// aunque todavía no haya enviado ningún informe. El grupo mostrado es el de
-// "publicadores" si esa persona tiene fila ahí (así "Organizar grupos"
-// sigue funcionando); si no tiene fila, se usa el grupo de su último
-// informe. SituacionInforme es la categoría (Precursor Regular/Auxiliar/
+// pestaña "Respuestas" (informe mensual). La lista final son SOLO las
+// personas de "publicadores": antes era la unión con "Respuestas", pero eso
+// metía en Estadísticas a gente sin fila en "publicadores" con el grupo que
+// puso en su informe (aparecían grupos 6, 7 y 8 que no existen). De
+// "Respuestas" solo se toma la situación del último informe. SituacionInforme es la categoría (Precursor Regular/Auxiliar/
 // Especial/Publicador) que esa persona reportó en su informe más reciente
 // — se usa en el gráfico de categorías de Estadísticas en vez de "Estado".
 function obtenerPublicadoresDetalle_() {
@@ -236,21 +273,14 @@ function obtenerPublicadoresDetalle_() {
   }
 
   const ultimosInformes = obtenerUltimosInformesPorPersona_();
-  const claves = new Set([...porNombrePublicadores.keys(), ...ultimosInformes.keys()]);
-
   const resultado = [];
-  claves.forEach((clave) => {
-    const filaPub = porNombrePublicadores.get(clave);
+  porNombrePublicadores.forEach((filaPub, clave) => {
     const ultimoInforme = ultimosInformes.get(clave);
-    const leerPub = (nombreCol) => (filaPub ? leer(filaPub, nombreCol) : "");
-
-    const grupoPub = leerPub("Grupo");
-    const grupo = grupoPub !== "" ? grupoPub : (ultimoInforme ? ultimoInforme.grupo : "");
-    const nombre = filaPub ? leerPub("Nombre") : (ultimoInforme ? ultimoInforme.nombre : "");
+    const leerPub = (nombreCol) => leer(filaPub, nombreCol);
 
     resultado.push({
-      Grupo: grupo,
-      Nombre: nombre,
+      Grupo: leerPub("Grupo"),
+      Nombre: leerPub("Nombre"),
       Sexo: leerPub("Sexo"),
       Estado: leerPub("Estado"),
       DPA: leerPub("DPA"),
@@ -317,6 +347,81 @@ function obtenerHojaRespuestas() {
   return hoja;
 }
 
+// Convierte "31/08/2026" (o "31/8/2026") a un objeto Date real — para que
+// esFecha_() lo reconozca como fecha más adelante (igual que hacen los
+// informes que se envían uno por uno desde informes/index.html, donde la
+// fecha la pone `new Date()` en el momento del envío).
+function parsearFechaDDMMYYYY_(s) {
+  const m = String(s || "").match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (!m) return null;
+  return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+}
+
+// ===================================================================
+// Importación en bloque de informes mensuales (nuevo): a diferencia del
+// envío normal de informes/index.html (uno por vez, vía FormData), esto
+// agrega MUCHAS filas de una sola vez a "Respuestas" con una única llamada
+// a setValues — pensado para volcar un historial que ya existía en otro
+// lado (otra planilla) sin mandar un pedido HTTP por fila, que además de
+// lento puede chocar con el límite de ejecuciones simultáneas de Apps
+// Script si son muchas.
+// data.filas: array de { fecha, grupo, nombre, mes, anio, participo,
+// situacion, cursos, horas, comentarios }.
+// ===================================================================
+function importarRespuestas(data) {
+  const filas = Array.isArray(data.filas) ? data.filas : [];
+  if (!filas.length) return { ok: false, error: "No hay filas para importar" };
+
+  const hoja = obtenerHojaRespuestas();
+  const valores = filas.map((f) => [
+    parsearFechaDDMMYYYY_(f.fecha) || new Date(),
+    f.grupo || "",
+    f.nombre || "",
+    f.mes || "",
+    f.anio || "",
+    f.participo || "",
+    f.situacion || "",
+    f.cursos || "",
+    f.horas || "",
+    f.comentarios || "",
+  ]);
+
+  const primeraFilaLibre = hoja.getLastRow() + 1;
+  hoja.getRange(primeraFilaLibre, 1, valores.length, 10).setValues(valores);
+
+  return { ok: true, agregadas: valores.length };
+}
+
+// ===================================================================
+// Borra TODAS las filas de "Respuestas" de una persona (nuevo): para
+// cuando un informe importado resultó ser un duplicado de alguien que ya
+// está cargado bajo otro nombre, y esa persona no tiene fila propia en
+// "publicadores" — su única aparición en el listado es vía la unión con
+// "Respuestas" (obtenerUltimosInformesPorPersona_), así que borrar sus
+// informes es lo que hace que deje de aparecer con un grupo inválido.
+// Recorre de abajo hacia arriba para que borrar una fila no corra el
+// número de las que faltan revisar.
+// ===================================================================
+function eliminarRespuestasDePersona(data) {
+  const nombre = String(data.nombre || "").trim();
+  if (!nombre) return { ok: false, error: "Falta el nombre" };
+  const clave = normalizarNombre_(nombre);
+
+  const hoja = obtenerHojaRespuestas();
+  const lastRow = hoja.getLastRow();
+  if (lastRow < 2) return { ok: true, borradas: 0 };
+
+  const valores = hoja.getRange(2, 1, lastRow - 1, 10).getValues();
+  let borradas = 0;
+  for (let i = valores.length - 1; i >= 0; i--) {
+    if (normalizarNombre_(String(valores[i][2] || "")) === clave) {
+      hoja.deleteRow(i + 2);
+      borradas++;
+    }
+  }
+  return { ok: true, borradas };
+}
+
 // Chequeo de "es una fecha" más confiable que `instanceof Date`: los valores
 // que devuelve getValues() para celdas de fecha a veces no pasan
 // `instanceof Date` en el contexto de una web app (aunque se comporten como
@@ -349,6 +454,9 @@ function doPostDocumentos_(e) {
       case "guardarDatosPersonales":       result = guardarDatosPersonales(data); break;
       case "actualizarDatosPersonalesAdmin": result = actualizarDatosPersonalesAdmin(data); break;
       case "cambiarGrupo":                 result = cambiarGrupoPublicador(data); break;
+      case "renombrarPublicador":          result = renombrarPublicador(data); break;
+      case "importarRespuestas":           result = importarRespuestas(data); break;
+      case "eliminarRespuestasDePersona":  result = eliminarRespuestasDePersona(data); break;
       case "cambiarEstado":                result = cambiarEstadoPublicador(data); break;
       case "agregarPublicador":            result = agregarPublicador(data); break;
       case "eliminarPublicador":           result = eliminarPublicador(data); break;
@@ -623,6 +731,33 @@ function cambiarGrupoPublicador(data) {
 }
 
 // ===================================================================
+// Renombrar (nuevo): corrige el nombre de alguien que ya está cargado (ej.
+// un apodo tipo "Nelly" en vez del nombre completo "Nelida") sin perder el
+// resto de su fila (DPA, Uso de Datos, Estado, etc.) — a diferencia de
+// borrar y volver a agregar, que dejaría esos campos en blanco.
+// ===================================================================
+function renombrarPublicador(data) {
+  const nombre = data.nombre;
+  const nuevoNombre = String(data.nuevoNombre || "").trim();
+  if (!nombre) return { ok: false, error: "Falta el nombre actual" };
+  if (!nuevoNombre) return { ok: false, error: "Falta el nombre nuevo" };
+
+  const sheet = getPublicadoresSheet_();
+  const cols = getHeaderMap_(sheet);
+  if (!cols["Nombre"]) return { ok: false, error: 'La hoja no tiene columna "Nombre"' };
+
+  const row = findRowByNombre_(sheet, cols["Nombre"], nombre);
+  if (row === -1) return { ok: false, error: 'No se encontró a "' + nombre + '" en la planilla' };
+
+  if (nombre.trim() !== nuevoNombre && findRowByNombre_(sheet, cols["Nombre"], nuevoNombre) !== -1) {
+    return { ok: false, error: 'Ya existe alguien llamado "' + nuevoNombre + '" en la planilla' };
+  }
+
+  sheet.getRange(row, cols["Nombre"]).setValue(nuevoNombre);
+  return { ok: true };
+}
+
+// ===================================================================
 // Estado (nuevo, para el modal de publicadores.html): asigna/quita hasta
 // dos estados (Anciano, Siervo Ministerial, Publicador, Publicador No
 // Bautizado, Precursor Regular, Precursor Especial), reescribiendo la
@@ -702,4 +837,35 @@ function eliminarPublicador(data) {
 
   sheet.deleteRow(row);
   return { ok: true };
+}
+
+// ===================================================================
+// Diagnóstico (no lo usa la web app): correrlo a mano desde el editor de
+// Apps Script (elegir "diagnosticoVelocidad" en el desplegable > Ejecutar)
+// y mirar el "Registro de ejecución". Mide cuánto tarda abrir la planilla
+// y leer cada pestaña, y muestra el tamaño de cada una (filas/columnas con
+// datos vs. el máximo de la grilla, y cantidad de fórmulas).
+// ===================================================================
+function diagnosticoVelocidad() {
+  let t = Date.now();
+  const libro = SpreadsheetApp.openById(ID_PLANILLA_PUBLICADORES);
+  Logger.log("Abrir planilla: " + (Date.now() - t) + " ms");
+
+  libro.getSheets().forEach((hoja) => {
+    t = Date.now();
+    const rango = hoja.getDataRange();
+    const valores = rango.getValues();
+    const msLectura = Date.now() - t;
+    const formulas = rango.getFormulas().reduce((n, fila) => n + fila.filter(Boolean).length, 0);
+    Logger.log(
+      '"' + hoja.getName() + '": ' + msLectura + " ms | datos " +
+      valores.length + "x" + (valores[0] ? valores[0].length : 0) +
+      " | grilla " + hoja.getMaxRows() + "x" + hoja.getMaxColumns() +
+      " | fórmulas " + formulas
+    );
+  });
+
+  t = Date.now();
+  obtenerPublicadoresDetalle_();
+  Logger.log("obtenerPublicadoresDetalle_ completo: " + (Date.now() - t) + " ms");
 }

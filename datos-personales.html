@@ -353,8 +353,61 @@ function actualizarSegunPersona(){
 
   estadoNombre.textContent = '✔ Uso de Datos al día. Ya podés completar tus datos personales.';
   estadoNombre.className = 'estado-msg listo';
+  limpiarFormulario();
   document.getElementById('f-nombre').value = personaSeleccionada.nombre;
   formDatos.style.display = 'block';
+  rellenarConDatosPrevios(personaSeleccionada);
+}
+
+// La hoja devuelve las fechas como "dd/MM/yyyy" (o como vinieron, ej.
+// "yyyy-MM-dd"); un <input type="date"> solo acepta "yyyy-MM-dd".
+function fechaParaInput(v){
+  const s = String(v || '').trim();
+  let m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[1]}-${m[2]}-${m[3]}` : '';
+}
+
+// Si la persona ya había enviado el formulario antes, trae lo que cargó
+// (misma acción que usa el modal de Publicadores) y completa los campos,
+// así solo corrige lo que cambió en vez de volver a escribir todo.
+async function rellenarConDatosPrevios(persona){
+  const cfg = window.APP_CONFIG || {};
+  if (!cfg.PUBLICADORES_API_URL) return;
+
+  estadoNombre.textContent = '✔ Uso de Datos al día. Buscando datos cargados anteriormente…';
+  btnEnviar.disabled = true;
+  try {
+    const res = await fetch(cfg.PUBLICADORES_API_URL + '?action=datosPersonales&nombre=' + encodeURIComponent(persona.nombre) + '&t=' + Date.now(), { cache: 'no-store' });
+    const data = await res.json();
+    if (personaSeleccionada !== persona) return; // cambió la selección mientras cargaba
+    if (!data || data.status !== 'ok') throw new Error((data && data.message) || 'Error al cargar');
+
+    const datos = data.datos;
+    if (!datos){
+      estadoNombre.textContent = '✔ Uso de Datos al día. Ya podés completar tus datos personales.';
+      return;
+    }
+
+    CAMPOS_TEXTO.forEach(campo => {
+      const input = document.getElementById('f-' + campo);
+      if (!input) return;
+      input.value = input.type === 'date' ? fechaParaInput(datos[campo]) : (datos[campo] || '');
+    });
+    CAMPOS_RADIO.forEach(campo => {
+      const input = document.querySelector(`input[name="${campo}"][value="${datos[campo]}"]`);
+      if (input) input.closest('.radio-opt').click();
+    });
+    estadoNombre.textContent = '✔ Ya tenías datos cargados: revisalos, corregí lo que haya cambiado y enviá.';
+  } catch (err){
+    console.error(err);
+    if (personaSeleccionada === persona){
+      estadoNombre.textContent = '✔ Uso de Datos al día. (No se pudieron traer los datos anteriores; podés completarlos de nuevo.)';
+    }
+  } finally {
+    if (personaSeleccionada === persona) btnEnviar.disabled = false;
+  }
 }
 
 selNombre.addEventListener('change', actualizarSegunPersona);

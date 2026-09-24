@@ -107,6 +107,10 @@
   .main-content{ flex:1; min-width:0; display:flex; flex-direction:column; }
   .wrap{ max-width:760px; margin:0 auto; padding:60px 24px 40px; }
   .wrap-wide{ max-width:1400px; margin:0 auto; padding:0 24px 40px; }
+  #home-stats-frame{ width:100%; height:80vh; min-height:600px; border:1px solid var(--border); border-radius:12px; display:block; }
+  @media (max-width:600px){
+    #home-stats-frame{ height:75vh; min-height:420px; }
+  }
 
   /* ===== Vista embebida (sitios/sistemas dentro de la misma página) ===== */
   .embed-view{ flex:1; display:none; flex-direction:column; min-height:0; }
@@ -293,7 +297,7 @@
            Se muestra/oculta desde renderPortalUI según el rol — un
            publicador no llega a ver esto. -->
       <div id="home-stats-wrap" class="wrap-wide" style="display:none; margin-top:8px;">
-        <iframe id="home-stats-frame" title="Estadísticas" style="width:100%; height:80vh; min-height:600px; border:1px solid var(--border); border-radius:12px; display:block;"></iframe>
+        <iframe id="home-stats-frame" title="Estadísticas"></iframe>
       </div>
     </div>
 
@@ -448,6 +452,16 @@ document.getElementById('btnLogout').addEventListener('click', () => {
   if (window.AuthApp && typeof window.AuthApp.logout === "function"){
     window.AuthApp.logout();
   }
+  // Sin esto, si te volvés a loguear en la MISMA pestaña sin recargar la
+  // página entera, el iframe de Estadísticas queda pegado mostrando "no
+  // logueado" para siempre: iniciarHomeStatsFrame() solo le pone un src la
+  // primera vez en la vida de la página (guardado con homeStatsFrameIniciado
+  // más abajo), y asignarle DE NUEVO el mismo string de URL no hace que el
+  // navegador recargue el iframe. Se resetea el flag y se vacía el src acá
+  // para que el próximo login sí dispare una carga fresca.
+  homeStatsFrameIniciado = false;
+  const frame = document.getElementById('home-stats-frame');
+  if (frame) frame.src = '';
   renderPortalUI();
 });
 
@@ -634,8 +648,15 @@ function iniciarHomeStatsFrame(){
   if (homeStatsFrameIniciado) return;
   homeStatsFrameIniciado = true;
 
-  const iframe = document.getElementById('home-stats-frame');
-  iframe.src = './publicadores.html?vista=estadisticas';
+  // setTimeout (no asignar el src directo) le da al navegador una vuelta
+  // completa del event loop para terminar de asentar la cookie de sesión
+  // que se acaba de guardar (justo después de loguearse) antes de que el
+  // iframe arranque a cargar — evita que se vea un instante como
+  // "Iniciá sesión desde el portal" ahí adentro. publicadores.html además
+  // reintenta solo una vez si igual llega a pasar (ver su DOMContentLoaded).
+  setTimeout(() => {
+    document.getElementById('home-stats-frame').src = './publicadores.html?vista=estadisticas';
+  }, 0);
 }
 
 // NOTA: hubo acá una precarga separada de Publicadores al loguear

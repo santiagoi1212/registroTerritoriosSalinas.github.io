@@ -409,9 +409,25 @@ tabAsignar.addEventListener('click', () => {
   startPolling(refrescarAsignar);
 });
 
+// El polling se saltea cuando nadie está mirando: pestaña/celular en
+// segundo plano (document.hidden) o esta página embebida en el portal
+// (index.html) con el iframe oculto porque se volvió a Inicio — el iframe
+// queda cargado y, sin esto, seguía pegándole al Apps Script cada 6s para
+// siempre. Todas esas ejecuciones de fondo cuentan para el límite de
+// ejecuciones simultáneas de Google y hacían encolar (y dar 404) a los
+// otros scripts del portal.
+function nadieMirando(){
+  if (document.hidden) return true;
+  try {
+    const frame = window.frameElement;
+    if (frame && frame.offsetParent === null) return true;
+  } catch (e) { /* iframe de otro origen: no se puede saber, se sigue */ }
+  return false;
+}
+
 function startPolling(fn){
   stopPolling();
-  pollInterval = setInterval(fn, 6000);
+  pollInterval = setInterval(() => { if (!nadieMirando()) fn(); }, 6000);
 }
 function stopPolling(){
   if(pollInterval) clearInterval(pollInterval);
