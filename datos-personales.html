@@ -280,31 +280,87 @@ async function cargarPersonas(){
     return;
   }
   aviso.style.display = 'none';
+
+  // Si este navegador ya tiene la lista guardada (de esta página o de
+  // Publicadores), se muestra al instante aunque esté vencida y se refresca
+  // de fondo; solo se espera a la red si no hay nada guardado.
+  const guardado = window.PublicadoresApp.leerCachePublicadores
+    ? window.PublicadoresApp.leerCachePublicadores()
+    : null;
+  if (guardado && guardado.personas.length){
+    aplicarPersonas(guardado.personas);
+    preseleccionarDesdeUrl();
+    if (!guardado.vigente) refrescarPersonasDeFondo();
+    return;
+  }
+
   try {
-    personasCache = await window.PublicadoresApp.cargarPublicadores();
-
-    const grupos = [...new Set(personasCache.map(p => p.grupo).filter(Boolean))]
-      .sort((a, b) => {
-        const na = parseInt(a, 10), nb = parseInt(b, 10);
-        if (isFinite(na) && isFinite(nb)) return na - nb;
-        return String(a).localeCompare(String(b), 'es');
-      });
-    selGrupo.innerHTML = '<option value="">Elegí tu número de grupo…</option>' +
-      grupos.map(g => `<option value="${g}">Grupo ${g}</option>`).join('');
-
-    // Preseleccionar si viene ?nombre= en la URL (link desde el modal de Publicadores)
-    const nombreUrl = new URLSearchParams(location.search).get('nombre');
-    const personaUrl = nombreUrl ? personasCache.find(p => p.nombre === nombreUrl) : null;
-    if (personaUrl){
-      selGrupo.value = personaUrl.grupo;
-      actualizarNombresSegunGrupo();
-      selNombre.value = personaUrl.nombre;
-      actualizarSegunPersona();
-    }
+    aplicarPersonas(await window.PublicadoresApp.cargarPublicadores());
+    preseleccionarDesdeUrl();
   } catch (err){
     console.error(err);
     aviso.style.display = 'block';
     aviso.textContent = 'No se pudo cargar la lista de publicadores.';
+  }
+}
+
+async function refrescarPersonasDeFondo(){
+  try {
+    aplicarPersonas(await window.PublicadoresApp.cargarPublicadores());
+  } catch (err){
+    console.warn('No se pudo refrescar la lista de publicadores (se sigue con la guardada):', err);
+  }
+}
+
+// Carga la lista en los combos sin perder lo que la persona ya eligió (puede
+// llegar un refresco de fondo mientras está completando el formulario).
+function aplicarPersonas(personas){
+  personasCache = personas;
+  const grupoElegido = selGrupo.value;
+  const nombreElegido = selNombre.value;
+
+  const grupos = [...new Set(personasCache.map(p => p.grupo).filter(Boolean))]
+    .sort((a, b) => {
+      const na = parseInt(a, 10), nb = parseInt(b, 10);
+      if (isFinite(na) && isFinite(nb)) return na - nb;
+      return String(a).localeCompare(String(b), 'es');
+    });
+  selGrupo.innerHTML = '<option value="">Elegí tu número de grupo…</option>' +
+    grupos.map(g => `<option value="${g}">Grupo ${g}</option>`).join('');
+
+  if (!grupoElegido || !grupos.includes(grupoElegido)) return;
+  selGrupo.value = grupoElegido;
+
+  const anterior = personaSeleccionada;
+  const textoEstado = estadoNombre.textContent, claseEstado = estadoNombre.className;
+  const formVisible = formDatos.style.display;
+  actualizarNombresSegunGrupo(); // resetea la selección de nombre y el mensaje
+  const nueva = personasCache.find(p => p.nombre === nombreElegido && p.grupo === grupoElegido);
+  if (!nueva) return;
+  selNombre.value = nombreElegido;
+
+  if (anterior && anterior.usoDatos && nueva.usoDatos){
+    // Sigue habilitada: se deja el formulario tal cual (con lo que ya se
+    // escribió o se rellenó) y se restaura el mensaje.
+    Object.assign(anterior, nueva);
+    personaSeleccionada = anterior;
+    estadoNombre.textContent = textoEstado;
+    estadoNombre.className = claseEstado;
+    formDatos.style.display = formVisible;
+  } else {
+    actualizarSegunPersona(); // cambió (o no estaba habilitada): se reevalúa
+  }
+}
+
+// Preseleccionar si viene ?nombre= en la URL (link desde el modal de Publicadores)
+function preseleccionarDesdeUrl(){
+  const nombreUrl = new URLSearchParams(location.search).get('nombre');
+  const personaUrl = nombreUrl ? personasCache.find(p => p.nombre === nombreUrl) : null;
+  if (personaUrl){
+    selGrupo.value = personaUrl.grupo;
+    actualizarNombresSegunGrupo();
+    selNombre.value = personaUrl.nombre;
+    actualizarSegunPersona();
   }
 }
 

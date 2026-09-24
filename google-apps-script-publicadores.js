@@ -105,9 +105,16 @@ function obtenerPublicadoresDetalleConCache_() {
   return lista;
 }
 
+// Misma idea para ?action=datosPersonales (el rellenado automático de
+// datos-personales.html y el modal de Publicadores): se guarda la pestaña
+// "DatosPersonales" entera ya armada como {nombre: datos}, así cada consulta
+// no vuelve a abrir la planilla. Queda solo en la caché del servidor (nunca
+// se manda entera al navegador) y también la borra cualquier doPost.
+const CACHE_KEY_DATOS_PERSONALES = "datosPersonalesTodos";
+
 function invalidarCacheDetalle_() {
   try {
-    CacheService.getScriptCache().remove(CACHE_KEY_DETALLE);
+    CacheService.getScriptCache().removeAll([CACHE_KEY_DETALLE, CACHE_KEY_DATOS_PERSONALES]);
   } catch (err) {}
 }
 
@@ -667,24 +674,53 @@ function actualizarDatosPersonalesAdmin(data) {
 // en el modal de publicadores.html). datos:null si todavía no envió nada.
 function obtenerDatosPersonalesDePersona_(nombre) {
   if (!nombre) return { ok: false, error: "Falta el nombre" };
+  const todos = obtenerTodosLosDatosPersonalesConCache_();
+  const datos = todos[String(nombre).trim()];
+  return { ok: true, datos: datos || null };
+}
 
+function obtenerTodosLosDatosPersonalesConCache_() {
+  const cache = CacheService.getScriptCache();
+  const guardado = cache.get(CACHE_KEY_DATOS_PERSONALES);
+  if (guardado) return JSON.parse(guardado);
+
+  const todos = leerTodosLosDatosPersonales_();
+  try {
+    cache.put(CACHE_KEY_DATOS_PERSONALES, JSON.stringify(todos), CACHE_SEGUNDOS_DETALLE);
+  } catch (err) {
+    // más de 100KB (límite de CacheService): se sirve igual, sin cachear
+  }
+  return todos;
+}
+
+// Toda la pestaña "DatosPersonales" en UNA lectura -> {nombre: {campo: valor}}.
+// La clave es el nombre sin espacios de más, mismo criterio que
+// findRowByNombre_ (si hubiera dos filas con el mismo nombre, gana la
+// primera, igual que antes).
+function leerTodosLosDatosPersonales_() {
   const hoja = getOrCreateDatosPersonalesSheet_();
   const cols = getHeaderMap_(hoja);
   const colNombre = cols["Nombre completo"];
-  const row = colNombre ? findRowByNombre_(hoja, colNombre, nombre) : -1;
-  if (row === -1) return { ok: true, datos: null };
+  const lastRow = hoja.getLastRow();
+  const todos = {};
+  if (!colNombre || lastRow < 2) return todos;
 
-  const valores = hoja.getRange(row, 1, 1, ENCABEZADOS_DATOS_PERSONALES.length).getValues()[0];
-  const datos = {};
-  ENCABEZADOS_DATOS_PERSONALES.forEach((encabezado, i) => {
-    const campo = CAMPO_POR_ENCABEZADO_DATOS_PERSONALES[encabezado];
-    if (!campo) return; // "Marca temporal" no tiene campo de formulario
-    let v = valores[i];
-    if (esFecha_(v)) v = Utilities.formatDate(v, Session.getScriptTimeZone(), "dd/MM/yyyy");
-    datos[campo] = v === null || v === undefined ? "" : String(v);
+  const tz = Session.getScriptTimeZone();
+  const filas = hoja.getRange(2, 1, lastRow - 1, ENCABEZADOS_DATOS_PERSONALES.length).getValues();
+  filas.forEach((valores) => {
+    const clave = String(valores[colNombre - 1] || "").trim();
+    if (!clave || todos[clave]) return;
+    const datos = {};
+    ENCABEZADOS_DATOS_PERSONALES.forEach((encabezado, i) => {
+      const campo = CAMPO_POR_ENCABEZADO_DATOS_PERSONALES[encabezado];
+      if (!campo) return; // "Marca temporal" no tiene campo de formulario
+      let v = valores[i];
+      if (esFecha_(v)) v = Utilities.formatDate(v, tz, "dd/MM/yyyy");
+      datos[campo] = v === null || v === undefined ? "" : String(v);
+    });
+    todos[clave] = datos;
   });
-
-  return { ok: true, datos };
+  return todos;
 }
 
 // Marca "DatosPersonales" = "Si" (y la fecha, si existe esa columna) en la

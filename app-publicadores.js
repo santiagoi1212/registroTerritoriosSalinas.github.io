@@ -392,6 +392,15 @@
     guardarCache_(personas);
   }
 
+  // Devuelve lo guardado aunque ya esté vencido ({personas, timestamp, vigente})
+  // o null: para páginas que prefieren mostrar algo al instante y refrescar
+  // de fondo (ej. datos-personales.html), en vez de esperar la red.
+  function leerCachePublicadores() {
+    const cache = leerCache_();
+    if (!cache) return null;
+    return { personas: cache.personas, timestamp: cache.timestamp, vigente: (Date.now() - cache.timestamp) < CACHE_TTL_MS };
+  }
+
   function invalidarCachePublicadores() {
     try { localStorage.removeItem(CACHE_KEY); } catch (err) {}
   }
@@ -557,6 +566,7 @@
     alertaActividadHtml,
     cargarDatosPublicadores,
     actualizarCachePublicadores,
+    leerCachePublicadores,
     invalidarCachePublicadores,
     suscribirseACambiosDeCache
   };
