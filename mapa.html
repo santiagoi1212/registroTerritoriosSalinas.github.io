@@ -241,7 +241,10 @@
     .referencia { display:flex; align-items:center; gap:10px; }
     .color-box { width: 18px; height: 18px; border: 1px solid #000; }
     .gris { background: #808080; }
-    .azul { background: rgb(9,0,128); }
+    .azul { background: #2563eb; }
+    /* Tooltip con la observación de una manzana pendiente (al pasar el mouse) */
+    .tooltip-pendiente { max-width: 260px; white-space: normal; font-size: 12.5px; line-height: 1.35; }
+    textarea.campo-invalido { border: 2px solid #ef4444 !important; }
     .verde { background: green; }
     .amarillo { background: #FFD700; }
     .naranja { background: #FFA500; }
@@ -349,6 +352,7 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
     <h3 style="margin:0 0 8px 0">Referencias</h3>
     <div class="referencias">
       <div class="referencia"><div class="color-box gris"></div><span>Sin registros</span></div>
+      <div class="referencia"><div class="color-box azul"></div><span>Pendiente: se empezó pero no se finalizó</span></div>
       <div class="referencia"><div class="color-box verde"></div><span>Registrado hace menos de 2 meses</span></div>
       <div class="referencia"><div class="color-box amarillo"></div><span>Registrado entre 2 y 3 meses</span></div>
       <div class="referencia"><div class="color-box rojo"></div><span>Registrado hace más de 3 meses</span></div>
@@ -606,7 +610,12 @@ async function refrescarUnoYRepintar(id, territorio) {
       const data = await cargarUnoJSONP(url);
       if (data && data.ok && data.exists && data.record) {
         const rec = data.record;
-        window.__datosMap.set(key, { id: key, ultimaFecha: rec.fecha || rec.ultimaFecha || null });
+        window.__datosMap.set(key, {
+          id: key,
+          ultimaFecha: rec.fecha || rec.ultimaFecha || null,
+          finalizado: rec.finalizado != null ? rec.finalizado : rec.estado,
+          comentario: rec.comentario || ''
+        });
       } else {
         // no quedan registros para este id (o no se pudo confirmar): lo tratamos como "sin registro"
         window.__datosMap.delete(key);
@@ -649,6 +658,7 @@ async function refrescarUnoYRepintar(id, territorio) {
       $campoFecha.value      = new Date().toISOString().slice(0,10);
       $campoEstado.value     = 'Si';
       $campoNotas.value      = '';
+      actualizarObligatoriedadComentario();
 
       // Admin: puede elegir el Capitán de la lista. Resto de usuarios: queda fijo en su propio usuario.
       if (isAdmin()) {
@@ -729,6 +739,20 @@ async function refrescarUnoYRepintar(id, territorio) {
       $backdrop.style.display = 'block';
       $modal.style.display    = 'block';
     }
+    // "¿Finalizó? = No" deja la manzana pendiente (azul en el mapa): en ese
+    // caso el comentario pasa a ser obligatorio y se avisa en el formulario.
+    function actualizarObligatoriedadComentario(){
+      const obligatorio = esPendiente($campoEstado.value);
+      const label = document.querySelector('label[for="campoNotas"]');
+      if (label) label.textContent = obligatorio ? 'Comentario (obligatorio: ¿qué se hizo?)' : 'Comentario';
+      $campoNotas.placeholder = obligatorio
+        ? 'Contá qué se hizo y qué falta (ej: se trabajó la mitad, falta la cuadra de la calle X)'
+        : 'Observaciones opcionales';
+      if (!obligatorio || $campoNotas.value.trim()) $campoNotas.classList.remove('campo-invalido');
+    }
+    $campoEstado.addEventListener('change', actualizarObligatoriedadComentario);
+    $campoNotas.addEventListener('input', actualizarObligatoriedadComentario);
+
     function cerrarModal(){ $modal.style.display='none'; $backdrop.style.display='none'; }
     $btnCancelar.addEventListener('click', cerrarModal);
     $backdrop.addEventListener('click', (e)=>{ if(e.target===$backdrop) cerrarModal(); });
@@ -843,9 +867,18 @@ async function enviarAlSheet(rec) {
   const comentario = $campoNotas.value.trim();
   const sincronizado = "";
 
+  // Si queda pendiente (no finalizó), es obligatorio contar qué se hizo:
+  // es el texto que después ven los demás al pasar el mouse por la manzana.
+  if (esPendiente(finalizado) && !comentario) {
+    $campoNotas.classList.add('campo-invalido');
+    $campoNotas.focus();
+    (window.showToast || alert)('Si no se finalizó, escribí en el comentario qué se hizo.');
+    return;
+  }
+
   // IMPORTANTE: id = territorio (para conteo por territorio)
-  const comentarioFinal = (comentario ? comentario : '') + (poligonoId ? (' | Manzana: ' + poligonoId) : '');
-  const rec = { id: poligonoId, territorio, poligonoId, fecha, finalizado, capitan, comentario: comentarioFinal, sincronizado };
+  // El comentario va limpio a la columna Observación (la manzana ya queda en la columna B).
+  const rec = { id: poligonoId, territorio, poligonoId, fecha, finalizado, capitan, comentario, sincronizado };
 
   try{
     $btnGuardar.disabled = true;
@@ -855,7 +888,7 @@ async function enviarAlSheet(rec) {
     if (r.ok) {
       const key = String(r.id || poligonoId).trim();
       // La fecha recién guardada pasa a ser la "última fecha" de ese id
-      __datosMap.set(key, { id: key, cantidad: Number(r.cantidad || 0), ultimaFecha: fecha });
+      __datosMap.set(key, { id: key, cantidad: Number(r.cantidad || 0), ultimaFecha: fecha, finalizado, comentario });
     }
 
     // ✅ Actualizar conteo local y repintar SOLO ese territorio (sin recargar todo el mapa)
@@ -997,19 +1030,54 @@ const labelsLayer   = L.featureGroup().addTo(map);
       return mapa;
     }
 
+    // "Pendiente" y "trabajando" son el mismo estado: el último registro de
+    // la manzana quedó con ¿Finalizó? = No. Se pinta de azul sin importar la
+    // fecha, hasta que alguien la registre como finalizada.
+    const COLOR_PENDIENTE = '#2563eb';
+    function esPendiente(finalizado) {
+      const s = String(finalizado == null ? '' : finalizado).trim().toLowerCase();
+      return ['no', 'n', 'false', '0', 'pendiente', 'trabajando', 'incompleto'].includes(s);
+    }
+
+    // El comentario se guarda con " | Manzana: X" agregado al final (ver
+    // btnGuardar); para mostrarlo se saca ese sufijo.
+    function limpiarComentario(c) {
+      return String(c || '').replace(/\s*\|\s*Manzana:.*$/i, '').trim();
+    }
+
     function getFillHexFromDatos(id) {
       const key = idKey(id);
       const d = __datosMap.get(key);
 
       if (d) {
+        if (esPendiente(d.finalizado)) return COLOR_PENDIENTE;
         const claseAHex = {
           gray:'#808080', green:'green', yellow:'#FFD700', red:'#ff0000'
         };
-        console.log(id + " : " + d.ultimaFecha);
         const c = obtenerColorPorTiempo(d.ultimaFecha);
         return claseAHex[c] || '#808080';
       }else{
         return '#808080';
+      }
+    }
+
+    // Color + texto al pasar el mouse: si la manzana está pendiente, muestra
+    // la observación de qué se hizo; si no, saca el tooltip.
+    function aplicarEstadoManzana(layer) {
+      layer.setStyle({ fillColor: getFillHexFromDatos(layer.__polyId) });
+      const d = __datosMap.get(idKey(layer.__polyId));
+      layer.unbindTooltip();
+      if (d && esPendiente(d.finalizado)) {
+        const obs = limpiarComentario(d.comentario);
+        const cont = document.createElement('div');
+        cont.appendChild(document.createTextNode(obs || '(sin observación)'));
+        if (d.ultimaFecha) {
+          cont.appendChild(document.createElement('br'));
+          const fecha = document.createElement('small');
+          fecha.textContent = 'Último registro: ' + d.ultimaFecha;
+          cont.appendChild(fecha);
+        }
+        layer.bindTooltip(cont, { sticky: true, direction: 'top', className: 'tooltip-pendiente' });
       }
     }
 
@@ -1021,6 +1089,9 @@ const labelsLayer   = L.featureGroup().addTo(map);
     if (!fechaStr) return null;
     // Acepta "YYYY-MM-DD" o cualquier string parseable por Date().
     const s = String(fechaStr).trim();
+    // op=last devuelve "dd/MM/yyyy" (new Date() no lo entiende).
+    const dmy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (dmy) return new Date(Number(dmy[3]), Number(dmy[2]) - 1, Number(dmy[1]));
     const f = /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(s + 'T00:00:00') : new Date(s);
     return isNaN(f.getTime()) ? null : f;
   }
@@ -1047,8 +1118,7 @@ function repintarTerritorio(territorio){
     // We'll attach __terr on creation below; if not, fallback via feature props.
     const t = layer && layer.__terr != null ? layer.__terr : null;
     if (String(t) === String(territorio)) {
-      const hex = getFillHexFromDatos(layer.__polyId);
-      layer.setStyle({ fillColor: hex });
+      aplicarEstadoManzana(layer);
     }
   });
 }
@@ -1075,6 +1145,7 @@ async function init() {
     const poly = L.polygon(p.coords, { color:'#999', weight:0.6, opacity:0.4, fillColor:hex, fillOpacity:0.5 }).addTo(polygonsLayer);
     poly.__terr = p.territorio;
     poly.__polyId = p.id;
+    aplicarEstadoManzana(poly);
     poly.on('click', () => abrirModalSiLogueado(p.territorio, p.id));
     const labelPt = centroidArea(p.coords) || centroide(p.coords) || poly.getBounds().getCenter();
     const icon = L.divIcon({ className:'numero-cartel', html:String(p.id), iconSize: null, iconAnchor: [0,0] });
