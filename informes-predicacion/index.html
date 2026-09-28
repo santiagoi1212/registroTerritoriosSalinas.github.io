@@ -633,28 +633,38 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
 
   // ---------------------------------------------------------------------
   // 4b) ESTADO DE LA PERSONA (Activo / Irregular / Inactivo)
-  //    Ventana de los últimos 6 períodos con datos en TODO el sistema
-  //    (no solo los de esta persona): un período "sin participar" es uno
-  //    en el que la persona no informó nada, o informó "no" a "¿Participó
-  //    en alguna faceta de la predicación?".
+  //    Ventana: los últimos 6 períodos con datos en TODO el sistema (no
+  //    solo los de esta persona). Un período cuenta como "sin participar"
+  //    si NO informó, si informó "No" a "¿Participó...?", o si lo dejó en
+  //    blanco ("—") sin horas — ver participoEnMes().
   //      - 6 consecutivos (desde el más reciente) sin participar -> Inactivo
   //      - 2+ sin participar en la ventana (seguidos o alternados) -> Irregular
-  //      - menos de 2 períodos de historial propio -> sin info suficiente
+  //      - si su primer informe es posterior al mes más viejo de la
+  //        ventana (todavía no tenemos 6 meses suyos) -> "Falta información"
+  //        (gris, sin estado). Ej.: alguien nuevo que empezó a informar hace 2 meses.
   // ---------------------------------------------------------------------
+  // Participó ese mes solo si el informe dice "Sí", o si está en blanco
+  // pero tiene horas (> 0). Sin informe, "No" o "—" sin horas = no participó.
+  function participoEnMes(row) {
+    if (!row) return false;
+    if (row.participo === true) return true;
+    if (row.participo === false) return false;
+    return typeof row.horas === "number" && row.horas > 0;
+  }
+
   function personStatus(name) {
     var hist = STATE.rowsByName[name] || []; // ordenado asc por periodKey
-    if (hist.length < 2) return { code: "sin-info", label: "Sin historial suficiente" };
+    var FALTA_INFO = { code: "sin-info", label: "Falta información (menos de 6 meses)" };
 
-    // Ventana: los últimos 6 períodos CON DATOS DE ALGUIEN, pero sin ir más
-    // atrás del primer informe propio de esta persona — antes de eso
-    // todavía no le correspondía informar, así que no cuenta como "faltó".
-    var earliestOwnPeriod = hist[0].periodKey;
-    var periods = allPeriods().filter(function (p) { return p >= earliestOwnPeriod; }); // desc
-    var window_ = periods.slice(0, 6);
+    // Ventana: los últimos 6 períodos CON DATOS DE ALGUIEN. Solo se asigna
+    // estado si tenemos los 6 meses de esa persona, o sea si su primer
+    // informe es de ese mes más viejo o anterior; si no, "Falta información".
+    var window_ = allPeriods().slice(0, 6); // desc
+    if (!hist.length || window_.length < 6 || hist[0].periodKey > window_[5]) return FALTA_INFO;
     var consecutiveNo = 0, totalNo = 0, streakBroken = false;
     for (var i = 0; i < window_.length; i++) {
       var row = STATE.rowsByNamePeriod[name + "|" + window_[i]];
-      var noParticipo = !row || row.participo === false;
+      var noParticipo = !participoEnMes(row);
       if (noParticipo) {
         totalNo++;
         if (!streakBroken) consecutiveNo++;
@@ -736,7 +746,7 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
       var row = STATE.rowsByNamePeriod[name + "|" + selectedPeriod];
       if (row) {
         submitted.push(name);
-        if (row.participo === false) noActivity.push(name);
+        if (!participoEnMes(row)) noActivity.push(name);
         var bucket = row.situacion || "Otro";
         counts[bucket] = (counts[bucket] || 0) + 1;
       } else {
@@ -903,7 +913,7 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
             '<span><span class="pub-dot st-ok-dot"></span> Activo</span>' +
             '<span><span class="pub-dot st-warn-dot"></span> Irregular</span>' +
             '<span><span class="pub-dot st-crit-dot"></span> Inactivo</span>' +
-            '<span><span class="pub-dot"></span> Sin historial</span>' +
+            '<span><span class="pub-dot"></span> Falta información</span>' +
             " · click en un nombre para ver su ficha" +
           "</p>" +
           '<div class="pub-roster-grid">' + view.roster.map(rosterItem).join("") + "</div>" +
@@ -976,7 +986,7 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
     if (!rowsList.length) return '<p class="pub-modal-sub">Sin informes registrados.</p>';
     var rowsHtml = rowsList.map(function (r) {
       var participoTxt = r.missing ? "No informó" : (r.participo === true ? "Sí" : (r.participo === false ? "No" : "—"));
-      return '<tr class="' + (r.missing || r.participo === false ? "pub-missing-row" : "") + '"><td>' +
+      return '<tr class="' + (r.missing || !participoEnMes(r) ? "pub-missing-row" : "") + '"><td>' +
         escapeHtml(periodLabel(r.periodKey)) + "</td><td>" + (r.situacion ? situacionBadge(r.situacion) : "—") + "</td><td>" +
         (r.horas == null ? "—" : r.horas) + "</td><td>" + participoTxt + "</td></tr>";
     }).join("");

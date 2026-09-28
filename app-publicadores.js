@@ -179,16 +179,27 @@
   // "Cache" que expone ese mismo backend (?action=cache), para no
   // duplicar/tocar ese widget.
   // ==========================
-  function calcularEstadoActividad(historial, periodos, filasPorNombrePeriodo, claveNombre) {
-    if (historial.length < 2) return { code: "sin-info", label: "Sin historial suficiente" };
+  function participoEnMes(fila) {
+    if (!fila) return false;
+    if (fila.participo === true) return true;
+    if (fila.participo === false) return false;
+    return typeof fila.horas === "number" && fila.horas > 0;
+  }
 
-    const primerPeriodoPropio = historial[0].periodKey;
-    const ventana = periodos.filter(p => p >= primerPeriodoPropio).slice(0, 6);
+  function calcularEstadoActividad(historial, periodos, filasPorNombrePeriodo, claveNombre) {
+    // Mismo criterio que informes-predicacion/index.html: los últimos 6
+    // meses con datos; cuenta como "no participó" no informar, "No", o "—"
+    // sin horas. Si todavía no tenemos esos 6 meses de la persona (su primer
+    // informe es posterior al mes más viejo de la ventana) no hay estado.
+    const ventana = periodos.slice(0, 6);
+    if (!historial.length || ventana.length < 6 || historial[0].periodKey > ventana[5]) {
+      return { code: "sin-info", label: "Falta información (menos de 6 meses)" };
+    }
 
     let consecutivosNo = 0, totalNo = 0, rachaCortada = false;
     ventana.forEach(p => {
       const fila = filasPorNombrePeriodo.get(claveNombre + "|" + p);
-      const noParticipo = !fila || fila.participo === false;
+      const noParticipo = !participoEnMes(fila);
       if (noParticipo) {
         totalNo++;
         if (!rachaCortada) consecutivosNo++;

@@ -547,7 +547,7 @@ function renderEstadoSection(p){
 }
 
 function actividadTexto(actividad){
-  if (!actividad || actividad.code === 'sin-info') return '<span class="v muted">Sin historial suficiente en Informes de predicación</span>';
+  if (!actividad || actividad.code === 'sin-info') return '<span class="v muted">Falta información (menos de 6 meses en Informes de predicación)</span>';
   const cls = actividad.code === 'inactivo' ? 'alerta-roja' : (actividad.code === 'irregular' ? 'alerta-amarilla' : '');
   const icono = cls ? `<span class="alerta-dpa ${cls}" style="margin-left:0;margin-right:6px;">⚠</span>` : '✅ ';
   return `<span class="v">${icono}${actividad.label}</span>`;
@@ -1297,7 +1297,7 @@ function renderEstadisticas(){
         <div class="stats-card"><span class="n" style="color:#4ade80;">${actividadCounts.activo}</span><span class="l">Activo</span></div>
         <div class="stats-card"><span class="n" style="color:#facc15;">${actividadCounts.irregular}</span><span class="l">Irregular</span></div>
         <div class="stats-card"><span class="n" style="color:#f87171;">${actividadCounts.inactivo}</span><span class="l">Inactivo</span></div>
-        <div class="stats-card"><span class="n">${actividadCounts['sin-info']}</span><span class="l">Sin historial</span></div>
+        <div class="stats-card"><span class="n">${actividadCounts['sin-info']}</span><span class="l">Falta información</span></div>
       </div>
       <p class="stats-alerta" style="margin-top:8px; padding-top:0; border-top:none;">Según Informes de predicación.</p>
     </div>

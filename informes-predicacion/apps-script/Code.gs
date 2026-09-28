@@ -95,7 +95,14 @@ var FORM_SHEETS = [
   { id: '1DuBmCR4otIfwdkz6u69KxajK8MBldnkaKVQBDwqOMQk', gid: '898644007' },
   { id: '1rnH1jBASvggOBdlbSrMENJCEI5XD1eq2Uvn7soJMUL4', gid: '100017995' },
   { id: '1Tz-YTMSZvOsqhq3RRNAaRd0OvoRoWfzGLdEXqcYw5io', gid: '1118844379' },
-  { id: '1I5EV4UDiMUU9qb9tvG0K0PgoyqQecHC1IN3nstk20-o', gid: '1363353925' }
+  { id: '1I5EV4UDiMUU9qb9tvG0K0PgoyqQecHC1IN3nstk20-o', gid: '1363353925' },
+  // Sexta planilla (sumada el 28/09/2026): nunca se había importado — de acá
+  // salen, por ejemplo, los informes de Romina De Gunaris ("Romina Damele").
+  { id: '1K4bh0QpaZsbuwt-DPGNOnu9U17tV-M5vV2UiEoBL0fY', gid: '957928368' },
+  // Séptima y octava (sumadas el 28/09/2026) para completar el historial de
+  // quienes no tenían ningún mes (ej. Annalida Rojas Lopez, Nazer Rojas).
+  { id: '1L98lSg62MCnALYd7DoxRzC8GQNLofYiLQrjvyuVSaeY', gid: '2036134324' },
+  { id: '1c8v8XHHlQ3hyTPBtLoVULoxbWBLlEzPdT47Oghh3bc0', gid: '1748840930' }
 ];
 
 // Nombre de la pestaña de caché, siempre dentro de la planilla padrón.
@@ -408,29 +415,38 @@ function recomputeCache() {
 }
 
 /**
- * Correr UNA SOLA VEZ a mano desde el editor de Apps Script, para poblar el
- * histórico previo a este sistema a partir de las pestañas de "resumen
- * mensual" (HISTORICAL_SUMMARY_SHEETS: columnas Persona / Mes Año /
- * Situación / Participó / Horas — el número de grupo no importa, se
- * resuelve contra el padrón actual igual que todo lo demás; columnas
- * extra a la derecha, como el bloque sin encabezado de "Respaldo", se
- * ignoran solas). Escribe el
- * resultado en la pestaña "Historico" (se puede volver a correr si hace
- * falta corregir algo: siempre relee la fuente entera y reescribe esa
- * pestaña, nunca toca "Cache" directamente). Después de correrla, corré
- * "Recalcular ahora" (o recomputeCache) para que ese histórico se refleje
- * en "Cache".
+ * Correr a mano desde el editor de Apps Script: suma a "Historico" lo que
+ * haya en las pestañas viejas de "resumen mensual" (HISTORICAL_SUMMARY_SHEETS:
+ * columnas Persona / Mes Año / Situación / Participó / Horas — el número de
+ * grupo no importa, se resuelve contra el padrón actual con sus "Otros
+ * nombres"; columnas extra a la derecha, como el bloque sin encabezado de
+ * "Respaldo", se ignoran solas).
+ *
+ * Igual que congelarFormulariosEnHistorico(): solo RELLENA los meses que
+ * "Historico" no tiene — nunca borra ni pisa lo que ya está (incluido lo que
+ * vino de "Respuestas", que tiene prioridad) y se puede volver a correr sin
+ * riesgo, por ejemplo después de agregar alias. Los nombres descartados se
+ * ignoran. Después correr recomputeCache(). El log muestra el resumen.
  */
 function importHistoricalSummary() {
   var ss = SpreadsheetApp.openById(ROSTER_SHEET.id);
   var roster = parseRosterMatrix_(matrixFromSheet_(getSheetByGid_(ss, ROSTER_SHEET.gid)));
 
+  var merged = {};
+  var histSheet = ss.getSheetByName(HISTORICAL_SHEET_NAME);
+  if (histSheet) {
+    readCacheSheet_(histSheet).forEach(function (r) {
+      merged[r.nombre + '|' + r.periodKey] = rowObjectToArray_(r);
+    });
+  }
+  var antes = Object.keys(merged).length;
+
   var rows = [];
   HISTORICAL_SUMMARY_SHEETS.forEach(function (cfg) {
     var histSs = SpreadsheetApp.openById(cfg.id);
-    var histMatrix = matrixFromSheet_(getSheetByGid_(histSs, cfg.gid));
-    rows = rows.concat(parseHistoricalMatrix_(histMatrix));
+    rows = rows.concat(parseHistoricalMatrix_(matrixFromSheet_(getSheetByGid_(histSs, cfg.gid))));
   });
+  rows = rows.filter(function (row) { return !esDescartado_(row.rawName); });
 
   var unmatchedSet = {};
   var byKey = {};
@@ -443,42 +459,46 @@ function importHistoricalSummary() {
     byKey[m.canonical + '|' + row.periodKey] = { grupo: m.grupo, canonical: m.canonical, row: row };
   });
 
-  var outRows = Object.keys(byKey).map(function (key) {
+  var agregadas = 0;
+  Object.keys(byKey).forEach(function (key) {
+    if (merged[key]) return; // solo rellena huecos
     var entry = byKey[key], row = entry.row;
-    var year = Math.floor(row.periodKey / 12), monthIdx = row.periodKey % 12;
-    return [
-      entry.grupo,
-      entry.canonical,
-      year,
-      titleCase_(MONTHS_[monthIdx]),
-      monthIdx,
-      row.periodKey,
+    merged[key] = [
+      entry.grupo, entry.canonical, Math.floor(row.periodKey / 12),
+      titleCase_(MONTHS_[row.periodKey % 12]), row.periodKey % 12, row.periodKey,
       row.situacionBucket || 'Otro',
       row.horas == null ? '' : row.horas,
       row.participated === true ? 'SI' : (row.participated === false ? 'NO' : '')
     ];
+    agregadas++;
   });
+
+  var outRows = Object.keys(merged).map(function (k) { return merged[k]; });
   outRows.sort(function (a, b) {
     if (a[1] !== b[1]) return a[1] < b[1] ? -1 : 1;
     return a[5] - b[5];
   });
-
-  var histSheet = ss.getSheetByName(HISTORICAL_SHEET_NAME);
   if (!histSheet) histSheet = ss.insertSheet(HISTORICAL_SHEET_NAME);
-  histSheet.clearContents();
   var header = ['Grupo', 'Nombre', 'Año', 'Mes', 'MesIndex', 'PeriodKey', 'Situacion', 'Horas', 'Participo'];
-  histSheet.getRange(1, 1, 1, header.length).setValues([header]);
-  if (outRows.length) {
-    histSheet.getRange(2, 1, outRows.length, header.length).setValues(outRows);
-  }
+  escribirTabla_(histSheet, header, outRows);
 
-  var unmatched = Object.keys(unmatchedSet).sort();
-  PropertiesService.getScriptProperties().setProperty('HISTORICAL_UNMATCHED', JSON.stringify(unmatched));
+  // Se SUMAN a la lista de sin coincidencia (no la reemplazan).
+  var previos = [];
+  try { previos = JSON.parse(PropertiesService.getScriptProperties().getProperty('HISTORICAL_UNMATCHED') || '[]'); } catch (e) {}
+  var todos = {};
+  previos.concat(Object.keys(unmatchedSet)).forEach(function (n) { todos[n] = true; });
+  PropertiesService.getScriptProperties().setProperty('HISTORICAL_UNMATCHED', JSON.stringify(Object.keys(todos).sort()));
   invalidarRespuestaCache_();
 
-  var summary = { importedRows: outRows.length, totalSourceRows: rows.length, unmatched: unmatched };
-  Logger.log(JSON.stringify(summary));
-  return summary;
+  var resumen = {
+    filasEnHistoricoAntes: antes,
+    mesesAgregados: agregadas,
+    filasEnHistoricoAhora: outRows.length,
+    filasLeidasDelResumen: rows.length,
+    sinCoincidencia: Object.keys(unmatchedSet).sort()
+  };
+  Logger.log(JSON.stringify(resumen));
+  return resumen;
 }
 
 // Filas de la pestaña "Respuestas" en el mismo formato que parseFormMatrix_
@@ -581,10 +601,8 @@ function congelarFormulariosEnHistorico() {
     return a[5] - b[5];
   });
   if (!histSheet) histSheet = ss.insertSheet(HISTORICAL_SHEET_NAME);
-  histSheet.clearContents();
   var header = ['Grupo', 'Nombre', 'Año', 'Mes', 'MesIndex', 'PeriodKey', 'Situacion', 'Horas', 'Participo'];
-  histSheet.getRange(1, 1, 1, header.length).setValues([header]);
-  if (outRows.length) histSheet.getRange(2, 1, outRows.length, header.length).setValues(outRows);
+  escribirTabla_(histSheet, header, outRows); // sin vaciar antes (ver escribirTabla_)
 
   // Los nombres que no cruzaron quedan en el aviso de la página (igual que
   // con importHistoricalSummary).
@@ -612,8 +630,9 @@ function escribirTabla_(sheet, header, rows) {
 }
 
 // Alias confirmados el 28/09/2026 (nombre en el padrón -> cómo firman sus
-// informes). Los usa cargarAliasIniciales() una sola vez; después se
-// mantienen a mano en la columna "Otros nombres" de la pestaña Publicadores.
+// informes). Los carga cargarAliasIniciales() en la columna "Otros nombres"
+// de la pestaña Publicadores; se puede volver a correr al sumar alias acá
+// (no repite los que ya están). También se pueden cargar a mano ahí.
 var ALIAS_INICIALES = {
   'Beatriz Viera': ['Baty Viera', 'Betty Viera', 'Bety Viera'],
   'Edith Armstrong': ['Edith Amstrong', 'Edhit Amstrong'],
@@ -624,7 +643,7 @@ var ALIAS_INICIALES = {
   'Estefani De Gomez': ['Estefany Pérez', 'Estefany Pérez de Gómez'],
   'Martha De Fernandez': ['Martha Bórtoli', 'Marha Bórtoli', 'Bórtoli, Martha'],
   'Natalia De Aviles': ['Natalia Nuñez'],
-  'Leticia De Urdiozola': ['Leticia Lewis', 'Lewis'],
+  'Leticia De Urdiozola': ['Leticia Lewis', 'Lewis', 'Leticia'],
   'Gladys De Olmedo': ['Gladys Bogao', 'Gladyz Bogao'],
   'Victoria De Ramos': ['Victoria Caraballo'],
   'Evelyn De Toloza': ['Evelyn Razeto'],
@@ -639,13 +658,27 @@ var ALIAS_INICIALES = {
   'Nilsa Silveira': ['Nilsa Suárez'],
   'Jimena De Inchausti': ['Jimena Carminati'],
   'Jimena De De Brun': ['Jimena Morales'],
-  'Karina De Hernández': ['Karina Haristoy']
+  'Karina De Hernández': ['Karina Haristoy'],
+  'Johana De Correa': ['Joanna Damele', 'Joannadamele'],
+  'Romina De Gunaris': ['Romina Damele'],
+  'Flavia De Carminati': ['Flavia Manente'],
+  'Flor De Fuentes': ['Flor Gómez'],
+  'Maria Luisa De Pena': ['María Luisa Rodriguez'],
+  'Fabian Saavedra': ['Saavedra Fabián'],
+  'Gabriela De Taroco': ['Gabriela Acha']
 };
 
 // Nombres de informes que NO corresponden a nadie (no existe esa persona):
 // se ignoran por completo — no se cuentan ni aparecen en el aviso de "sin
 // coincidencia", aunque sigan en las planillas viejas.
-var NOMBRES_DESCARTADOS = ['Karina Rosa'];
+var NOMBRES_DESCARTADOS = [
+  'Karina Rosa',
+  'Judith San Martin', 'Judiht San Martin', 'Udith San Martin', 'Judith Rosmary San Martin', 'Judith Rossemarie San Martin',
+  'Lucas Matias',
+  'Rosa Oliva', 'Rosa',
+  'Leonardo Hernandez', // normalize_ ignora tildes y mayúsculas: cubre "Leonardo Hernández" / "Leonardo hernández"
+  'Participé' // alguien escribió eso en el campo del nombre
+];
 
 function esDescartado_(nombre) {
   var n = normalize_(nombre);
@@ -697,6 +730,153 @@ function cargarAliasIniciales() {
 
   var noEncontrados = Object.keys(pendientes).map(function (k) { return pendientes[k]; });
   Logger.log('Alias cargados. ' + (noEncontrados.length ? 'NO encontrados en el padrón: ' + noEncontrados.join(', ') : 'Todos los nombres se encontraron.'));
+}
+
+// Correcciones puntuales confirmadas a mano (28/09/2026): cuando una persona
+// tiene dos informes distintos para el mismo mes, vale lo que dice acá.
+// Las aplica aplicarCorrecciones() — situación como la escribiría el
+// formulario, horas '' = sin horas.
+var CORRECCIONES = [
+  { nombre: 'Jimena De Inchausti', mes: 'Agosto', anio: 2026, situacion: 'Publicador', horas: '', participo: 'Si' },
+  { nombre: 'Nilsa Silveira', mes: 'Marzo', anio: 2026, situacion: 'Precursor Auxiliar 15 horas', horas: 20, participo: 'Si' }
+];
+
+/**
+ * Correr a mano: aplica CORRECCIONES en "Respuestas" (las filas de esa
+ * persona y ese mes, reconocida por nombre o alias) y en "Historico", y
+ * después hay que correr recomputeCache(). Toca SOLO esas filas. Se puede
+ * volver a correr sin problema (deja los mismos valores).
+ */
+function aplicarCorrecciones() {
+  var ss = SpreadsheetApp.openById(ROSTER_SHEET.id);
+  var roster = parseRosterMatrix_(matrixFromSheet_(getSheetByGid_(ss, ROSTER_SHEET.gid)));
+  var log = [];
+
+  CORRECCIONES.forEach(function (c) {
+    var objetivo = normalize_(c.nombre);
+    var mIdx = monthIndex_(c.mes);
+    var periodKey = c.anio * 12 + mIdx;
+    var bucket = classifySituacion_(c.situacion) || 'Otro';
+    var partNorm = normalize_(c.participo);
+    var participoCache = partNorm === 'si' ? 'SI' : (partNorm === 'no' ? 'NO' : '');
+
+    // "Respuestas": F Participó (6), G Situación (7), I Horas (9)
+    var enRespuestas = 0;
+    var resp = ss.getSheetByName(RESPUESTAS_SHEET_NAME);
+    if (resp && resp.getLastRow() >= 2) {
+      var vals = resp.getRange(2, 1, resp.getLastRow() - 1, 10).getValues();
+      vals.forEach(function (row, i) {
+        var m = matchRosterName_(normalize_(row[2]), roster);
+        if (!m || normalize_(m.canonical) !== objetivo) return;
+        if (monthIndex_(row[3]) !== mIdx || parseInt(row[4], 10) !== c.anio) return;
+        resp.getRange(i + 2, 6, 1, 2).setValues([[c.participo, c.situacion]]);
+        resp.getRange(i + 2, 9).setValue(c.horas);
+        enRespuestas++;
+      });
+    }
+
+    // "Historico": G Situacion (7), H Horas (8), I Participo (9)
+    var enHistorico = 0;
+    var hist = ss.getSheetByName(HISTORICAL_SHEET_NAME);
+    if (hist && hist.getLastRow() >= 2) {
+      var hv = hist.getRange(2, 1, hist.getLastRow() - 1, 9).getValues();
+      hv.forEach(function (row, i) {
+        if (normalize_(row[1]) !== objetivo || Number(row[5]) !== periodKey) return;
+        hist.getRange(i + 2, 7, 1, 3).setValues([[bucket, c.horas, participoCache]]);
+        enHistorico++;
+      });
+    }
+    log.push(c.nombre + ' ' + c.mes + ' ' + c.anio + ': ' + enRespuestas + ' fila(s) en Respuestas, ' + enHistorico + ' en Historico');
+  });
+
+  invalidarRespuestaCache_();
+  Logger.log(log.join(' | '));
+}
+
+/**
+ * Correr a mano SOLO si "Historico" quedó con datos mal asignados (p. ej.
+ * informes de una persona cruzados con otra antes de cargar un alias o de
+ * ajustar el cruce). Rearma "Historico" desde cero a partir de las fuentes:
+ *   1) resumen mensual viejo (HISTORICAL_SUMMARY_SHEETS) como base,
+ *   2) las planillas de formulario (FORM_SHEETS) encima — si una persona
+ *      tiene varios informes del mismo mes, gana el más reciente,
+ * con el padrón, alias y descartados actuales. Antes de escribir guarda una
+ * copia completa en una pestaña "Historico respaldo AAAA-MM-DD HH:mm".
+ * Después correr aplicarCorrecciones() y recomputeCache() ("Respuestas"
+ * vuelve a quedar arriba de todo, con prioridad).
+ * Ojo: los meses que estaban SOLO en "Historico" porque se borraron de
+ * "Respuestas" se pierden (quedan en el respaldo).
+ */
+function reconstruirHistorico() {
+  var ss = SpreadsheetApp.openById(ROSTER_SHEET.id);
+  var roster = parseRosterMatrix_(matrixFromSheet_(getSheetByGid_(ss, ROSTER_SHEET.gid)));
+  var header = ['Grupo', 'Nombre', 'Año', 'Mes', 'MesIndex', 'PeriodKey', 'Situacion', 'Horas', 'Participo'];
+  var fila = function (grupo, canonical, row) {
+    return [
+      grupo, canonical, Math.floor(row.periodKey / 12),
+      titleCase_(MONTHS_[row.periodKey % 12]), row.periodKey % 12, row.periodKey,
+      row.situacionBucket || 'Otro',
+      row.horas == null ? '' : row.horas,
+      row.participated === true ? 'SI' : (row.participated === false ? 'NO' : '')
+    ];
+  };
+
+  // Leer TODO primero: si alguna fuente falla, no se toca nada.
+  var resumenRows = [];
+  HISTORICAL_SUMMARY_SHEETS.forEach(function (cfg) {
+    var h = SpreadsheetApp.openById(cfg.id);
+    resumenRows = resumenRows.concat(parseHistoricalMatrix_(matrixFromSheet_(getSheetByGid_(h, cfg.gid))));
+  });
+  var formRows = [];
+  FORM_SHEETS.forEach(function (cfg) {
+    var fss = SpreadsheetApp.openById(cfg.id);
+    formRows = formRows.concat(parseFormMatrix_(matrixFromSheet_(getSheetByGid_(fss, cfg.gid))));
+  });
+
+  var merged = {}, unmatchedSet = {};
+  resumenRows.forEach(function (row) {
+    if (esDescartado_(row.rawName) || row.periodKey == null) return;
+    var m = matchRosterName_(row.normName, roster);
+    if (!m) { unmatchedSet[row.rawName] = true; return; }
+    merged[m.canonical + '|' + row.periodKey] = fila(m.grupo, m.canonical, row);
+  });
+  var latest = {};
+  formRows.forEach(function (row) {
+    if (esDescartado_(row.rawName) || row.periodKey == null) return;
+    var m = matchRosterName_(row.normName, roster);
+    if (!m) { unmatchedSet[row.rawName] = true; return; }
+    var key = m.canonical + '|' + row.periodKey;
+    if (!latest[key] || row.timestampMs >= latest[key].row.timestampMs) latest[key] = { m: m, row: row };
+  });
+  Object.keys(latest).forEach(function (key) {
+    merged[key] = fila(latest[key].m.grupo, latest[key].m.canonical, latest[key].row);
+  });
+
+  var outRows = Object.keys(merged).map(function (k) { return merged[k]; });
+  outRows.sort(function (a, b) {
+    if (a[1] !== b[1]) return a[1] < b[1] ? -1 : 1;
+    return a[5] - b[5];
+  });
+
+  // Respaldo antes de escribir.
+  var hist = ss.getSheetByName(HISTORICAL_SHEET_NAME);
+  var antes = 0;
+  if (hist) {
+    var copia = hist.copyTo(ss);
+    copia.setName('Historico respaldo ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm'));
+    antes = Math.max(0, hist.getLastRow() - 1);
+  } else {
+    hist = ss.insertSheet(HISTORICAL_SHEET_NAME);
+  }
+  escribirTabla_(hist, header, outRows);
+
+  PropertiesService.getScriptProperties().setProperty('HISTORICAL_UNMATCHED', JSON.stringify(Object.keys(unmatchedSet).sort()));
+  invalidarRespuestaCache_();
+  Logger.log(JSON.stringify({
+    filasAntes: antes, filasAhora: outRows.length,
+    leidasResumen: resumenRows.length, leidasFormularios: formRows.length,
+    sinCoincidencia: Object.keys(unmatchedSet).sort()
+  }));
 }
 
 function rowObjectToArray_(r) {
@@ -761,7 +941,10 @@ function matrixToJson_(matrix) {
 // solo consume el resultado ya calculado vía ?action=cache)
 // ---------------------------------------------------------------------
 function normalize_(s) {
+  // NFKC primero: convierte letras "de fantasía" que algunos copian de
+  // redes (𝑨𝒏𝒂𝒉𝒊 𝒅𝒆 𝑽𝒆𝒈𝒂, ancho completo, etc.) a letras normales.
   return (s == null ? '' : String(s))
+    .normalize('NFKC')
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
     .toLowerCase().trim().replace(/\s+/g, ' ');
 }
@@ -839,12 +1022,22 @@ function matchRosterName_(normName, rosterList) {
   }
   if (subseqMatches.length === 1) return subseqMatches[0];
 
+  // Parecido "por letras": además del nombre completo, el ÚLTIMO apellido
+  // tiene que parecerse (a lo sumo 2 letras distintas). Sin esto, "Gabriela
+  // Acha" terminaba cruzando con "Gabriela Maciera" (mismo nombre de pila,
+  // apellido completamente distinto). Los errores de tipeo reales
+  // ("Amstrong"/"Armstrong", "Nuñez"/"Nunez") siguen cruzando.
+  var inputLast = inputTokens[inputTokens.length - 1] || '';
   var best = null, bestDist = Infinity;
   for (var j = 0; j < rosterList.length; j++) {
     var r = rosterList[j];
     var maxLen = Math.max(normName.length, r.normName.length);
     var d = levenshtein_(normName, r.normName);
-    if (d <= fuzzyThreshold_(maxLen) && d < bestDist) { best = r; bestDist = d; }
+    if (d > fuzzyThreshold_(maxLen) || d >= bestDist) continue;
+    var rT = r.normName.split(' ').filter(Boolean);
+    // (si vino todo junto, ej. "DanielAtrat", no hay apellido separado para comparar)
+    if (inputTokens.length > 1 && levenshtein_(inputLast, rT[rT.length - 1] || '') > 2) continue;
+    best = r; bestDist = d;
   }
   return best;
 }
