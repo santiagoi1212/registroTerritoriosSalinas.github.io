@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="es">
+<head>
+<link rel="preconnect" href="https://script.google.com" crossorigin><link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Informes por grupo · Portal Salinas</title>
+<!--
+  Vista PÚBLICA (no pide iniciar sesión) del informe mensual por grupo:
+  quiénes ya se registraron y quiénes faltan, más el resumen del grupo.
+  Usa el mismo Apps Script que informes-predicacion/index.html
+  (INFORMES_PREDICACION_API_URL, ?action=cache), pero a propósito NO muestra
+  horas, estado de actividad (Activo/Irregular/Inactivo) ni el Estado del
+  padrón (Anciano, Siervo, etc.): eso queda en la página con sesión.
+  Link directo a un grupo: grupo.html?grupo=3
+-->
+<script src="../app-config.js"></script>
+<style>
+  :root{
+    --bg:#0b1220; --card:#111a2e; --card-2:#0f1728; --border:#22304a;
+    --text:#e5e7eb; --muted:#94a3b8; --accent:#3b82f6;
+    --good:#22c55e; --warn:#f59e0b; --crit:#ef4444;
+    --publicador:#3987e5; --auxiliar:#d95926; --regular:#199e70; --especial:#a78bfa;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light){
+    :root:not([data-theme="dark"]){
+      --bg:#f6f7f9; --card:#ffffff; --card-2:#f8fafc; --border:#e2e8f0;
+      --text:#0f172a; --muted:#64748b; --accent:#2563eb;
+      --good:#16a34a; --warn:#d97706; --crit:#dc2626;
+      --publicador:#2a78d6; --auxiliar:#eb6834; --regular:#1baf7a; --especial:#8b5cf6;
+      color-scheme: light;
+    }
+  }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--text); font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  .wrap{ max-width:900px; margin:0 auto; padding:28px 16px 48px; }
+  h1{ font-size:22px; margin:0 0 4px; }
+  .sub{ color:var(--muted); margin:0 0 20px; font-size:14px; }
+
+  .controles{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:18px; }
+  .tabs{ display:flex; flex-wrap:wrap; gap:6px; }
+  .tab{ border:1px solid var(--border); background:var(--card); color:var(--text); border-radius:999px; padding:7px 14px; font-family:inherit; font-weight:600; font-size:14px; line-height:1; cursor:pointer; }
+  .tab[aria-pressed="true"]{ background:var(--accent); border-color:var(--accent); color:#fff; }
+  select{ background:var(--card); color:var(--text); border:1px solid var(--border); border-radius:10px; padding:8px 10px; font-family:inherit; font-size:14px; }
+
+  .card{ background:var(--card); border:1px solid var(--border); border-radius:14px; padding:18px; margin-bottom:16px; }
+  .card h2{ font-size:17px; margin:0 0 12px; display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+  .card h2 .mes{ color:var(--muted); font-weight:500; font-size:14px; }
+
+  .chips{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
+  .chip{ background:var(--card-2); border:1px solid var(--border); border-radius:10px; padding:8px 12px; font-size:13px; color:var(--muted); }
+  .chip b{ display:block; font-size:20px; color:var(--text); }
+  .chip.good b{ color:var(--good); } .chip.warn b{ color:var(--warn); } .chip.crit b{ color:var(--crit); }
+
+  .barra{ height:10px; background:var(--card-2); border:1px solid var(--border); border-radius:999px; overflow:hidden; margin:4px 0 16px; }
+  .barra > span{ display:block; height:100%; background:var(--good); }
+
+  .seccion{ font-size:13px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin:14px 0 8px; font-weight:700; }
+  .nombres{ display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:6px; }
+  .nombre{ background:var(--card-2); border:1px solid var(--border); border-radius:8px; padding:7px 10px; font-size:14px; }
+  .nombre.falta{ border-left:3px solid var(--warn); }
+  .nombre.ok{ border-left:3px solid var(--good); }
+  .todo-ok{ color:var(--good); font-weight:600; }
+
+  .situaciones{ display:flex; flex-wrap:wrap; gap:8px; }
+  .sit{ display:inline-flex; align-items:center; gap:6px; font-size:13px; background:var(--card-2); border:1px solid var(--border); border-radius:999px; padding:5px 10px; }
+  .sit i{ width:9px; height:9px; border-radius:50%; display:inline-block; }
+
+  details summary{ cursor:pointer; color:var(--muted); font-size:14px; margin-top:12px; }
+
+  table{ width:100%; border-collapse:collapse; font-size:14px; }
+  th, td{ text-align:left; padding:8px 6px; border-bottom:1px solid var(--border); }
+  th{ color:var(--muted); font-weight:600; font-size:13px; }
+  td.num{ text-align:right; font-variant-numeric:tabular-nums; }
+
+  .estado{ color:var(--muted); text-align:center; padding:40px 10px; }
+  .spinner{ width:26px; height:26px; border:3px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:g .8s linear infinite; margin:0 auto 10px; }
+  @keyframes g{ to{ transform:rotate(360deg); } }
+  .pie{ color:var(--muted); font-size:12.5px; margin-top:18px; }
+  @media (max-width:520px){ .nombres{ grid-template-columns:1fr; } h1{ font-size:19px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Informe de predicación por grupo</h1>
+  <p class="sub">Quiénes ya enviaron su informe del mes y quiénes faltan.</p>
+
+  <div class="controles">
+    <div class="tabs" id="tabs" role="group" aria-label="Grupo"></div>
+    <select id="sel-mes" aria-label="Mes"></select>
+  </div>
+
+  <div id="contenido"><div class="estado"><div class="spinner"></div>Cargando…</div></div>
+  <p class="pie" id="pie"></p>
+</div>
+
+<script>
+(function () {
+  var API_URL = (window.APP_CONFIG && window.APP_CONFIG.INFORMES_PREDICACION_API_URL) || '';
+  var CACHE_KEY = 'salinas_informes_grupo_v1';
+  var MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  var SITUACIONES = [
+    { k: 'Publicador', css: 'var(--publicador)' },
+    { k: 'Precursor Auxiliar', css: 'var(--auxiliar)' },
+    { k: 'Precursor Regular', css: 'var(--regular)' },
+    { k: 'Precursor Especial', css: 'var(--especial)' }
+  ];
+
+  var datos = null;              // { roster:[{grupo,nombre}], rows:[{nombre,periodKey,situacion}], generatedAt }
+  var grupoSel = null;           // número de grupo o 'todos'
+  var mesSel = null;             // periodKey
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function etiquetaMes(pk) { return MESES[pk % 12] + ' ' + Math.floor(pk / 12); }
+
+  // Solo lo necesario para esta vista (sin horas ni estados): así la copia
+  // guardada en el navegador tampoco guarda más de lo que se muestra.
+  function reducir(data) {
+    return {
+      generatedAt: data.generatedAt || null,
+      roster: (data.roster || []).map(function (r) { return { grupo: Number(r.grupo), nombre: r.nombre }; }),
+      rows: (data.rows || []).map(function (r) { return { nombre: r.nombre, periodKey: Number(r.periodKey), situacion: r.situacion || '' }; })
+    };
+  }
+
+  function leerCache() {
+    try { return JSON.parse(localStorage.getItem(CACHE_KEY) || 'null'); } catch (e) { return null; }
+  }
+  function guardarCache(d) {
+    try { localStorage.setItem(CACHE_KEY, JSON.stringify(d)); } catch (e) {}
+  }
+
+  async function traer() {
+    var ultimoError;
+    for (var i = 0; i < 3; i++) {
+      try {
+        var res = await fetch(API_URL + (API_URL.indexOf('?') >= 0 ? '&' : '?') + 'action=cache&_=' + Date.now(), { cache: 'no-store' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        var json = await res.json();
+        if (json.error) throw new Error(json.error);
+        return reducir(json);
+      } catch (e) {
+        ultimoError = e;
+        await new Promise(function (r) { setTimeout(r, 1200); });
+      }
+    }
+    throw ultimoError;
+  }
+
+  function grupos() {
+    var set = {};
+    datos.roster.forEach(function (r) { if (!isNaN(r.grupo)) set[r.grupo] = true; });
+    return Object.keys(set).map(Number).sort(function (a, b) { return a - b; });
+  }
+  function meses() {
+    var set = {};
+    datos.rows.forEach(function (r) { if (!isNaN(r.periodKey)) set[r.periodKey] = true; });
+    return Object.keys(set).map(Number).sort(function (a, b) { return b - a; });
+  }
+
+  // Integrantes del grupo y quiénes informaron ese mes.
+  function vistaGrupo(g, pk) {
+    var integrantes = datos.roster.filter(function (r) { return r.grupo === g; })
+      .map(function (r) { return r.nombre; })
+      .sort(function (a, b) { return a.localeCompare(b, 'es'); });
+    var informe = {};
+    datos.rows.forEach(function (r) { if (r.periodKey === pk) informe[r.nombre] = r; });
+    var registrados = [], faltan = [], porSituacion = {};
+    integrantes.forEach(function (n) {
+      var r = informe[n];
+      if (r) {
+        registrados.push(n);
+        porSituacion[r.situacion] = (porSituacion[r.situacion] || 0) + 1;
+      } else {
+        faltan.push(n);
+      }
+    });
+    return { grupo: g, integrantes: integrantes, registrados: registrados, faltan: faltan, porSituacion: porSituacion };
+  }
+
+  function tarjetaGrupo(v) {
+    var total = v.integrantes.length;
+    var pct = total ? Math.round(v.registrados.length / total * 100) : 0;
+    var clsFaltan = v.faltan.length === 0 ? 'good' : (v.faltan.length <= 2 ? 'warn' : 'crit');
+    var faltanHtml = v.faltan.length
+      ? '<div class="nombres">' + v.faltan.map(function (n) { return '<div class="nombre falta">' + esc(n) + '</div>'; }).join('') + '</div>'
+      : '<p class="todo-ok">✅ Todos los del grupo ya enviaron su informe.</p>';
+    var sits = SITUACIONES.filter(function (s) { return v.porSituacion[s.k]; })
+      .map(function (s) { return '<span class="sit"><i style="background:' + s.css + '"></i>' + esc(s.k) + ': <b>' + v.porSituacion[s.k] + '</b></span>'; }).join('');
+    return '<div class="card">' +
+      '<h2>Grupo ' + v.grupo + ' <span class="mes">' + esc(etiquetaMes(mesSel)) + '</span></h2>' +
+      '<div class="chips">' +
+        '<div class="chip"><b>' + total + '</b>integrantes</div>' +
+        '<div class="chip good"><b>' + v.registrados.length + '</b>ya enviaron</div>' +
+        '<div class="chip ' + clsFaltan + '"><b>' + v.faltan.length + '</b>faltan</div>' +
+      '</div>' +
+      '<div class="barra" title="' + pct + '% enviaron"><span style="width:' + pct + '%"></span></div>' +
+      '<div class="seccion">Faltan registrarse</div>' + faltanHtml +
+      (sits ? '<div class="seccion">Cómo informaron</div><div class="situaciones">' + sits + '</div>' : '') +
+      (v.registrados.length
+        ? '<details><summary>Ya enviaron (' + v.registrados.length + ')</summary><div class="nombres" style="margin-top:8px">' +
+            v.registrados.map(function (n) { return '<div class="nombre ok">' + esc(n) + '</div>'; }).join('') + '</div></details>'
+        : '') +
+      '</div>';
+  }
+
+  function tablaResumen(vistas) {
+    var filas = vistas.map(function (v) {
+      var total = v.integrantes.length, pct = total ? Math.round(v.registrados.length / total * 100) : 0;
+      return '<tr><td><a href="?grupo=' + v.grupo + '" data-grupo="' + v.grupo + '" style="color:var(--accent)">Grupo ' + v.grupo + '</a></td>' +
+        '<td class="num">' + total + '</td><td class="num">' + v.registrados.length + '</td><td class="num">' + v.faltan.length + '</td><td class="num">' + pct + '%</td></tr>';
+    }).join('');
+    var tot = vistas.reduce(function (a, v) { a.t += v.integrantes.length; a.r += v.registrados.length; a.f += v.faltan.length; return a; }, { t: 0, r: 0, f: 0 });
+    return '<div class="card"><h2>Resumen de todos los grupos <span class="mes">' + esc(etiquetaMes(mesSel)) + '</span></h2>' +
+      '<table><thead><tr><th>Grupo</th><th class="num">Integrantes</th><th class="num">Enviaron</th><th class="num">Faltan</th><th class="num">%</th></tr></thead>' +
+      '<tbody>' + filas + '<tr><td><b>Total</b></td><td class="num"><b>' + tot.t + '</b></td><td class="num"><b>' + tot.r + '</b></td><td class="num"><b>' + tot.f + '</b></td><td class="num"><b>' +
+      (tot.t ? Math.round(tot.r / tot.t * 100) : 0) + '%</b></td></tr></tbody></table></div>';
+  }
+
+  function pintar() {
+    var gs = grupos(), ms = meses();
+    if (!gs.length || !ms.length) {
+      document.getElementById('contenido').innerHTML = '<div class="estado">Todavía no hay datos para mostrar.</div>';
+      return;
+    }
+    if (mesSel == null || ms.indexOf(mesSel) === -1) mesSel = ms[0];
+    if (grupoSel !== 'todos' && gs.indexOf(grupoSel) === -1) grupoSel = 'todos';
+
+    document.getElementById('tabs').innerHTML =
+      '<button class="tab" data-grupo="todos" aria-pressed="' + (grupoSel === 'todos') + '">Todos</button>' +
+      gs.map(function (g) { return '<button class="tab" data-grupo="' + g + '" aria-pressed="' + (grupoSel === g) + '">Grupo ' + g + '</button>'; }).join('');
+    var sel = document.getElementById('sel-mes');
+    sel.innerHTML = ms.map(function (pk) { return '<option value="' + pk + '"' + (pk === mesSel ? ' selected' : '') + '>' + etiquetaMes(pk) + '</option>'; }).join('');
+
+    var html;
+    if (grupoSel === 'todos') {
+      var vistas = gs.map(function (g) { return vistaGrupo(g, mesSel); });
+      html = tablaResumen(vistas) + vistas.map(tarjetaGrupo).join('');
+    } else {
+      html = tarjetaGrupo(vistaGrupo(grupoSel, mesSel));
+    }
+    document.getElementById('contenido').innerHTML = html;
+
+    if (datos.generatedAt) {
+      var d = new Date(datos.generatedAt);
+      document.getElementById('pie').textContent = 'Datos actualizados al ' + d.toLocaleDateString('es-UY') + ' ' +
+        d.toLocaleTimeString('es-UY', { hour: '2-digit', minute: '2-digit' }) + ' (se recalculan todos los días)';
+    }
+  }
+
+  function elegirGrupo(g) {
+    grupoSel = g === 'todos' ? 'todos' : Number(g);
+    try { history.replaceState(null, '', grupoSel === 'todos' ? location.pathname : '?grupo=' + grupoSel); } catch (e) {}
+    pintar();
+  }
+
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-grupo]');
+    if (!b) return;
+    e.preventDefault();
+    elegirGrupo(b.getAttribute('data-grupo'));
+  });
+  document.getElementById('sel-mes').addEventListener('change', function (e) {
+    mesSel = Number(e.target.value);
+    pintar();
+  });
+
+  (async function iniciar() {
+    var param = new URLSearchParams(location.search).get('grupo');
+    grupoSel = param && !isNaN(Number(param)) ? Number(param) : 'todos';
+
+    if (!API_URL) {
+      document.getElementById('contenido').innerHTML = '<div class="estado">Falta configurar INFORMES_PREDICACION_API_URL en app-config.js.</div>';
+      return;
+    }
+    // Lo guardado se muestra al instante y se actualiza de fondo.
+    var guardado = leerCache();
+    if (guardado && guardado.roster) { datos = guardado; pintar(); }
+    try {
+      datos = await traer();
+      guardarCache(datos);
+      pintar();
+    } catch (err) {
+      console.error(err);
+      if (!datos) {
+        document.getElementById('contenido').innerHTML = '<div class="estado">No se pudieron cargar los datos. Probá de nuevo en un rato.</div>';
+      }
+    }
+  })();
+})();
+</script>
+</body>
+</html>

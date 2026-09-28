@@ -277,6 +277,10 @@
           ¿Solo venís a cargar el informe de predicación?
           <a href="./informes/index.html">Ingresá acá, sin iniciar sesión</a>
         </p>
+        <p class="locked-alt">
+          ¿Querés ver quiénes faltan informar en tu grupo?
+          <a href="./informes-predicacion/grupo.html">Informes por grupo</a>
+        </p>
       </div>
     </div>
 
@@ -518,6 +522,12 @@ const ACCESOS = [
     desc: 'Quién ya se registró este mes y situación (Precursor Regular / Auxiliar / Publicador) por grupo.',
     href: './informes-predicacion/index.html',
     roles: ['admin','capitan']
+  },
+  {
+    group: 'Predicación', icon: '👥', title: 'Informes por grupo',
+    desc: 'Quiénes ya enviaron el informe del mes y quiénes faltan, por grupo (se puede ver sin iniciar sesión).',
+    href: './informes-predicacion/grupo.html',
+    roles: null
   },
   {
     group: 'Predicación', icon: '📋', title: 'Informe de predicación',
