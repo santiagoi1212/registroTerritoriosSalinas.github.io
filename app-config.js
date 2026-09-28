@@ -24,6 +24,12 @@ window.APP_CONFIG = {
       // y mostrarlo en el listado de Publicadores.
       INFORMES_PREDICACION_API_URL: 'https://script.google.com/macros/s/AKfycbznuLplCadjhHpGRysU4xj1WfcAKPLty0faOsa__Gjm6Bu7zDr-FzshzNzeeGZXo0Fv/exec',
 
+      // Apps Script de Traslado (ver google-apps-script-traslado.js): guarda
+      // Pedidos, Ofrecimientos y Asignaciones en pestañas separadas. Lo usan
+      // traslado.html y transporte.html. Vacío = siguen usando el script
+      // anterior (una sola hoja mezclada) hasta que se despliegue el nuevo.
+      TRASLADO_API_URL: 'https://script.google.com/macros/s/AKfycbxUDcsP5rupgSZzTEn7gLQFkl_zLiWJb8wnHxxmxdc-DgToy6kNxFLn_6S73gd9KAYb/exec',
+
       // Ya NO hace falta: el backend (google-apps-script-publicadores.js,
       // guardarDatosPersonales) marca sola la columna "DatosPersonales" (y
       // "DatosPersonalesFecha" si existe) en la hoja Publicadores cuando

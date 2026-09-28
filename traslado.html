@@ -315,9 +315,11 @@
   </div>
 </div>
 
+<script src="./app-config.js"></script>
 <script>
 // ⚠️ PEGÁ ACÁ LA URL DE TU GOOGLE APPS SCRIPT (paso "Implementar como aplicación web")
-const WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbxR_oIF9-XTlQMwUydFAAAhbho6jx0tmJBYhq47ARVRQSur6Rfa7s8LuFYRT0SL1bvX/exec';
+// La URL vive en app-config.js (TRASLADO_API_URL), compartida con la otra página de traslado.
+const WEBAPP_URL = (window.APP_CONFIG && window.APP_CONFIG.TRASLADO_API_URL) || 'https://script.google.com/macros/s/AKfycbxR_oIF9-XTlQMwUydFAAAhbho6jx0tmJBYhq47ARVRQSur6Rfa7s8LuFYRT0SL1bvX/exec';
 
 let tipoSeleccionado = null;
 let registros = [];
@@ -336,12 +338,20 @@ async function cargarRegistros(){
     registros = [];
     return registros;
   }
-  try{
-    const res = await fetch(WEBAPP_URL + '?t=' + Date.now());
-    const data = await res.json();
-    registros = Array.isArray(data) ? data : [];
-  }catch(e){
-    registros = [];
+  // Google a veces responde con una página de error (script "frío" o
+  // saturado): se reintenta una vez y, si igual falla, se CONSERVA lo que ya
+  // se tenía en vez de vaciar la lista (antes un solo fallo del polling
+  // hacía "desaparecer" pedidos y asignaciones hasta la próxima carga).
+  for(let intento = 0; intento < 2; intento++){
+    try{
+      const res = await fetch(WEBAPP_URL + '?t=' + Date.now());
+      const data = await res.json();
+      if(!Array.isArray(data)) throw new Error((data && data.error) || 'Respuesta inesperada');
+      registros = data;
+      return registros;
+    }catch(e){
+      if(intento === 0) await new Promise(r => setTimeout(r, 1500));
+    }
   }
   return registros;
 }
@@ -351,11 +361,16 @@ async function agregarRegistro(registro){
     return { ok:false, error:'Todavía no se configuró la URL del Google Apps Script en el código (WEBAPP_URL).' };
   }
   try{
-    await fetch(WEBAPP_URL, {
+    const res = await fetch(WEBAPP_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({ action: 'add', ...registro })
     });
+    // Antes se daba por guardado sin mirar la respuesta: si el script fallaba
+    // igual decía "¡Registrado!". Ahora se respeta {ok:false, error}.
+    const data = await res.json().catch(() => null);
+    if (!res.ok) return { ok:false, error:'El servidor respondió ' + res.status };
+    if (data && data.ok === false) return { ok:false, error: data.error || 'No se pudo guardar' };
     return { ok:true };
   }catch(e){
     return { ok:false, error:(e && e.message) ? e.message : String(e) };
