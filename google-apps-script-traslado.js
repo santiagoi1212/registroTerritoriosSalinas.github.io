@@ -138,6 +138,31 @@ function agregar_(r) {
   throw new Error('Tipo desconocido: ' + tipo);
 }
 
+// Cambia nombre / grupo / asientos de un pedido u ofrecimiento existente
+// (por ID) sin borrarlo — así no se pierden sus asignaciones (borrar un
+// pedido o vehículo borra también sus asignaciones, ver eliminar_).
+function actualizar_(r) {
+  var id = String(r.id || '').trim();
+  if (!id) throw new Error('Falta id');
+  var hojas = [HOJA_PEDIDOS, HOJA_OFRECIMIENTOS];
+  for (var k = 0; k < hojas.length; k++) {
+    var h = hoja_(hojas[k]);
+    var filas = filas_(hojas[k]);
+    for (var i = 0; i < filas.length; i++) {
+      if (String(filas[i][0]) !== id) continue;
+      if (r.nombre != null && String(r.nombre).trim()) h.getRange(i + 2, 2).setValue(String(r.nombre).trim());
+      if (r.grupo != null && String(r.grupo).trim()) h.getRange(i + 2, 3).setValue(r.grupo);
+      if (r.asientos != null) {
+        var n = Number(r.asientos);
+        if (!(n >= 1)) throw new Error('Cantidad de asientos inválida');
+        h.getRange(i + 2, 4).setValue(n);
+      }
+      return true;
+    }
+  }
+  throw new Error('No se encontró el registro ' + id);
+}
+
 // Borra por ID en cualquiera de las tres pestañas. Si se borra un pedido o
 // un vehículo, también se borran sus asignaciones (si no, quedarían
 // asignaciones apuntando a algo que ya no existe).
@@ -180,6 +205,9 @@ function doPost(e) {
     let resultado;
     if (data.action === 'add') {
       agregar_(data);
+      resultado = { ok: true };
+    } else if (data.action === 'update') {
+      actualizar_(data);
       resultado = { ok: true };
     } else if (data.action === 'delete') {
       resultado = { ok: true, borradas: eliminar_(data.id) };
