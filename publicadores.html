@@ -364,9 +364,17 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
     <div id="view-usuarios" style="display:none">
       <div id="usuarios-gate" class="card" style="max-width:420px;">
         <p class="subtitle" style="margin:0 0 14px;">Esta sección crea/edita/borra cuentas de acceso al portal — confirmá tu contraseña de administrador para continuar.</p>
-        <label for="usuarios-admin-pass">Tu contraseña</label>
-        <input type="password" id="usuarios-admin-pass" class="form-input" style="width:100%;" autocomplete="current-password">
-        <button type="button" id="btn-usuarios-confirmar" class="btn-primary" style="width:100%; margin-top:14px;">Continuar</button>
+        <!-- Formulario PROPIO para la contraseña (con su campo de usuario
+             oculto): si queda suelto, Chrome junta todos los campos sin
+             <form> de la página como si fueran un único login y autocompleta
+             el usuario guardado en el primer campo de texto que encuentra —
+             el buscador de publicadores. -->
+        <form id="form-usuarios-gate" autocomplete="on" onsubmit="return false;">
+          <input type="text" id="usuarios-admin-user" name="username" autocomplete="username" hidden>
+          <label for="usuarios-admin-pass">Tu contraseña</label>
+          <input type="password" id="usuarios-admin-pass" name="password" class="form-input" style="width:100%;" autocomplete="current-password">
+          <button type="submit" id="btn-usuarios-confirmar" class="btn-primary" style="width:100%; margin-top:14px;">Continuar</button>
+        </form>
         <div class="msg" id="usuarios-gate-msg" style="display:none;"></div>
       </div>
 
@@ -1614,8 +1622,15 @@ function initVistaUsuarios(){
     renderTablaUsuarios(resultado.usuarios);
   };
 
-  btnConfirmar.addEventListener('click', confirmar);
-  passInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') confirmar(); });
+  // El usuario oculto del formulario es el que le dice al gestor de
+  // contraseñas de quién es esta clave (y así la puede autocompletar acá).
+  document.getElementById('usuarios-admin-user').value =
+    (window.AuthApp && window.AuthApp.getUsername && window.AuthApp.getUsername()) || '';
+  // submit (botón o Enter en la contraseña) sin recargar la página.
+  document.getElementById('form-usuarios-gate').addEventListener('submit', (e) => {
+    e.preventDefault();
+    confirmar();
+  });
 
   document.getElementById('btnRefrescarUsuarios').addEventListener('click', recargarUsuarios);
 
