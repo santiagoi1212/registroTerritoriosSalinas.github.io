@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+<!-- Abre la conexión con Apps Script mientras carga el resto (ahorra el handshake en la primera llamada) -->
+<link rel="preconnect" href="https://script.google.com" crossorigin><link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Coordinación de Transporte</title>
@@ -333,10 +335,40 @@ function urlConfigurada(){
   return WEBAPP_URL && WEBAPP_URL.indexOf('http') === 0;
 }
 
+// Misma copia local que usa transporte.html (misma clave y formato): la
+// primera carga de la página se muestra al instante con lo guardado y
+// enseguida se vuelve a pedir por red para actualizar la vista.
+const CACHE_KEY_REGISTROS = 'salinas_traslado_registros_cache_v1';
+function leerCacheRegistros_(){
+  try {
+    const parsed = JSON.parse(localStorage.getItem(CACHE_KEY_REGISTROS) || 'null');
+    return parsed && Array.isArray(parsed.registros) ? parsed : null;
+  } catch(e){ return null; }
+}
+function guardarCacheRegistros_(datos){
+  try { localStorage.setItem(CACHE_KEY_REGISTROS, JSON.stringify({ timestamp: Date.now(), registros: datos })); }
+  catch(e){ /* localStorage lleno/bloqueado: seguimos sin caché */ }
+}
+function refrescarVistaActiva(){
+  if (viewResumen.style.display === 'block') return refrescarResumen();
+  if (viewAsignar.style.display === 'block') return refrescarAsignar();
+  return refrescarListaRegistros();
+}
+
+let primeraCarga = true;
 async function cargarRegistros(){
   if(!urlConfigurada()){
     registros = [];
     return registros;
+  }
+  if(primeraCarga){
+    primeraCarga = false;
+    const guardado = leerCacheRegistros_();
+    if(guardado && guardado.registros.length){
+      registros = guardado.registros;
+      setTimeout(refrescarVistaActiva, 0); // ahora sí, por red
+      return registros;
+    }
   }
   // Google a veces responde con una página de error (script "frío" o
   // saturado): se reintenta una vez y, si igual falla, se CONSERVA lo que ya
@@ -348,6 +380,7 @@ async function cargarRegistros(){
       const data = await res.json();
       if(!Array.isArray(data)) throw new Error((data && data.error) || 'Respuesta inesperada');
       registros = data;
+      guardarCacheRegistros_(registros);
       return registros;
     }catch(e){
       if(intento === 0) await new Promise(r => setTimeout(r, 1500));

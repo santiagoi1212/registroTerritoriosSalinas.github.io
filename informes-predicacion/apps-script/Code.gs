@@ -166,7 +166,32 @@ function doGet(e) {
 // ---------------------------------------------------------------------
 // MODO ?action=cache — servir la caché ya calculada + padrón fresco
 // ---------------------------------------------------------------------
+// La respuesta de ?action=cache (la usan Publicadores/Estadísticas en cada
+// carga) se guarda ya armada 10 minutos: armarla lee la pestaña "Cache" y el
+// padrón completos y tardaba 3-4s. recomputeCache() e importHistoricalSummary()
+// la invalidan al terminar; un cambio en el padrón se ve en <= 10 minutos.
+var CACHE_KEY_RESPUESTA = 'respuesta_action_cache';
+var CACHE_SEGUNDOS_RESPUESTA = 600;
+
+function invalidarRespuestaCache_() {
+  try { CacheService.getScriptCache().remove(CACHE_KEY_RESPUESTA); } catch (e) {}
+}
+
 function handleCacheRequest_() {
+  var cache = CacheService.getScriptCache();
+  var guardado = cache.get(CACHE_KEY_RESPUESTA);
+  if (guardado) {
+    return ContentService.createTextOutput(guardado).setMimeType(ContentService.MimeType.JSON);
+  }
+  var salida = armarRespuestaCache_();
+  try {
+    var texto = salida.getContent();
+    if (!JSON.parse(texto).error) cache.put(CACHE_KEY_RESPUESTA, texto, CACHE_SEGUNDOS_RESPUESTA);
+  } catch (e) { /* >100KB o error: se sirve igual, sin cachear */ }
+  return salida;
+}
+
+function armarRespuestaCache_() {
   var result = {
     generatedAt: null,
     rosterStatus: { ok: false, error: null },
@@ -357,6 +382,7 @@ function recomputeCache() {
     unmatched: Object.keys(allUnmatched).sort()
   };
   PropertiesService.getScriptProperties().setProperty('CACHE_META', JSON.stringify(meta));
+  invalidarRespuestaCache_();
   return meta;
 }
 
@@ -427,6 +453,7 @@ function importHistoricalSummary() {
 
   var unmatched = Object.keys(unmatchedSet).sort();
   PropertiesService.getScriptProperties().setProperty('HISTORICAL_UNMATCHED', JSON.stringify(unmatched));
+  invalidarRespuestaCache_();
 
   var summary = { importedRows: outRows.length, totalSourceRows: rows.length, unmatched: unmatched };
   Logger.log(JSON.stringify(summary));

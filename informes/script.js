@@ -135,6 +135,36 @@ async function cargarPublicadores() {
     return;
   }
 
+  // Caché vencida: se muestra igual al instante y se actualiza de fondo. Si
+  // para entonces la persona ya eligió grupo, no se le tocan los combos
+  // (la lista nueva queda guardada para la próxima vez).
+  if (cache) {
+    publicadoresPorGrupo = cache.publicadoresPorGrupo;
+    poblarSelectGrupos();
+    traerPublicadoresDeRed_().then((nuevos) => {
+      if (!nuevos) return;
+      if (!grupoSelect.value) {
+        publicadoresPorGrupo = nuevos;
+        poblarSelectGrupos();
+      }
+    });
+    return;
+  }
+
+  const nuevos = await traerPublicadoresDeRed_();
+  if (nuevos) {
+    publicadoresPorGrupo = nuevos;
+    poblarSelectGrupos();
+  } else {
+    mostrarMensaje(
+      "No se pudo cargar la lista de grupos/publicadores. Se puede completar igual de forma manual.",
+      "error"
+    );
+  }
+}
+
+// Devuelve {grupo: [nombres]} (y lo guarda en caché) o null si falló.
+async function traerPublicadoresDeRed_() {
   try {
     const respuesta = await fetch(urlPublicadores());
     const datos = await respuesta.json();
@@ -143,22 +173,19 @@ async function cargarPublicadores() {
       throw new Error(datos.message || "No se pudo cargar la lista de publicadores");
     }
 
-    publicadoresPorGrupo = {};
+    const porGrupo = {};
     datos.publicadores.forEach(({ grupo, nombre }) => {
-      if (!publicadoresPorGrupo[grupo]) {
-        publicadoresPorGrupo[grupo] = [];
+      if (!porGrupo[grupo]) {
+        porGrupo[grupo] = [];
       }
-      publicadoresPorGrupo[grupo].push(nombre);
+      porGrupo[grupo].push(nombre);
     });
 
-    guardarCachePublicadores_(publicadoresPorGrupo);
-    poblarSelectGrupos();
+    guardarCachePublicadores_(porGrupo);
+    return porGrupo;
   } catch (err) {
     console.error(err);
-    mostrarMensaje(
-      "No se pudo cargar la lista de grupos/publicadores. Se puede completar igual de forma manual.",
-      "error"
-    );
+    return null;
   }
 }
 

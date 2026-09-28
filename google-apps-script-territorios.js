@@ -12,6 +12,26 @@ const SHEET_REGISTRO = 'Registro';
 const TZ             = 'America/Montevideo';
 /**********************************/
 
+/* ======================= Caché de stats_rt ======================= */
+// El mapa pide stats_rt cada vez que se abre; armarlo lee toda la hoja
+// "Registro". Se guarda ya armado y cualquier escritura/borrado lo invalida,
+// así que un registro nuevo se ve en la próxima carga igual que antes.
+const CACHE_KEY_STATS = 'stats_rt';
+const CACHE_SEGUNDOS_STATS = 3600;
+
+function getStatsConCache_() {
+  const cache = CacheService.getScriptCache();
+  const guardado = cache.get(CACHE_KEY_STATS);
+  if (guardado) return JSON.parse(guardado);
+  const items = getStatsFromRegistroColB_();
+  try { cache.put(CACHE_KEY_STATS, JSON.stringify(items), CACHE_SEGUNDOS_STATS); } catch (e) { /* >100KB: sin caché */ }
+  return items;
+}
+
+function invalidarStats_() {
+  try { CacheService.getScriptCache().remove(CACHE_KEY_STATS); } catch (e) {}
+}
+
 /* ======================= ID canónico ======================= */
 /**
  * Canoniza IDs sin “romperlos”:
@@ -112,6 +132,7 @@ function writeToRegistroColB_(d) {
   ]]);
 
   SpreadsheetApp.flush();
+  invalidarStats_();
 }
 
 /* ======================= Conteo / stats por columna B ======================= */
@@ -307,6 +328,7 @@ function doPost(e) {
       const ss  = SpreadsheetApp.openById(SHEET_ID);
       const reg = ss.getSheetByName(SHEET_REGISTRO);
       reg.deleteRow(hit.row);
+      invalidarStats_();
 
       return jsonOut_({ ok: true, deleted: true, id, record: before });
     }
@@ -361,13 +383,13 @@ function doGet(e) {
 
     // ✅ stats_rt
     if (p.read === 'stats_rt' || p.callback) {
-      const items = getStatsFromRegistroColB_();
+      const items = getStatsConCache_();
       const out = { ok: true, items };
       return p.callback ? jsonpOut_(p.callback, out) : jsonOut_(out);
     }
 
     // 👇 CAMBIO: sin parámetros conocidos → devolver stats igualmente
-    const items = getStatsFromRegistroColB_();
+    const items = getStatsConCache_();
     return jsonOut_({ ok: true, items });
 
   } catch (err) {

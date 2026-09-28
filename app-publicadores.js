@@ -356,6 +356,11 @@
   // Trae Publicadores + actividad, usando la caché si todavía está vigente.
   // opciones.forzar=true ignora la caché y siempre pega por red (se usa en
   // "Refrescar" y justo después de agregar un publicador nuevo).
+  //
+  // opciones.alActualizar(personas): si se pasa y la caché está VENCIDA, se
+  // devuelve igual al instante (desdeCache:true, vencida:true) y la red se
+  // pide de fondo; cuando llega, se llama alActualizar con los datos nuevos.
+  // Así la página se ve enseguida en vez de esperar 2-4s al Apps Script.
   async function cargarDatosPublicadores(cfg, opciones) {
     opciones = opciones || {};
     if (!opciones.forzar) {
@@ -363,8 +368,17 @@
       if (cache && (Date.now() - cache.timestamp) < CACHE_TTL_MS) {
         return { personas: cache.personas, desdeCache: true };
       }
+      if (cache && typeof opciones.alActualizar === "function") {
+        cargarDesdeRed_(cfg)
+          .then(opciones.alActualizar)
+          .catch(err => console.warn("No se pudo refrescar Publicadores (se sigue con lo guardado):", err));
+        return { personas: cache.personas, desdeCache: true, vencida: true };
+      }
     }
+    return { personas: await cargarDesdeRed_(cfg), desdeCache: false };
+  }
 
+  async function cargarDesdeRed_(cfg) {
     const [personas, estadoActividad] = await Promise.all([
       cargarPublicadores(),
       cargarEstadoActividad(cfg.INFORMES_PREDICACION_API_URL)
@@ -383,7 +397,7 @@
     if (!actividadDegradada) {
       guardarCache_(personas);
     }
-    return { personas, desdeCache: false };
+    return personas;
   }
 
   // Para usar después de una edición local (ya reflejada en el array de

@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+<!-- Abre la conexión con Apps Script mientras carga el resto (ahorra el handshake en la primera llamada) -->
+<link rel="preconnect" href="https://script.google.com" crossorigin><link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Publicadores · Portal Salinas</title>
@@ -1023,12 +1025,20 @@ async function cargarYRenderizar(opciones){
     // vigente, en vez de volver a pedir todo por red en cada navegación
     // entre "Ver estado" / "Organizar grupos" / "Estadísticas" (son recargas
     // de página distintas). opciones.forzar=true la ignora.
-    const { personas } = await window.PublicadoresApp.cargarDatosPublicadores(cfg, { forzar: !!opciones.forzar });
-    personasCache = personas;
-    window.PublicadoresApp.renderResumen(document.getElementById('resumen'), personasCache);
-    window.PublicadoresApp.renderTabla(document.getElementById('tablas'), personasCache, document.getElementById('buscador').value, abrirModalPersona);
-    renderOrganizarGrupos();
-    renderEstadisticas();
+    // Si la caché está vencida se muestra igual al instante y se vuelve a
+    // pintar cuando llegan los datos nuevos (alActualizar).
+    const pintar = (personas) => {
+      personasCache = personas;
+      window.PublicadoresApp.renderResumen(document.getElementById('resumen'), personasCache);
+      window.PublicadoresApp.renderTabla(document.getElementById('tablas'), personasCache, document.getElementById('buscador').value, abrirModalPersona);
+      renderOrganizarGrupos();
+      renderEstadisticas();
+    };
+    const { personas } = await window.PublicadoresApp.cargarDatosPublicadores(cfg, {
+      forzar: !!opciones.forzar,
+      alActualizar: pintar
+    });
+    pintar(personas);
   } catch (err){
     console.error(err);
     document.getElementById('tablas').innerHTML = `<p class="muted">No se pudo cargar la planilla de publicadores.</p>`;

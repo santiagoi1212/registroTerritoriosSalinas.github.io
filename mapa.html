@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+<!-- Abre la conexión con Apps Script mientras carga el resto (ahorra el handshake en la primera llamada) -->
+<link rel="preconnect" href="https://script.google.com" crossorigin><link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
 
 <style>
   #toast-stack{ position:fixed; bottom:20px; left:50%; transform:translateX(-50%); z-index:5000; display:flex; flex-direction:column; gap:8px; align-items:center; }
@@ -1124,16 +1126,53 @@ function repintarTerritorio(territorio){
 }
 
 
+// Última respuesta de stats_rt guardada en este navegador: el mapa se dibuja
+// al instante con esos colores y se repinta cuando llega la respuesta nueva
+// (antes quedaba vacío ~3s esperando al Apps Script en cada apertura).
+const CACHE_STATS_KEY = 'salinas_mapa_stats_v1';
+function leerStatsGuardados_(){
+  try {
+    const raw = localStorage.getItem(CACHE_STATS_KEY);
+    const items = raw ? JSON.parse(raw) : null;
+    return Array.isArray(items) ? items : null;
+  } catch(_) { return null; }
+}
+function guardarStats_(items){
+  try { localStorage.setItem(CACHE_STATS_KEY, JSON.stringify(items)); } catch(_){}
+}
+function setDatos_(items){
+  // Normalizamos las claves para asegurar match con p.id
+  window.__datosMap = new Map(items.map(d => [window.idKey ? window.idKey(d.id) : String(d.id), d]));
+}
+
+// Pide stats_rt y repinta las manzanas ya dibujadas (sin volver a crearlas).
+// Si la respuesta vino vacía (falló la red/Apps Script) y ya había datos,
+// se conservan los que había en vez de dejar todo gris.
+async function actualizarDatos(){
+  const datos = await cargarDatosDesdeBackend();
+  if (!datos.length && window.__datosMap && window.__datosMap.size) {
+    throw new Error('No se pudieron traer los datos (se muestran los últimos guardados)');
+  }
+  setDatos_(datos);
+  guardarStats_(datos);
+  polygonsLayer.eachLayer(aplicarEstadoManzana);
+}
+
 async function init() {
   if (!Array.isArray(window.poligonos) || !window.poligonos.length) {
     alert('poligonos_salinas.js no definió window.poligonos o está vacío'); return;
   }
 
-  // Datos JSON (stats_rt)
-  const datos = await cargarDatosDesdeBackend();
-  // Normalizamos las claves para asegurar match con p.id
-  window.__datosMap = new Map(datos.map(d => [window.idKey ? window.idKey(d.id) : String(d.id), d]));
+  setDatos_(leerStatsGuardados_() || []);
+  dibujarMapa();
+  try {
+    await actualizarDatos();
+  } catch (e) {
+    console.warn(e);
+  }
+}
 
+function dibujarMapa() {
   // Pintar: SIEMPRE se muestran todos los polígonos a todos los usuarios
   // (filtro por "vista" deshabilitado a pedido)
   polygonsLayer.clearLayers(); labelsLayer.clearLayers(); cartelesLayer.clearLayers(); territorioLayer.clearLayers();
@@ -1240,7 +1279,7 @@ init();
       btn.disabled = true;
       btn.classList.add('loading');
       showBusy('Refrescando…');
-      await init(); // vuelve a pedir stats_rt y repinta
+      await actualizarDatos(); // vuelve a pedir stats_rt y repinta
       (window.showToast || console.log)('Datos actualizados');
     }catch(e){
       console.error(e);

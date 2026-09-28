@@ -112,9 +112,22 @@ function obtenerPublicadoresDetalleConCache_() {
 // se manda entera al navegador) y también la borra cualquier doPost.
 const CACHE_KEY_DATOS_PERSONALES = "datosPersonalesTodos";
 
+// ?action=publicadores (lista simple grupo/nombre del formulario de
+// informes/index.html): mismo esquema de caché.
+const CACHE_KEY_PUBLICADORES_SIMPLE = "publicadoresSimple";
+
+function obtenerPublicadoresConCache_() {
+  const cache = CacheService.getScriptCache();
+  const guardado = cache.get(CACHE_KEY_PUBLICADORES_SIMPLE);
+  if (guardado) return JSON.parse(guardado);
+  const lista = obtenerPublicadores();
+  try { cache.put(CACHE_KEY_PUBLICADORES_SIMPLE, JSON.stringify(lista), CACHE_SEGUNDOS_DETALLE); } catch (err) {}
+  return lista;
+}
+
 function invalidarCacheDetalle_() {
   try {
-    CacheService.getScriptCache().removeAll([CACHE_KEY_DETALLE, CACHE_KEY_DATOS_PERSONALES]);
+    CacheService.getScriptCache().removeAll([CACHE_KEY_DETALLE, CACHE_KEY_DATOS_PERSONALES, CACHE_KEY_PUBLICADORES_SIMPLE]);
   } catch (err) {}
 }
 
@@ -175,7 +188,7 @@ function doPostInforme_(e) {
 function doGet(e) {
   try {
     if (e.parameter.action === "publicadores") {
-      return respuesta({ status: "ok", publicadores: obtenerPublicadores() });
+      return respuesta({ status: "ok", publicadores: obtenerPublicadoresConCache_() });
     }
     if (e.parameter.action === "publicadoresDetalle") {
       return respuesta({ status: "ok", publicadores: obtenerPublicadoresDetalleConCache_() });

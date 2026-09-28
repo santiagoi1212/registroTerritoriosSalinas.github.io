@@ -278,6 +278,39 @@ test("cargarDatosPublicadores: si la actividad viene vacía (falla transitoria) 
   assert.ok(fetchCalls > llamadasTrasPrimeraCarga, "debería haber vuelto a pegarle a la red");
 });
 
+test("cargarDatosPublicadores: con caché vencida y alActualizar devuelve lo guardado al instante y refresca de fondo", async () => {
+  const app = loadPublicadoresApp();
+  const cfg = { PUBLICADORES_API_URL: "https://fake.example/pub", INFORMES_PREDICACION_API_URL: "" };
+  global.window.APP_CONFIG = cfg;
+
+  // Caché vieja (hace 1 hora) con una sola persona.
+  localStorage.setItem("salinas_publicadores_cache_v3", JSON.stringify({
+    timestamp: Date.now() - 60 * 60 * 1000,
+    personas: [{ grupo: "1", nombre: "Vieja", fechaVenceDPA: null }]
+  }));
+
+  let liberarRed;
+  const redLista = new Promise(r => { liberarRed = r; });
+  global.fetch = async () => {
+    await redLista; // la red tarda: la respuesta NO debería esperarla
+    return { ok: true, json: async () => ({ status: "ok", publicadores: [{ Grupo: "2", Nombre: "Nueva" }] }) };
+  };
+
+  let actualizadas = null;
+  const recibido = new Promise(r => {
+    app.cargarDatosPublicadores(cfg, { alActualizar: (p) => { actualizadas = p; r(); } })
+      .then(res => {
+        assert.equal(res.desdeCache, true);
+        assert.equal(res.vencida, true);
+        assert.equal(res.personas[0].nombre, "Vieja");
+        assert.equal(actualizadas, null, "todavía no debería haber llegado la red");
+        liberarRed();
+      });
+  });
+  await recibido;
+  assert.equal(actualizadas[0].nombre, "Nueva");
+});
+
 test("suscribirseACambiosDeCache: avisa con las personas actualizadas cuando otra pestaña cambia la caché", () => {
   const app = loadPublicadoresApp();
 
