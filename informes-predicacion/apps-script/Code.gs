@@ -101,11 +101,21 @@ var FORM_SHEETS = [
 // Nombre de la pestaña de caché, siempre dentro de la planilla padrón.
 var CACHE_SHEET_NAME = 'Cache';
 
+// Pestaña (dentro de la planilla padrón) donde guarda cada informe mensual
+// el formulario del portal (informes/index.html, vía el Apps Script de
+// Publicadores): A Fecha de envío, B Grupo, C Nombre, D Mes, E Año,
+// F Participó, G Situación, H Cursos, I Horas, J Comentarios.
+// Desde el 28/09/2026 es la ÚNICA fuente en vivo de recomputeCache(): las 5
+// planillas de formulario (FORM_SHEETS) ya no se leen — lo que tenían quedó
+// guardado una sola vez en "Historico" con congelarFormulariosEnHistorico().
+var RESPUESTAS_SHEET_NAME = 'Respuestas';
+
 // Nombre de la pestaña donde queda guardado, para siempre, el histórico
 // importado UNA SOLA VEZ desde las planillas de "resumen mensual" (ver
 // HISTORICAL_SUMMARY_SHEETS e importHistoricalSummary() más abajo). A
-// diferencia de "Cache" (que se borra y recalcula entero en cada corrida),
-// esta pestaña nunca la toca recomputeCache() — solo la lee y la mezcla.
+// diferencia de "Cache", funciona como registro permanente: recomputeCache()
+// la lee como base y le vuelve a guardar el resultado con lo nuevo de
+// "Respuestas" (que tiene prioridad), sin borrar nunca un mes que ya esté.
 var HISTORICAL_SHEET_NAME = 'Historico';
 
 // Planillas/pestañas externas con formato Persona / Mes Año / Situación /
@@ -225,7 +235,7 @@ function armarRespuestaCache_() {
   try {
     var rosterSheet = getSheetByGid_(ss, ROSTER_SHEET.gid);
     var roster = parseRosterMatrix_(matrixFromSheet_(rosterSheet));
-    result.roster = roster.map(function (r) { return { grupo: r.grupo, nombre: r.canonical }; });
+    result.roster = roster.map(function (r) { return { grupo: r.grupo, nombre: r.canonical, estado: r.estado }; });
     result.rosterStatus = { ok: true, error: null };
   } catch (e) {
     result.rosterStatus = { ok: false, error: String(e) };
@@ -274,13 +284,13 @@ function handleRecomputeRequest_(params) {
 }
 
 /**
- * Relee el padrón + las 5 planillas de formulario, matchea cada respuesta
- * contra el padrón, se queda con la más reciente por (persona, período), la
- * fusiona con el histórico importado una vez (pestaña "Historico" — ver
- * importHistoricalSummary()) y reescribe la pestaña "Cache" dentro de la
- * planilla padrón. El histórico cubre los (persona, mes) que las 5
- * planillas en vivo no tienen; cuando ambos tienen datos para el mismo mes,
- * gana lo recién leído de las planillas en vivo. Se puede llamar
+ * Relee el padrón + la pestaña "Respuestas" (única fuente en vivo desde el
+ * 28/09/2026 — ver RESPUESTAS_SHEET_NAME), matchea cada informe contra el
+ * padrón, se queda con el más reciente por (persona, período), lo fusiona
+ * con el pasado fijo de la pestaña "Historico" (formularios viejos, ver
+ * congelarFormulariosEnHistorico() e importHistoricalSummary()) y reescribe
+ * la pestaña "Cache" dentro de la planilla padrón. Cuando "Respuestas" y
+ * "Historico" tienen datos para la misma persona y mes, gana "Respuestas". Se puede llamar
  * manualmente (editor de Apps Script, o vía ?action=recompute) o desde el
  * trigger diario instalado por createDailyTrigger().
  */
@@ -288,9 +298,8 @@ function recomputeCache() {
   var ss = SpreadsheetApp.openById(ROSTER_SHEET.id);
   var roster = parseRosterMatrix_(matrixFromSheet_(getSheetByGid_(ss, ROSTER_SHEET.gid)));
 
-  // Base: lo importado una vez desde el resumen histórico, si existe.
-  // "Cache" se reescribe entera en cada corrida, pero "Historico" nunca la
-  // toca esta función — solo la lee.
+  // Base: el registro permanente de "Historico" (formularios viejos + todo
+  // lo que ya pasó por "Respuestas" en corridas anteriores).
   var merged = {}; // "nombre|periodKey" -> fila en formato de salida (array)
   var historicoSheet = ss.getSheetByName(HISTORICAL_SHEET_NAME);
   if (historicoSheet) {
@@ -299,18 +308,16 @@ function recomputeCache() {
     });
   }
 
+  // Única fuente en vivo: la pestaña "Respuestas" (ver RESPUESTAS_SHEET_NAME).
   var allFormRows = [];
   var sheetStatus = [];
-  for (var i = 0; i < FORM_SHEETS.length; i++) {
-    var cfg = FORM_SHEETS[i];
-    try {
-      var formSs = SpreadsheetApp.openById(cfg.id);
-      var matrix = matrixFromSheet_(getSheetByGid_(formSs, cfg.gid));
-      allFormRows = allFormRows.concat(parseFormMatrix_(matrix));
-      sheetStatus.push({ ok: true, error: null });
-    } catch (e) {
-      sheetStatus.push({ ok: false, error: String(e) });
-    }
+  try {
+    var respuestasSheet = ss.getSheetByName(RESPUESTAS_SHEET_NAME);
+    if (!respuestasSheet) throw new Error('No existe la pestaña "' + RESPUESTAS_SHEET_NAME + '" en el padrón');
+    allFormRows = parseRespuestasSheet_(respuestasSheet);
+    sheetStatus.push({ ok: true, error: null });
+  } catch (e) {
+    sheetStatus.push({ ok: false, error: String(e) });
   }
 
   var unmatchedSet = {};
@@ -331,8 +338,8 @@ function recomputeCache() {
     if (!prev || row.timestampMs >= prev.timestampMs) latest[key] = row;
   });
 
-  // Lo recién leído de las 5 planillas en vivo pisa al histórico para el
-  // mismo (persona, período) — el histórico solo rellena los huecos.
+  // Lo recién leído de "Respuestas" pisa al histórico para el mismo
+  // (persona, período) — el histórico rellena los huecos.
   Object.keys(latest).forEach(function (key) {
     var row = latest[key];
     var year = Math.floor(row.periodKey / 12);
@@ -356,14 +363,20 @@ function recomputeCache() {
     return a[5] - b[5];
   });
 
+  var header = ['Grupo', 'Nombre', 'Año', 'Mes', 'MesIndex', 'PeriodKey', 'Situacion', 'Horas', 'Participo'];
+
+  // "Historico" funciona como registro permanente: se le guarda lo mismo que
+  // a "Cache" (Historico + Respuestas, con prioridad Respuestas). Así, si una
+  // fila se borra de "Respuestas", ese mes queda igual en "Historico" y se
+  // sigue viendo; si alguien corrige su informe, "Historico" se actualiza.
+  // Para quitar un mes cargado por error hay que borrarlo de las DOS pestañas.
+  // Se escribe ANTES que "Cache" y sin vaciar primero (ver escribirTabla_).
+  if (!historicoSheet) historicoSheet = ss.insertSheet(HISTORICAL_SHEET_NAME);
+  escribirTabla_(historicoSheet, header, cacheRows);
+
   var cacheSheet = ss.getSheetByName(CACHE_SHEET_NAME);
   if (!cacheSheet) cacheSheet = ss.insertSheet(CACHE_SHEET_NAME);
-  cacheSheet.clearContents();
-  var header = ['Grupo', 'Nombre', 'Año', 'Mes', 'MesIndex', 'PeriodKey', 'Situacion', 'Horas', 'Participo'];
-  cacheSheet.getRange(1, 1, 1, header.length).setValues([header]);
-  if (cacheRows.length) {
-    cacheSheet.getRange(2, 1, cacheRows.length, header.length).setValues(cacheRows);
-  }
+  escribirTabla_(cacheSheet, header, cacheRows);
 
   // El banner de "nombres sin coincidencia" muestra tanto lo que no
   // matcheó en esta corrida (planillas en vivo) como lo que no matcheó en
@@ -460,6 +473,130 @@ function importHistoricalSummary() {
   return summary;
 }
 
+// Filas de la pestaña "Respuestas" en el mismo formato que parseFormMatrix_
+// (así el resto de recomputeCache no cambia). Columnas fijas por posición.
+function parseRespuestasSheet_(sheet) {
+  var last = sheet.getLastRow();
+  if (last < 2) return [];
+  var values = sheet.getRange(2, 1, last - 1, 10).getValues();
+  var out = [];
+  values.forEach(function (row) {
+    var rawName = (row[2] == null ? '' : row[2]).toString().trim();
+    if (!rawName) return;
+    var mIdx = monthIndex_(row[3]);
+    var yearNum = parseInt((row[4] == null ? '' : row[4]).toString().trim(), 10);
+    var partNorm = normalize_(row[5]);
+    var horasNum = parseFloat(row[8]);
+    var ts = row[0];
+    out.push({
+      rawName: rawName,
+      normName: normalize_(rawName),
+      monthIdx: mIdx,
+      year: isNaN(yearNum) ? null : yearNum,
+      participated: partNorm === 'si' ? true : (partNorm === 'no' ? false : null),
+      situacionBucket: classifySituacion_((row[6] == null ? '' : row[6]).toString().trim()),
+      horas: isNaN(horasNum) ? null : horasNum,
+      timestampMs: (Object.prototype.toString.call(ts) === '[object Date]') ? ts.getTime() : 0,
+      periodKey: (mIdx >= 0 && !isNaN(yearNum)) ? (yearNum * 12 + mIdx) : null,
+      grupo: null,
+      rosterCanonical: null
+    });
+  });
+  return out;
+}
+
+/**
+ * Correr UNA SOLA VEZ a mano (antes del primer recálculo con la versión que
+ * solo lee "Respuestas"): lee las 5 planillas de formulario (FORM_SHEETS)
+ * por última vez y agrega lo que tienen a la pestaña "Historico", para no
+ * perder ese pasado cuando recomputeCache() deje de leerlas. Lo que ya
+ * estaba en "Historico" se conserva; si una persona+mes está en los dos
+ * lados, gana lo de las planillas (mismo criterio que antes). Después
+ * correr recomputeCache(). Revisá el log por nombres sin coincidencia.
+ */
+function congelarFormulariosEnHistorico() {
+  var ss = SpreadsheetApp.openById(ROSTER_SHEET.id);
+  var roster = parseRosterMatrix_(matrixFromSheet_(getSheetByGid_(ss, ROSTER_SHEET.gid)));
+
+  var merged = {};
+  var histSheet = ss.getSheetByName(HISTORICAL_SHEET_NAME);
+  if (histSheet) {
+    readCacheSheet_(histSheet).forEach(function (r) {
+      merged[r.nombre + '|' + r.periodKey] = rowObjectToArray_(r);
+    });
+  }
+  var antes = Object.keys(merged).length;
+
+  var rows = [], errores = [];
+  FORM_SHEETS.forEach(function (cfg) {
+    try {
+      var formSs = SpreadsheetApp.openById(cfg.id);
+      rows = rows.concat(parseFormMatrix_(matrixFromSheet_(getSheetByGid_(formSs, cfg.gid))));
+    } catch (e) {
+      errores.push(cfg.id + ': ' + e);
+    }
+  });
+  if (errores.length) throw new Error('No se pudieron leer todas las planillas (no se tocó nada): ' + errores.join(' · '));
+
+  var unmatchedSet = {};
+  var latest = {};
+  rows.forEach(function (row) {
+    var m = matchRosterName_(row.normName, roster);
+    if (!m) { unmatchedSet[row.rawName] = true; return; }
+    if (row.periodKey == null) return;
+    row.grupo = m.grupo;
+    row.rosterCanonical = m.canonical;
+    var key = m.canonical + '|' + row.periodKey;
+    var prev = latest[key];
+    if (!prev || row.timestampMs >= prev.timestampMs) latest[key] = row;
+  });
+  Object.keys(latest).forEach(function (key) {
+    var row = latest[key];
+    merged[key] = [
+      row.grupo, row.rosterCanonical, Math.floor(row.periodKey / 12),
+      titleCase_(MONTHS_[row.periodKey % 12]), row.periodKey % 12, row.periodKey,
+      row.situacionBucket || 'Otro',
+      row.horas == null ? '' : row.horas,
+      row.participated === true ? 'SI' : (row.participated === false ? 'NO' : '')
+    ];
+  });
+
+  var outRows = Object.keys(merged).map(function (k) { return merged[k]; });
+  outRows.sort(function (a, b) {
+    if (a[1] !== b[1]) return a[1] < b[1] ? -1 : 1;
+    return a[5] - b[5];
+  });
+  if (!histSheet) histSheet = ss.insertSheet(HISTORICAL_SHEET_NAME);
+  histSheet.clearContents();
+  var header = ['Grupo', 'Nombre', 'Año', 'Mes', 'MesIndex', 'PeriodKey', 'Situacion', 'Horas', 'Participo'];
+  histSheet.getRange(1, 1, 1, header.length).setValues([header]);
+  if (outRows.length) histSheet.getRange(2, 1, outRows.length, header.length).setValues(outRows);
+
+  // Los nombres que no cruzaron quedan en el aviso de la página (igual que
+  // con importHistoricalSummary).
+  var previos = [];
+  try { previos = JSON.parse(PropertiesService.getScriptProperties().getProperty('HISTORICAL_UNMATCHED') || '[]'); } catch (e) {}
+  var todos = {};
+  previos.concat(Object.keys(unmatchedSet)).forEach(function (n) { todos[n] = true; });
+  PropertiesService.getScriptProperties().setProperty('HISTORICAL_UNMATCHED', JSON.stringify(Object.keys(todos).sort()));
+  invalidarRespuestaCache_();
+
+  var resumen = { filasEnHistoricoAntes: antes, filasEnHistoricoAhora: outRows.length, filasLeidasDeFormularios: rows.length, sinCoincidencia: Object.keys(unmatchedSet).length };
+  Logger.log(JSON.stringify(resumen));
+  return resumen;
+}
+
+// Reemplaza el contenido de una pestaña por header + rows SIN vaciarla
+// antes: primero escribe lo nuevo encima y después limpia las filas que
+// sobren. Si algo falla a mitad de camino, no queda la pestaña vacía (con
+// "Historico" eso sería perder el registro permanente).
+function escribirTabla_(sheet, header, rows) {
+  sheet.getRange(1, 1, 1, header.length).setValues([header]);
+  if (rows.length) sheet.getRange(2, 1, rows.length, header.length).setValues(rows);
+  var sobrantes = sheet.getLastRow() - (rows.length + 1);
+  if (sobrantes > 0) sheet.getRange(rows.length + 2, 1, sobrantes, sheet.getMaxColumns()).clearContent();
+}
+
 function rowObjectToArray_(r) {
   return [
     r.grupo, r.nombre, r.anio, r.mes, r.mesIndex, r.periodKey, r.situacion,
@@ -539,6 +676,7 @@ function monthIndex_(raw) {
 function classifySituacion_(raw) {
   var n = normalize_(raw);
   if (!n) return null;
+  if (n.indexOf('especial') !== -1) return 'Precursor Especial';
   if (n.indexOf('regular') !== -1) return 'Precursor Regular';
   if (n.indexOf('auxiliar') !== -1) return 'Precursor Auxiliar';
   if (n.indexOf('publicador') !== -1) return 'Publicador';
@@ -610,7 +748,9 @@ function parseRosterMatrix_(matrix) {
   if (!matrix || !matrix.length) return [];
   var headerNorm = matrix[0].map(normalize_);
   var find = colFinder_(headerNorm);
-  var idx = { grupo: find(/^grupo$/), nombre: find(/^nombre$/) };
+  // "Estado" (Anciano, Siervo Ministerial, Precursor Regular, ...) es la
+  // misma columna que se edita desde el modal de Publicadores; opcional.
+  var idx = { grupo: find(/^grupo$/), nombre: find(/^nombre$/), estado: find(/^estado$/) };
   var out = [];
   var seen = {}; // evita duplicados exactos dentro del padrón
   for (var i = 1; i < matrix.length; i++) {
@@ -626,7 +766,8 @@ function parseRosterMatrix_(matrix) {
     var key = grupoNum + '|' + normMatch;
     if (seen[key]) continue;
     seen[key] = true;
-    out.push({ grupo: grupoNum, canonical: titleCase_(rawName), normName: normMatch });
+    var estado = idx.estado >= 0 && row[idx.estado] != null ? String(row[idx.estado]).trim() : '';
+    out.push({ grupo: grupoNum, canonical: titleCase_(rawName), normName: normMatch, estado: estado });
   }
   return out;
 }

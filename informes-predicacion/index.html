@@ -102,6 +102,7 @@
     --series-publicador: #2a78d6;
     --series-auxiliar:   #eb6834;
     --series-regular:    #1baf7a;
+    --series-especial:   #8b5cf6;
 
     --status-good:     #0ca30c;
     --status-warning:  #fab219;
@@ -126,6 +127,7 @@
       --series-publicador: #3987e5;
       --series-auxiliar:   #d95926;
       --series-regular:    #199e70;
+      --series-especial:   #a78bfa;
       color-scheme: dark;
     }
   }
@@ -141,6 +143,7 @@
     --series-publicador: #3987e5;
     --series-auxiliar:   #d95926;
     --series-regular:    #199e70;
+    --series-especial:   #a78bfa;
     color-scheme: dark;
   }
 
@@ -256,6 +259,7 @@
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 auto;
   }
   .pub-roster-item .pub-flag { flex: 0 0 auto; }
+  .pub-estado-tag { color: var(--text-muted); font-size: 0.78em; font-weight: 400; }
 
   /* Colapsable, para que la lista completa de integrantes no domine la
      tarjeta — lo importante (quién falta) ya se ve arriba, sin plegar. */
@@ -315,6 +319,7 @@
   .pub-situacion-badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: 0 0 auto; }
   .pub-situacion-badge.sit-regular { border-color: var(--series-regular); color: var(--series-regular); }
   .pub-situacion-badge.sit-auxiliar { border-color: var(--series-auxiliar); color: var(--series-auxiliar); }
+  .pub-situacion-badge.sit-especial { border-color: var(--series-especial); color: var(--series-especial); }
   .pub-situacion-badge.sit-publicador { border-color: var(--series-publicador); color: var(--series-publicador); }
   .pub-situacion-badge.sit-otro { border-color: var(--border); color: var(--text-muted); }
 
@@ -326,6 +331,7 @@
   }
   .pub-situacion-panel.sit-regular { border-left-color: var(--series-regular); }
   .pub-situacion-panel.sit-auxiliar { border-left-color: var(--series-auxiliar); }
+  .pub-situacion-panel.sit-especial { border-left-color: var(--series-especial); }
   .pub-situacion-panel h4 { margin-top: 0; }
 
   /* Barra de progreso hacia la meta anual de horas (Precursor Regular). */
@@ -570,6 +576,17 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
     return fetchJson(actionUrl("recompute", { token: RECOMPUTE_TOKEN }));
   }
 
+  // Estado cargado en la pestaña Publicadores (Anciano, Siervo Ministerial,
+  // Precursor Regular, ...) — viene con el padrón en ?action=cache.
+  function estadoDe(name) {
+    var r = STATE.roster.filter(function (x) { return x.nombre === name; })[0];
+    return r && r.estado ? r.estado : "";
+  }
+  function estadoTag(name) {
+    var e = estadoDe(name);
+    return e ? ' <span class="pub-estado-tag">' + escapeHtml(e) + "</span>" : "";
+  }
+
   function groupRosterByGrupo(roster) {
     var byGroup = {};
     roster.forEach(function (r) {
@@ -659,6 +676,7 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
   function situacionBadgeClass(situacion) {
     if (situacion === "Precursor Regular") return "sit-regular";
     if (situacion === "Precursor Auxiliar") return "sit-auxiliar";
+    if (situacion === "Precursor Especial") return "sit-especial";
     if (situacion === "Publicador") return "sit-publicador";
     return "sit-otro";
   }
@@ -713,7 +731,7 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
     var rosterNames = rosterList.map(function (r) { return r.nombre; }).sort();
 
     var submitted = [], missing = [], noActivity = [];
-    var counts = { "Precursor Regular": 0, "Precursor Auxiliar": 0, "Publicador": 0, "Otro": 0 };
+    var counts = { "Precursor Regular": 0, "Precursor Especial": 0, "Precursor Auxiliar": 0, "Publicador": 0, "Otro": 0 };
     rosterNames.forEach(function (name) {
       var row = STATE.rowsByNamePeriod[name + "|" + selectedPeriod];
       if (row) {
@@ -740,7 +758,7 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
     var status = personStatus(name);
     var cls = "pub-roster-item clickable " + statusBadgeClass(status.code);
     return '<button type="button" class="' + cls + '" data-person="' + escapeHtml(name) + '" title="' + escapeHtml(status.label) + '">' +
-      '<span class="pub-dot"></span><span class="pub-name-text">' + escapeHtml(name) + "</span>" +
+      '<span class="pub-dot"></span><span class="pub-name-text">' + escapeHtml(name) + estadoTag(name) + "</span>" +
       "</button>";
   }
 
@@ -754,7 +772,7 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
     var flag = status.code === "irregular" ? ' <span class="pub-flag">⚠</span>'
       : (status.code === "inactivo" ? ' <span class="pub-flag">⛔</span>' : "");
     return '<button type="button" class="' + cls + '" data-person="' + escapeHtml(name) + '" title="' + escapeHtml(status.label) + '">' +
-      '<span class="pub-dot"></span><span class="pub-name-text">' + escapeHtml(name) + "</span>" + flag +
+      '<span class="pub-dot"></span><span class="pub-name-text">' + escapeHtml(name) + estadoTag(name) + "</span>" + flag +
       "</button>";
   }
 
@@ -807,6 +825,7 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
       "Publicador": cs.getPropertyValue("--series-publicador").trim(),
       "Precursor Auxiliar": cs.getPropertyValue("--series-auxiliar").trim(),
       "Precursor Regular": cs.getPropertyValue("--series-regular").trim(),
+      "Precursor Especial": cs.getPropertyValue("--series-especial").trim(),
       "Otro": cs.getPropertyValue("--text-muted").trim()
     };
   }
@@ -826,8 +845,8 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
   function renderMiniChart(canvasId, counts) {
     destroyChart(canvasId);
     var colors = seriesColors(), ink = inkColors();
-    var labels = ["Regular", "Auxiliar", "Publicador"];
-    var keys = ["Precursor Regular", "Precursor Auxiliar", "Publicador"];
+    var labels = ["Regular", "Especial", "Auxiliar", "Publicador"];
+    var keys = ["Precursor Regular", "Precursor Especial", "Precursor Auxiliar", "Publicador"];
     var data = keys.map(function (k) { return counts[k] || 0; });
     var bg = keys.map(function (k) { return colors[k]; });
     var ctx = document.getElementById(canvasId).getContext("2d");
@@ -1007,7 +1026,7 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
       '<div class="pub-modal-backdrop"><div class="pub-modal" role="dialog" aria-modal="true">' +
         '<div class="pub-modal-head"><h3>' + escapeHtml(name) + '</h3>' +
         '<button type="button" class="pub-modal-close" aria-label="Cerrar">✕</button></div>' +
-        '<p class="pub-modal-sub">' + (grupo != null ? "Grupo " + grupo + " · " : "") +
+        '<p class="pub-modal-sub">' + (grupo != null ? "Grupo " + grupo + " · " : "") + (estadoDe(name) ? escapeHtml(estadoDe(name)) + " · " : "") +
           '<span class="pub-status-badge ' + statusBadgeClass(status.code) + '">' + escapeHtml(status.label) + "</span>" +
           (currentSituacionHtml ? " " + currentSituacionHtml : "") +
         "</p>" +
@@ -1040,8 +1059,8 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
 
   function renderSummaryCharts(views, names) {
     var colors = seriesColors(), ink = inkColors();
-    var keys = ["Precursor Regular", "Precursor Auxiliar", "Publicador"];
-    var labelMap = { "Precursor Regular": "Regular", "Precursor Auxiliar": "Auxiliar", "Publicador": "Publicador" };
+    var keys = ["Precursor Regular", "Precursor Especial", "Precursor Auxiliar", "Publicador"];
+    var labelMap = { "Precursor Regular": "Regular", "Precursor Especial": "Especial", "Precursor Auxiliar": "Auxiliar", "Publicador": "Publicador" };
 
     destroyChart("groups");
     var ctx1 = document.getElementById("pub-chart-groups").getContext("2d");
@@ -1069,7 +1088,7 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
       }
     });
 
-    var totals = { "Precursor Regular": 0, "Precursor Auxiliar": 0, "Publicador": 0 };
+    var totals = { "Precursor Regular": 0, "Precursor Especial": 0, "Precursor Auxiliar": 0, "Publicador": 0 };
     views.forEach(function (v) { keys.forEach(function (k) { totals[k] += v.counts[k] || 0; }); });
 
     destroyChart("total");
