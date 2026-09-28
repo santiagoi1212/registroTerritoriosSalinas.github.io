@@ -320,6 +320,8 @@ function recomputeCache() {
     sheetStatus.push({ ok: false, error: String(e) });
   }
 
+  allFormRows = allFormRows.filter(function (row) { return !esDescartado_(row.rawName); });
+
   var unmatchedSet = {};
   allFormRows.forEach(function (row) {
     var m = matchRosterName_(row.normName, roster);
@@ -385,6 +387,12 @@ function recomputeCache() {
   try {
     historicalUnmatched = JSON.parse(PropertiesService.getScriptProperties().getProperty('HISTORICAL_UNMATCHED') || '[]');
   } catch (e) { /* no se corrió importHistoricalSummary() todavía */ }
+  // Los nombres viejos se vuelven a probar contra el padrón actual (con sus
+  // "Otros nombres"): los que ya cruzan salen de la lista para siempre.
+  historicalUnmatched = historicalUnmatched.filter(function (n) {
+    return !esDescartado_(n) && !matchRosterName_(normalize_(n), roster);
+  });
+  PropertiesService.getScriptProperties().setProperty('HISTORICAL_UNMATCHED', JSON.stringify(historicalUnmatched));
   var allUnmatched = {};
   Object.keys(unmatchedSet).forEach(function (n) { allUnmatched[n] = true; });
   historicalUnmatched.forEach(function (n) { allUnmatched[n] = true; });
@@ -509,9 +517,11 @@ function parseRespuestasSheet_(sheet) {
  * Correr UNA SOLA VEZ a mano (antes del primer recálculo con la versión que
  * solo lee "Respuestas"): lee las 5 planillas de formulario (FORM_SHEETS)
  * por última vez y agrega lo que tienen a la pestaña "Historico", para no
- * perder ese pasado cuando recomputeCache() deje de leerlas. Lo que ya
- * estaba en "Historico" se conserva; si una persona+mes está en los dos
- * lados, gana lo de las planillas (mismo criterio que antes). Después
+ * perder ese pasado cuando recomputeCache() deje de leerlas. Solo RELLENA
+ * los meses que "Historico" no tiene (lo que ya está ahí, incluido lo que
+ * vino de "Respuestas", no se pisa), así que se puede volver a correr sin
+ * riesgo — por ejemplo después de cargar "Otros nombres" en el padrón, para
+ * sumar los informes viejos de personas que antes no cruzaban. Después
  * correr recomputeCache(). Revisá el log por nombres sin coincidencia.
  */
 function congelarFormulariosEnHistorico() {
@@ -537,6 +547,7 @@ function congelarFormulariosEnHistorico() {
     }
   });
   if (errores.length) throw new Error('No se pudieron leer todas las planillas (no se tocó nada): ' + errores.join(' · '));
+  rows = rows.filter(function (row) { return !esDescartado_(row.rawName); });
 
   var unmatchedSet = {};
   var latest = {};
@@ -551,6 +562,9 @@ function congelarFormulariosEnHistorico() {
     if (!prev || row.timestampMs >= prev.timestampMs) latest[key] = row;
   });
   Object.keys(latest).forEach(function (key) {
+    // Solo rellena huecos: si "Historico" ya tiene ese mes (que puede venir
+    // de "Respuestas", con prioridad), no se pisa con lo de los formularios.
+    if (merged[key]) return;
     var row = latest[key];
     merged[key] = [
       row.grupo, row.rosterCanonical, Math.floor(row.periodKey / 12),
@@ -595,6 +609,94 @@ function escribirTabla_(sheet, header, rows) {
   if (rows.length) sheet.getRange(2, 1, rows.length, header.length).setValues(rows);
   var sobrantes = sheet.getLastRow() - (rows.length + 1);
   if (sobrantes > 0) sheet.getRange(rows.length + 2, 1, sobrantes, sheet.getMaxColumns()).clearContent();
+}
+
+// Alias confirmados el 28/09/2026 (nombre en el padrón -> cómo firman sus
+// informes). Los usa cargarAliasIniciales() una sola vez; después se
+// mantienen a mano en la columna "Otros nombres" de la pestaña Publicadores.
+var ALIAS_INICIALES = {
+  'Beatriz Viera': ['Baty Viera', 'Betty Viera', 'Bety Viera'],
+  'Edith Armstrong': ['Edith Amstrong', 'Edhit Amstrong'],
+  'Carlos Fernández': ['Carlos Esteban Fernadez Zamora', 'Carlos Esteban Fernandez Zamora'],
+  'Mélany De Kuzman': ['Melany', 'Melany Vidal'],
+  'Paula De Gerschuni': ['Paula Toloza', 'Pauls Toloza'],
+  'Silvya De Gomez': ['Silvya Aramburu', 'Silvia Aramburú', 'Silvia Aramburú de Gómez'],
+  'Estefani De Gomez': ['Estefany Pérez', 'Estefany Pérez de Gómez'],
+  'Martha De Fernandez': ['Martha Bórtoli', 'Marha Bórtoli', 'Bórtoli, Martha'],
+  'Natalia De Aviles': ['Natalia Nuñez'],
+  'Leticia De Urdiozola': ['Leticia Lewis', 'Lewis'],
+  'Gladys De Olmedo': ['Gladys Bogao', 'Gladyz Bogao'],
+  'Victoria De Ramos': ['Victoria Caraballo'],
+  'Evelyn De Toloza': ['Evelyn Razeto'],
+  'Elizabeth De Saavedra': ['Elizabeth Moller', 'Moller', 'Moller Elizabeth'],
+  'Marianela De Valle': ['Marianela Coloma'],
+  'Susana De Gatebled': ['Susana Arias'],
+  'Laura De Galarza': ['Laura Roque'],
+  'Liliana De Martinez': ['Liliana Nuñez'],
+  'Andrea De Saavedra': ['Andrea Martinengo'],
+  'Anahí De De Souza': ['Anahi de Vega'],
+  'Lilian Haristoy': ['Lilian Galup'],
+  'Nilsa Silveira': ['Nilsa Suárez'],
+  'Jimena De Inchausti': ['Jimena Carminati'],
+  'Jimena De De Brun': ['Jimena Morales'],
+  'Karina De Hernández': ['Karina Haristoy']
+};
+
+// Nombres de informes que NO corresponden a nadie (no existe esa persona):
+// se ignoran por completo — no se cuentan ni aparecen en el aviso de "sin
+// coincidencia", aunque sigan en las planillas viejas.
+var NOMBRES_DESCARTADOS = ['Karina Rosa'];
+
+function esDescartado_(nombre) {
+  var n = normalize_(nombre);
+  return NOMBRES_DESCARTADOS.some(function (d) { return normalize_(d) === n; });
+}
+
+/**
+ * Correr UNA VEZ a mano: agrega ALIAS_INICIALES a la columna "Otros nombres"
+ * de la pestaña Publicadores (la crea al final si no existe). No borra lo
+ * que ya haya en esa columna ni repite alias. Después correr
+ * congelarFormulariosEnHistorico() y recomputeCache(). El log avisa si
+ * algún nombre de la lista no se encontró en el padrón.
+ */
+function cargarAliasIniciales() {
+  var ss = SpreadsheetApp.openById(ROSTER_SHEET.id);
+  var sheet = getSheetByGid_(ss, ROSTER_SHEET.gid);
+  var lastCol = sheet.getLastColumn();
+  var header = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(normalize_);
+  var colNombre = header.indexOf('nombre');
+  if (colNombre === -1) throw new Error('La pestaña del padrón no tiene columna "Nombre"');
+  var colAlias = header.indexOf('otros nombres');
+  if (colAlias === -1) {
+    colAlias = lastCol; // nueva columna al final
+    sheet.getRange(1, colAlias + 1).setValue('Otros nombres');
+  }
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return;
+  var nombres = sheet.getRange(2, colNombre + 1, lastRow - 1, 1).getValues();
+  var alias = sheet.getRange(2, colAlias + 1, lastRow - 1, 1).getValues();
+
+  var pendientes = {};
+  Object.keys(ALIAS_INICIALES).forEach(function (n) { pendientes[normalize_(n)] = n; });
+
+  for (var i = 0; i < nombres.length; i++) {
+    var clave = normalize_(String(nombres[i][0] || '').split(/\s+-\s+/)[0]);
+    var original = pendientes[clave];
+    if (!original) continue;
+    var actuales = String(alias[i][0] || '').split(';').map(function (x) { return x.trim(); }).filter(Boolean);
+    var normActuales = actuales.map(normalize_);
+    ALIAS_INICIALES[original].forEach(function (a) {
+      if (normActuales.indexOf(normalize_(a)) === -1) { actuales.push(a); normActuales.push(normalize_(a)); }
+    });
+    alias[i][0] = actuales.join('; ');
+    delete pendientes[clave];
+  }
+  sheet.getRange(2, colAlias + 1, lastRow - 1, 1).setValues(alias);
+  invalidarRespuestaCache_();
+
+  var noEncontrados = Object.keys(pendientes).map(function (k) { return pendientes[k]; });
+  Logger.log('Alias cargados. ' + (noEncontrados.length ? 'NO encontrados en el padrón: ' + noEncontrados.join(', ') : 'Todos los nombres se encontraron.'));
 }
 
 function rowObjectToArray_(r) {
@@ -719,6 +821,10 @@ function matchRosterName_(normName, rosterList) {
   for (var i = 0; i < rosterList.length; i++) {
     if (rosterList[i].normName === normName) return rosterList[i];
   }
+  // Coincidencia exacta con alguno de sus "Otros nombres" (columna del padrón).
+  for (var a = 0; a < rosterList.length; a++) {
+    if ((rosterList[a].aliasNorms || []).indexOf(normName) !== -1) return rosterList[a];
+  }
 
   // Nombre acortado/alargado (falta o sobra un nombre del medio o un
   // apellido de casada) — solo si hay UN único candidato, para no
@@ -750,7 +856,10 @@ function parseRosterMatrix_(matrix) {
   var find = colFinder_(headerNorm);
   // "Estado" (Anciano, Siervo Ministerial, Precursor Regular, ...) es la
   // misma columna que se edita desde el modal de Publicadores; opcional.
-  var idx = { grupo: find(/^grupo$/), nombre: find(/^nombre$/), estado: find(/^estado$/) };
+  // "Otros nombres" (opcional): apodos, apellido de soltera, errores de
+  // tipeo con los que esa persona firma sus informes, separados por ";".
+  // Ej. en "Martha De Fernandez": "Martha Bórtoli; Bórtoli, Martha".
+  var idx = { grupo: find(/^grupo$/), nombre: find(/^nombre$/), estado: find(/^estado$/), alias: find(/^otros nombres$/) };
   var out = [];
   var seen = {}; // evita duplicados exactos dentro del padrón
   for (var i = 1; i < matrix.length; i++) {
@@ -767,7 +876,10 @@ function parseRosterMatrix_(matrix) {
     if (seen[key]) continue;
     seen[key] = true;
     var estado = idx.estado >= 0 && row[idx.estado] != null ? String(row[idx.estado]).trim() : '';
-    out.push({ grupo: grupoNum, canonical: titleCase_(rawName), normName: normMatch, estado: estado });
+    var aliasNorms = idx.alias >= 0 && row[idx.alias] != null
+      ? String(row[idx.alias]).split(';').map(normalize_).filter(Boolean)
+      : [];
+    out.push({ grupo: grupoNum, canonical: titleCase_(rawName), normName: normMatch, estado: estado, aliasNorms: aliasNorms });
   }
   return out;
 }
