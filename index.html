@@ -672,8 +672,24 @@ function iniciarHomeStatsFrame(){
 // el home para admin/capitán, que son los únicos roles a los que esto
 // aplicaba), así que la precarga aparte era pura carga duplicada.
 
+// Estado de sesión de la última vez que se dibujó el portal: sirve para
+// detectar el paso de "no logueado" a "logueado" (login nuevo, sea después
+// de "Salir" o de que la sesión se venciera sola por inactividad).
+let portalLogueadoAntes = null;
+
 function renderPortalUI(){
   const logged = !!(window.AuthApp && AuthApp.isLogged && AuthApp.isLogged());
+  // Login nuevo: los iframes que ya estaban cargados pueden haber quedado
+  // mostrando "Iniciá sesión desde el portal" (p. ej. si la sesión se venció
+  // con el iframe abierto) — se fuerza a que carguen de nuevo.
+  if (logged && portalLogueadoAntes === false){
+    homeStatsFrameIniciado = false;
+    const statsFrame = document.getElementById('home-stats-frame');
+    if (statsFrame) statsFrame.src = '';
+    const embedFrame = document.getElementById('embed-frame');
+    if (embedFrame){ embedFrame.src = 'about:blank'; embedFrame.dataset.src = ''; }
+  }
+  portalLogueadoAntes = logged;
   const role   = (window.AuthApp && AuthApp.getRole && AuthApp.getRole()) || '';
   const user   = (window.AuthApp && AuthApp.getUsername && AuthApp.getUsername()) || '';
 

@@ -4,7 +4,7 @@
   const SESSION_COOKIE      = "salinas_auth";
   const SESSION_TIMEOUT_MIN = 30;
   const ACTIVITY_THROTTLE_MS = 60 * 1000; // no reescribir la cookie más de 1 vez por minuto
-  const WATCHER_INTERVAL_MS  = 15 * 1000;
+  const WATCHER_INTERVAL_MS  = 2 * 1000; // solo lee la cookie; no toca la red
 
   let _state = {
     logged: false,
@@ -147,11 +147,26 @@
     setCookie(SESSION_COOKIE, JSON.stringify({ u: _state.username, r: _state.role, n: _state.nombreCompleto }), SESSION_TIMEOUT_MIN);
   }
 
+  // Vigila la cookie de sesión en las dos direcciones:
+  //  - si estaba logueado y la cookie desapareció (venció) -> logout.
+  //  - si NO estaba logueado y la cookie apareció -> se toma la sesión.
+  // Lo segundo es para las páginas que viven dentro del portal en un
+  // <iframe> (Estadísticas en Inicio, Publicadores, etc.): si la sesión se
+  // venció y después la persona vuelve a entrar desde el portal, el iframe
+  // quedaba mostrando "Iniciá sesión desde el portal" hasta recargar todo.
+  // Solo lee document.cookie (no hace pedidos a la red).
   function startExpiryWatcher(){
     if (_expiryWatcher) return;
     _expiryWatcher = setInterval(() => {
-      if (_state.logged && !getCookie(SESSION_COOKIE)){
+      const hayCookie = !!getCookie(SESSION_COOKIE);
+      if (_state.logged && !hayCookie){
         logout(true);
+      } else if (!_state.logged && hayCookie){
+        loadSessionFromStorage();
+        applyAuthHeaderUI();
+        applyRoleUI();
+        _lastActivityTouch = Date.now();
+        notify();
       }
     }, WATCHER_INTERVAL_MS);
   }
@@ -211,8 +226,10 @@
     applyRoleUI();
     if (_state.logged){
       _lastActivityTouch = Date.now();
-      startExpiryWatcher();
     }
+    // Siempre (logueado o no): también sirve para enterarse de un login
+    // hecho en otra parte del portal (ver startExpiryWatcher).
+    startExpiryWatcher();
     notify();
   }
 
