@@ -688,7 +688,7 @@ var ALIAS_INICIALES = {
   'Gladys De Olmedo': ['Gladys Bogao', 'Gladyz Bogao'],
   'Victoria De Ramos': ['Victoria Caraballo'],
   'Evelyn De Toloza': ['Evelyn Razeto'],
-  'Elizabeth De Saavedra': ['Elizabeth Moller', 'Moller', 'Moller Elizabeth'],
+  'Elizabeth De Saavedra': ['Elizabeth Moller', 'Moller', 'Moller Elizabeth', 'Moller Eli'],
   'Marianela De Valle': ['Marianela Coloma'],
   'Susana De Gatebled': ['Susana Arias'],
   'Laura De Galarza': ['Laura Roque'],
@@ -776,10 +776,12 @@ function cargarAliasIniciales() {
 // Correcciones puntuales confirmadas a mano (28/09/2026): cuando una persona
 // tiene dos informes distintos para el mismo mes, vale lo que dice acá.
 // Las aplica aplicarCorrecciones() — situación como la escribiría el
-// formulario, horas '' = sin horas.
+// formulario, horas '' = sin horas, cursos opcional (si no está, no se toca).
 var CORRECCIONES = [
   { nombre: 'Jimena De Inchausti', mes: 'Agosto', anio: 2026, situacion: 'Publicador', horas: '', participo: 'Si' },
-  { nombre: 'Nilsa Silveira', mes: 'Marzo', anio: 2026, situacion: 'Precursor Auxiliar 15 horas', horas: 20, participo: 'Si' }
+  { nombre: 'Nilsa Silveira', mes: 'Marzo', anio: 2026, situacion: 'Precursor Auxiliar 15 horas', horas: 20, participo: 'Si' },
+  // 30/09/2026: había cargado horas y cursos al revés (2 horas, 56 cursos).
+  { nombre: 'Camilo Urdiozola', mes: 'Septiembre', anio: 2026, situacion: 'Precursor Regular', horas: 56, cursos: 2, participo: 'Si' }
 ];
 
 /**
@@ -812,6 +814,7 @@ function aplicarCorrecciones() {
         if (monthIndex_(row[3]) !== mIdx || parseInt(row[4], 10) !== c.anio) return;
         resp.getRange(i + 2, 6, 1, 2).setValues([[c.participo, c.situacion]]);
         resp.getRange(i + 2, 9).setValue(c.horas);
+        if (c.cursos !== undefined) resp.getRange(i + 2, 8).setValue(c.cursos); // H Cursos (opcional)
         enRespuestas++;
       });
     }
@@ -824,6 +827,7 @@ function aplicarCorrecciones() {
       hv.forEach(function (row, i) {
         if (normalize_(row[1]) !== objetivo || Number(row[5]) !== periodKey) return;
         hist.getRange(i + 2, 7, 1, 3).setValues([[bucket, c.horas, participoCache]]);
+        if (c.cursos !== undefined) hist.getRange(i + 2, 10).setValue(c.cursos); // J Cursos (opcional)
         enHistorico++;
       });
     }
