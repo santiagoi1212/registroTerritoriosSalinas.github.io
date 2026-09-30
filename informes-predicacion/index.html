@@ -230,6 +230,13 @@
 
   .pub-summary { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
   .pub-summary h2 { font-size: 1.05rem; margin: 0 0 12px; }
+  .pub-cursos-mes { color: var(--text-muted); font-weight: 500; font-size: 0.9rem; }
+  #pub-cursos { margin-bottom: 20px; }
+  .pub-cursos-tabla { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+  .pub-cursos-tabla th, .pub-cursos-tabla td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: left; }
+  .pub-cursos-tabla th { color: var(--text-secondary); font-weight: 600; }
+  .pub-cursos-tabla .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .pub-cursos-tabla tr.total td { font-weight: 700; border-bottom: none; }
   .pub-charts-row { display: grid; grid-template-columns: 2fr 1fr; gap: 24px; align-items: start; }
   @media (max-width: 720px) { .pub-charts-row { grid-template-columns: 1fr; } }
   .pub-chart-box { position: relative; height: 300px; }
@@ -441,6 +448,8 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
   <div id="pub-modal-root"></div>
 
   <div class="pub-summary">
+    <h2>Cursos bíblicos <span id="pub-cursos-mes" class="pub-cursos-mes"></span></h2>
+    <div id="pub-cursos"></div>
     <h2>Resumen general — situación por grupo</h2>
     <div class="pub-charts-row">
       <div class="pub-chart-box"><canvas id="pub-chart-groups"></canvas></div>
@@ -742,10 +751,12 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
 
     var submitted = [], missing = [], noActivity = [];
     var counts = { "Precursor Regular": 0, "Precursor Especial": 0, "Precursor Auxiliar": 0, "Publicador": 0, "Otro": 0 };
+    var cursos = 0, conCursos = 0; // cursos bíblicos informados ese mes
     rosterNames.forEach(function (name) {
       var row = STATE.rowsByNamePeriod[name + "|" + selectedPeriod];
       if (row) {
         submitted.push(name);
+        if (typeof row.cursos === "number" && row.cursos > 0) { cursos += row.cursos; conCursos++; }
         if (!participoEnMes(row)) noActivity.push(name);
         var bucket = row.situacion || "Otro";
         counts[bucket] = (counts[bucket] || 0) + 1;
@@ -754,7 +765,7 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
       }
     });
 
-    return { roster: rosterNames, submitted: submitted, missing: missing, noActivity: noActivity, counts: counts };
+    return { roster: rosterNames, submitted: submitted, missing: missing, noActivity: noActivity, counts: counts, cursos: cursos, conCursos: conCursos };
   }
 
   function chip(cls, label, value) {
@@ -903,6 +914,7 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
           chip("", "cantidad total", view.roster.length) +
           chip("good", "registrados", view.submitted.length) +
           chip(missingCls, "faltan", view.missing.length) +
+          chip("", "cursos bíblicos", view.cursos) +
         "</div>" +
         '<div class="pub-section-label">Faltan registrarse' + (STATE.selectedPeriod != null ? " (" + periodLabel(STATE.selectedPeriod) + ")" : "") + "</div>" +
         missingHtml +
@@ -1148,8 +1160,27 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
       catch (err) { console.error("Error renderizando grupo", grupoNum, err); }
     });
 
+    try { renderCursos(views, names); }
+    catch (err) { console.error("Error renderizando cursos", err); }
     try { renderSummaryCharts(views, names); }
     catch (err) { console.error("Error renderizando gráficos de resumen", err); }
+  }
+
+  // Tabla de cursos bíblicos (estudios) del mes elegido: por grupo y total.
+  function renderCursos(views, names) {
+    var cont = document.getElementById("pub-cursos");
+    if (!cont) return;
+    document.getElementById("pub-cursos-mes").textContent =
+      STATE.selectedPeriod != null ? "· " + periodLabel(STATE.selectedPeriod) : "";
+    var tot = { cursos: 0, con: 0 };
+    var filas = views.map(function (v, i) {
+      tot.cursos += v.cursos; tot.con += v.conCursos;
+      return "<tr><td>" + escapeHtml(names[i]) + "</td><td class=\"num\">" + v.cursos + "</td><td class=\"num\">" + v.conCursos + "</td></tr>";
+    }).join("");
+    cont.innerHTML = '<div class="pub-table-wrap"><table class="pub-cursos-tabla"><thead><tr><th>Grupo</th>' +
+      '<th class="num">Cursos bíblicos</th><th class="num">Publicadores con cursos</th></tr></thead><tbody>' + filas +
+      '<tr class="total"><td>Total</td><td class="num">' + tot.cursos + '</td><td class="num">' + tot.con + '</td></tr>' +
+      "</tbody></table></div>";
   }
 
   function setStatus(text) { document.getElementById("pub-status").textContent = text; }

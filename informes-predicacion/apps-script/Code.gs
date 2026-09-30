@@ -299,7 +299,8 @@ function readCacheSheet_(sheet) {
         periodKey: r[5],
         situacion: r[6],
         horas: (r[7] === '' || r[7] == null) ? null : Number(r[7]),
-        participo: r[8] === 'SI' ? true : (r[8] === 'NO' ? false : null)
+        participo: r[8] === 'SI' ? true : (r[8] === 'NO' ? false : null),
+        cursos: (r[9] === '' || r[9] == null || isNaN(Number(r[9]))) ? null : Number(r[9])
       };
     });
 }
@@ -396,7 +397,8 @@ function recomputeCache() {
       row.periodKey,
       row.situacionBucket || 'Otro',
       row.horas == null ? '' : row.horas,
-      row.participated === true ? 'SI' : (row.participated === false ? 'NO' : '')
+      row.participated === true ? 'SI' : (row.participated === false ? 'NO' : ''),
+      row.cursos == null ? '' : row.cursos
     ];
   });
 
@@ -406,7 +408,7 @@ function recomputeCache() {
     return a[5] - b[5];
   });
 
-  var header = ['Grupo', 'Nombre', 'Año', 'Mes', 'MesIndex', 'PeriodKey', 'Situacion', 'Horas', 'Participo'];
+  var header = ['Grupo', 'Nombre', 'Año', 'Mes', 'MesIndex', 'PeriodKey', 'Situacion', 'Horas', 'Participo', 'Cursos'];
 
   // "Historico" funciona como registro permanente: se le guarda lo mismo que
   // a "Cache" (Historico + Respuestas, con prioridad Respuestas). Así, si una
@@ -503,7 +505,8 @@ function importHistoricalSummary() {
       titleCase_(MONTHS_[row.periodKey % 12]), row.periodKey % 12, row.periodKey,
       row.situacionBucket || 'Otro',
       row.horas == null ? '' : row.horas,
-      row.participated === true ? 'SI' : (row.participated === false ? 'NO' : '')
+      row.participated === true ? 'SI' : (row.participated === false ? 'NO' : ''),
+      row.cursos == null ? '' : row.cursos
     ];
     agregadas++;
   });
@@ -514,7 +517,7 @@ function importHistoricalSummary() {
     return a[5] - b[5];
   });
   if (!histSheet) histSheet = ss.insertSheet(HISTORICAL_SHEET_NAME);
-  var header = ['Grupo', 'Nombre', 'Año', 'Mes', 'MesIndex', 'PeriodKey', 'Situacion', 'Horas', 'Participo'];
+  var header = ['Grupo', 'Nombre', 'Año', 'Mes', 'MesIndex', 'PeriodKey', 'Situacion', 'Horas', 'Participo', 'Cursos'];
   escribirTabla_(histSheet, header, outRows);
 
   // Se SUMAN a la lista de sin coincidencia (no la reemplazan).
@@ -550,6 +553,7 @@ function parseRespuestasSheet_(sheet) {
     var yearNum = parseInt((row[4] == null ? '' : row[4]).toString().trim(), 10);
     var partNorm = normalize_(row[5]);
     var horasNum = parseFloat(row[8]);
+    var cursosNum = parseFloat(row[7]);
     var ts = row[0];
     out.push({
       rawName: rawName,
@@ -559,6 +563,7 @@ function parseRespuestasSheet_(sheet) {
       participated: partNorm === 'si' ? true : (partNorm === 'no' ? false : null),
       situacionBucket: classifySituacion_((row[6] == null ? '' : row[6]).toString().trim()),
       horas: isNaN(horasNum) ? null : horasNum,
+      cursos: isNaN(cursosNum) ? null : cursosNum,
       timestampMs: (Object.prototype.toString.call(ts) === '[object Date]') ? ts.getTime() : 0,
       periodKey: (mIdx >= 0 && !isNaN(yearNum)) ? (yearNum * 12 + mIdx) : null,
       grupo: null,
@@ -626,7 +631,8 @@ function congelarFormulariosEnHistorico() {
       titleCase_(MONTHS_[row.periodKey % 12]), row.periodKey % 12, row.periodKey,
       row.situacionBucket || 'Otro',
       row.horas == null ? '' : row.horas,
-      row.participated === true ? 'SI' : (row.participated === false ? 'NO' : '')
+      row.participated === true ? 'SI' : (row.participated === false ? 'NO' : ''),
+      row.cursos == null ? '' : row.cursos
     ];
   });
 
@@ -636,7 +642,7 @@ function congelarFormulariosEnHistorico() {
     return a[5] - b[5];
   });
   if (!histSheet) histSheet = ss.insertSheet(HISTORICAL_SHEET_NAME);
-  var header = ['Grupo', 'Nombre', 'Año', 'Mes', 'MesIndex', 'PeriodKey', 'Situacion', 'Horas', 'Participo'];
+  var header = ['Grupo', 'Nombre', 'Año', 'Mes', 'MesIndex', 'PeriodKey', 'Situacion', 'Horas', 'Participo', 'Cursos'];
   escribirTabla_(histSheet, header, outRows); // sin vaciar antes (ver escribirTabla_)
 
   // Los nombres que no cruzaron quedan en el aviso de la página (igual que
@@ -845,14 +851,15 @@ function aplicarCorrecciones() {
 function reconstruirHistorico() {
   var ss = SpreadsheetApp.openById(ROSTER_SHEET.id);
   var roster = parseRosterMatrix_(matrixFromSheet_(getSheetByGid_(ss, ROSTER_SHEET.gid)));
-  var header = ['Grupo', 'Nombre', 'Año', 'Mes', 'MesIndex', 'PeriodKey', 'Situacion', 'Horas', 'Participo'];
+  var header = ['Grupo', 'Nombre', 'Año', 'Mes', 'MesIndex', 'PeriodKey', 'Situacion', 'Horas', 'Participo', 'Cursos'];
   var fila = function (grupo, canonical, row) {
     return [
       grupo, canonical, Math.floor(row.periodKey / 12),
       titleCase_(MONTHS_[row.periodKey % 12]), row.periodKey % 12, row.periodKey,
       row.situacionBucket || 'Otro',
       row.horas == null ? '' : row.horas,
-      row.participated === true ? 'SI' : (row.participated === false ? 'NO' : '')
+      row.participated === true ? 'SI' : (row.participated === false ? 'NO' : ''),
+      row.cursos == null ? '' : row.cursos
     ];
   };
 
@@ -918,7 +925,8 @@ function rowObjectToArray_(r) {
   return [
     r.grupo, r.nombre, r.anio, r.mes, r.mesIndex, r.periodKey, r.situacion,
     r.horas == null ? '' : r.horas,
-    r.participo === true ? 'SI' : (r.participo === false ? 'NO' : '')
+    r.participo === true ? 'SI' : (r.participo === false ? 'NO' : ''),
+    r.cursos == null ? '' : r.cursos
   ];
 }
 
@@ -1124,7 +1132,8 @@ function parseFormMatrix_(matrix) {
     participated: find(/predicacion/),
     year: find(/^ano$/),
     situacion: find(/situacion/),
-    horas: find(/^horas$/)
+    horas: find(/^horas$/),
+    cursos: find(/cursos/)
   };
   var out = [];
   for (var i = 1; i < matrix.length; i++) {
@@ -1137,6 +1146,7 @@ function parseFormMatrix_(matrix) {
     var situacionRaw = (row[idx.situacion] == null ? '' : row[idx.situacion]).toString().trim();
     var partNorm = normalize_(row[idx.participated]);
     var horasNum = parseFloat(row[idx.horas]);
+    var cursosNum = idx.cursos >= 0 ? parseFloat(row[idx.cursos]) : NaN;
     var tsVal = row[idx.timestamp];
     var timestampMs = (Object.prototype.toString.call(tsVal) === '[object Date]') ? tsVal.getTime() : 0;
     out.push({
@@ -1147,6 +1157,7 @@ function parseFormMatrix_(matrix) {
       participated: partNorm === 'si' ? true : (partNorm === 'no' ? false : null),
       situacionBucket: classifySituacion_(situacionRaw),
       horas: isNaN(horasNum) ? null : horasNum,
+      cursos: isNaN(cursosNum) ? null : cursosNum,
       timestampMs: timestampMs,
       periodKey: (mIdx >= 0 && !isNaN(yearNum)) ? (yearNum * 12 + mIdx) : null,
       grupo: null,
@@ -1169,7 +1180,8 @@ function parseHistoricalMatrix_(matrix) {
     mesAnio: find(/^mes ano$/),
     situacion: find(/situacion/),
     participated: find(/particip/),
-    horas: find(/^horas$/)
+    horas: find(/^horas$/),
+    cursos: find(/cursos/)
   };
   var out = [];
   for (var i = 1; i < matrix.length; i++) {
@@ -1183,6 +1195,7 @@ function parseHistoricalMatrix_(matrix) {
     var situacionRaw = (row[idx.situacion] == null ? '' : row[idx.situacion]).toString().trim();
     var partNorm = normalize_(row[idx.participated]);
     var horasNum = parseFloat(row[idx.horas]);
+    var cursosNum = idx.cursos >= 0 ? parseFloat(row[idx.cursos]) : NaN;
     out.push({
       rawName: rawName,
       normName: normalize_(rawName),
@@ -1191,6 +1204,7 @@ function parseHistoricalMatrix_(matrix) {
       participated: partNorm === 'si' ? true : (partNorm === 'no' ? false : null),
       situacionBucket: classifySituacion_(situacionRaw),
       horas: isNaN(horasNum) ? null : horasNum,
+      cursos: isNaN(cursosNum) ? null : cursosNum,
       timestampMs: 0,
       periodKey: (mIdx >= 0 && !isNaN(yearNum)) ? (yearNum * 12 + mIdx) : null,
       grupo: null,
