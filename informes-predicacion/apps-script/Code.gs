@@ -194,7 +194,40 @@ function invalidarRespuestaCache_() {
   try { CacheService.getScriptCache().remove(CACHE_KEY_RESPUESTA); } catch (e) {}
 }
 
+// "Firma" de la pestaña "Respuestas": cantidad de filas + fecha de la
+// última. Si cambió desde el último recomputeCache(), llegaron informes
+// nuevos (el formulario del portal agrega filas al final con appendRow).
+function firmaRespuestas_(ss) {
+  var h = ss.getSheetByName(RESPUESTAS_SHEET_NAME);
+  if (!h) return '';
+  var last = h.getLastRow();
+  var ts = last >= 2 ? h.getRange(last, 1).getValue() : '';
+  return last + '|' + (Object.prototype.toString.call(ts) === '[object Date]' ? ts.getTime() : String(ts));
+}
+
+// Antes, lo que llegaba a "Respuestas" recién se veía al día siguiente
+// (el recálculo corre de madrugada). Ahora, al pedir ?action=cache se
+// revisa —como mucho una vez por minuto— si hay informes nuevos, y si los
+// hay se recalcula en el momento. Un candado evita que dos pedidos
+// simultáneos recalculen a la vez.
+function recalcularSiHayInformesNuevos_() {
+  var cache = CacheService.getScriptCache();
+  if (cache.get('chequeo_respuestas')) return;
+  cache.put('chequeo_respuestas', '1', 60);
+  try {
+    var ss = SpreadsheetApp.openById(ROSTER_SHEET.id);
+    var firma = firmaRespuestas_(ss);
+    if (firma === PropertiesService.getScriptProperties().getProperty('RESPUESTAS_FIRMA')) return;
+    var lock = LockService.getScriptLock();
+    if (!lock.tryLock(1000)) return; // ya lo está recalculando otro pedido
+    try { recomputeCache(); } finally { lock.releaseLock(); }
+  } catch (e) {
+    // si falla, se sirve lo que ya había (y el recálculo diario lo arregla)
+  }
+}
+
 function handleCacheRequest_() {
+  recalcularSiHayInformesNuevos_();
   var cache = CacheService.getScriptCache();
   var guardado = cache.get(CACHE_KEY_RESPUESTA);
   if (guardado) {
@@ -303,6 +336,7 @@ function handleRecomputeRequest_(params) {
  */
 function recomputeCache() {
   var ss = SpreadsheetApp.openById(ROSTER_SHEET.id);
+  var firmaAlEmpezar = firmaRespuestas_(ss);
   var roster = parseRosterMatrix_(matrixFromSheet_(getSheetByGid_(ss, ROSTER_SHEET.gid)));
 
   // Base: el registro permanente de "Historico" (formularios viejos + todo
@@ -410,6 +444,7 @@ function recomputeCache() {
     unmatched: Object.keys(allUnmatched).sort()
   };
   PropertiesService.getScriptProperties().setProperty('CACHE_META', JSON.stringify(meta));
+  PropertiesService.getScriptProperties().setProperty('RESPUESTAS_FIRMA', firmaAlEmpezar);
   invalidarRespuestaCache_();
   return meta;
 }

@@ -157,10 +157,22 @@
     datos.roster.forEach(function (r) { if (!isNaN(r.grupo)) set[r.grupo] = true; });
     return Object.keys(set).map(Number).sort(function (a, b) { return a - b; });
   }
-  function meses() {
+  function mesesConDatos() {
     var set = {};
     datos.rows.forEach(function (r) { if (!isNaN(r.periodKey)) set[r.periodKey] = true; });
     return Object.keys(set).map(Number).sort(function (a, b) { return b - a; });
+  }
+  // Para el selector: los meses con datos + todos los siguientes hasta
+  // diciembre del año en curso (así se puede mirar, por ejemplo, si ya
+  // empezaron a llegar los informes del mes que está corriendo).
+  function meses() {
+    var conDatos = mesesConDatos();
+    var hoy = new Date();
+    var finDeAnio = hoy.getFullYear() * 12 + 11;
+    var desde = conDatos.length ? conDatos[0] + 1 : hoy.getFullYear() * 12 + hoy.getMonth();
+    var todos = conDatos.slice();
+    for (var pk = desde; pk <= finDeAnio; pk++) todos.push(pk);
+    return todos.sort(function (a, b) { return b - a; });
   }
 
   // Integrantes del grupo y quiénes informaron ese mes.
@@ -187,6 +199,7 @@
     var total = v.integrantes.length;
     var pct = total ? Math.round(v.registrados.length / total * 100) : 0;
     var clsFaltan = v.faltan.length === 0 ? 'good' : (v.faltan.length <= 2 ? 'warn' : 'crit');
+    var sinInformes = v.registrados.length === 0;
     var faltanHtml = v.faltan.length
       ? '<div class="nombres">' + v.faltan.map(function (n) { return '<div class="nombre falta">' + esc(n) + '</div>'; }).join('') + '</div>'
       : '<p class="todo-ok">✅ Todos los del grupo ya enviaron su informe.</p>';
@@ -200,6 +213,7 @@
         '<div class="chip ' + clsFaltan + '"><b>' + v.faltan.length + '</b>faltan</div>' +
       '</div>' +
       '<div class="barra" title="' + pct + '% enviaron"><span style="width:' + pct + '%"></span></div>' +
+      (sinInformes ? '<p class="sub" style="margin:0 0 6px">Todavía no llegó ningún informe de este grupo para este mes.</p>' : '') +
       '<div class="seccion">Faltan registrarse</div>' + faltanHtml +
       (sits ? '<div class="seccion">Cómo informaron</div><div class="situaciones">' + sits + '</div>' : '') +
       (v.registrados.length
@@ -228,7 +242,8 @@
       document.getElementById('contenido').innerHTML = '<div class="estado">Todavía no hay datos para mostrar.</div>';
       return;
     }
-    if (mesSel == null || ms.indexOf(mesSel) === -1) mesSel = ms[0];
+    // Por defecto: el último mes que ya tiene informes (en general, el anterior).
+    if (mesSel == null || ms.indexOf(mesSel) === -1) mesSel = mesesConDatos()[0] || ms[ms.length - 1];
     if (grupoSel !== 'todos' && gs.indexOf(grupoSel) === -1) grupoSel = 'todos';
 
     document.getElementById('tabs').innerHTML =
@@ -249,7 +264,7 @@
     if (datos.generatedAt) {
       var d = new Date(datos.generatedAt);
       document.getElementById('pie').textContent = 'Datos actualizados al ' + d.toLocaleDateString('es-UY') + ' ' +
-        d.toLocaleTimeString('es-UY', { hour: '2-digit', minute: '2-digit' }) + ' (se recalculan todos los días)';
+        d.toLocaleTimeString('es-UY', { hour: '2-digit', minute: '2-digit' }) + ' (se actualizan solos cuando llegan informes nuevos)';
     }
   }
 
