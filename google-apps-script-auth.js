@@ -20,6 +20,11 @@
 //                             app-auth.js).
 //   - doGet ?op=validate    : valida un token temporal (código previo, sin
 //                             cambios).
+//   - doGet ?op=log         : anota en la pestaña "Accesos" a qué sección
+//                             entró alguien (con el token que devuelve login;
+//                             el login en sí también queda anotado).
+//   - doGet ?op=accesos     : devuelve ese registro — solo para el usuario
+//                             USUARIO_VE_ACCESOS (sinchausti).
 //   - doGet ?action=list / ?action=save : Revisitas/Estudios — CÓDIGO
 //                             ORIGINAL DE ESTE PROYECTO, sin ningún cambio
 //                             de comportamiento, solo movido a este mismo
@@ -69,7 +74,82 @@ function apiLogin(username, password) {
     return { ok: false, error: 'Esta cuenta no pertenece a la congregación ' + CONGREGACION_PORTAL };
   }
 
-  return { ok: true, user: user.username, username: user.username, role: user.role || '', nombre: user.nombre || '', apellido: user.apellido || '' };
+  // Token de sesión: lo usa el portal para anotar a qué secciones entra la
+  // persona (op=log) y, solo para USUARIO_VE_ACCESOS, para leer el registro.
+  const nombreCompleto = [user.nombre, user.apellido].filter(Boolean).join(' ').trim();
+  const token = Utilities.getUuid();
+  guardarToken_(token, { u: user.username, r: user.role || '', n: nombreCompleto });
+  registrarAcceso_(user.username, nombreCompleto, user.role || '', 'Inició sesión', '');
+
+  return { ok: true, user: user.username, username: user.username, role: user.role || '', nombre: user.nombre || '', apellido: user.apellido || '', token: token };
+}
+
+/***** REGISTRO DE ACCESOS (pestaña "Accesos") *****/
+// Quién inicia sesión y a qué secciones del portal entra. Solo lo puede leer
+// este usuario (op=accesos), sin importar el rol de los demás.
+const USUARIO_VE_ACCESOS = 'sinchausti';
+const ACCESOS_SHEET_NAME = 'Accesos';
+const TOKEN_SEGUNDOS = 21600; // 6 h (máximo de CacheService); se renueva con cada uso
+
+function guardarToken_(token, datos) {
+  CacheService.getScriptCache().put('sesion_' + token, JSON.stringify(datos), TOKEN_SEGUNDOS);
+}
+
+function leerToken_(token) {
+  if (!token) return null;
+  const cache = CacheService.getScriptCache();
+  const raw = cache.get('sesion_' + token);
+  if (!raw) return null;
+  cache.put('sesion_' + token, raw, TOKEN_SEGUNDOS); // sesión activa: se renueva
+  try { return JSON.parse(raw); } catch (e) { return null; }
+}
+
+function getAccesosSheet_() {
+  const ss = SpreadsheetApp.openById(SHEET_ID);
+  let sh = ss.getSheetByName(ACCESOS_SHEET_NAME);
+  if (!sh) {
+    sh = ss.insertSheet(ACCESOS_SHEET_NAME);
+    sh.getRange(1, 1, 1, 6).setValues([['Fecha', 'Usuario', 'Nombre', 'Rol', 'Evento', 'Sección']]);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+function registrarAcceso_(usuario, nombre, rol, evento, seccion) {
+  try {
+    getAccesosSheet_().appendRow([new Date(), usuario, nombre, rol, evento, seccion]);
+  } catch (e) { /* el registro nunca tiene que trabar el login */ }
+}
+
+function apiLog_(params) {
+  const sesion = leerToken_(params.token);
+  if (!sesion) return { ok: false, error: 'sesion_vencida' };
+  const evento = params.evento === 'logout' ? 'Cerró sesión' : 'Entró a sección';
+  const seccion = String(params.seccion || '').slice(0, 120);
+  registrarAcceso_(sesion.u, sesion.n, sesion.r, evento, evento === 'Cerró sesión' ? '' : seccion);
+  return { ok: true };
+}
+
+// Últimos registros, del más nuevo al más viejo. Solo USUARIO_VE_ACCESOS.
+function apiAccesos_(params) {
+  const sesion = leerToken_(params.token);
+  if (!sesion) return { ok: false, error: 'sesion_vencida' };
+  if (String(sesion.u).trim().toLowerCase() !== USUARIO_VE_ACCESOS) return { ok: false, error: 'sin_permiso' };
+  const sh = getAccesosSheet_();
+  const last = sh.getLastRow();
+  if (last < 2) return { ok: true, accesos: [] };
+  const limite = Math.min(Math.max(parseInt(params.limite, 10) || 2000, 1), 10000);
+  const desde = Math.max(2, last - limite + 1);
+  const values = sh.getRange(desde, 1, last - desde + 1, 6).getValues();
+  const accesos = values.reverse().map(function (r) {
+    const f = r[0];
+    return {
+      fecha: Object.prototype.toString.call(f) === '[object Date]' ? f.toISOString() : String(f),
+      usuario: String(r[1] || ''), nombre: String(r[2] || ''), rol: String(r[3] || ''),
+      evento: String(r[4] || ''), seccion: String(r[5] || '')
+    };
+  });
+  return { ok: true, accesos: accesos, total: last - 1 };
 }
 
 function normalizarTexto_(s) {
@@ -486,6 +566,12 @@ function doGet(e) {
     // --- Login / portal Salinas ---
     if (op === 'login') {
       return jsonResponse_(apiLogin(params.username, params.password));
+    }
+    if (op === 'log') {
+      return jsonResponse_(apiLog_(params));
+    }
+    if (op === 'accesos') {
+      return jsonResponse_(apiAccesos_(params));
     }
     if (op === 'validate') {
       const token = params.token;

@@ -10,7 +10,8 @@
     logged: false,
     username: null,
     role: null, // "admin" | "capitan" | "publicador" | etc.
-    nombreCompleto: null // "Nombre Apellido", si el backend lo mandó al loguear
+    nombreCompleto: null, // "Nombre Apellido", si el backend lo mandó al loguear
+    token: null // token de sesión del backend (registro de accesos)
   };
 
   let _lastActivityTouch = 0;
@@ -117,7 +118,7 @@
 
   function persistSession(){
     if (_state.logged){
-      setCookie(SESSION_COOKIE, JSON.stringify({ u: _state.username, r: _state.role, n: _state.nombreCompleto }), SESSION_TIMEOUT_MIN);
+      setCookie(SESSION_COOKIE, JSON.stringify({ u: _state.username, r: _state.role, n: _state.nombreCompleto, t: _state.token }), SESSION_TIMEOUT_MIN);
     } else {
       deleteCookie(SESSION_COOKIE);
     }
@@ -126,14 +127,14 @@
   function loadSessionFromStorage(){
     const raw = getCookie(SESSION_COOKIE);
     if (!raw){
-      _state = { logged:false, username:null, role:null, nombreCompleto:null };
+      _state = { logged:false, username:null, role:null, nombreCompleto:null, token:null };
       return;
     }
     try{
       const data = JSON.parse(raw);
-      _state = { logged:true, username: data.u || null, role: data.r || null, nombreCompleto: data.n || null };
+      _state = { logged:true, username: data.u || null, role: data.r || null, nombreCompleto: data.n || null, token: data.t || null };
     }catch(_){
-      _state = { logged:false, username:null, role:null, nombreCompleto:null };
+      _state = { logged:false, username:null, role:null, nombreCompleto:null, token:null };
     }
   }
 
@@ -144,7 +145,7 @@
     const now = Date.now();
     if (now - _lastActivityTouch < ACTIVITY_THROTTLE_MS) return;
     _lastActivityTouch = now;
-    setCookie(SESSION_COOKIE, JSON.stringify({ u: _state.username, r: _state.role, n: _state.nombreCompleto }), SESSION_TIMEOUT_MIN);
+    setCookie(SESSION_COOKIE, JSON.stringify({ u: _state.username, r: _state.role, n: _state.nombreCompleto, t: _state.token }), SESSION_TIMEOUT_MIN);
   }
 
   // Vigila la cookie de sesión en las dos direcciones:
@@ -208,6 +209,7 @@
     _state.username = data.user || user;
     _state.role     = data.role  || "publicador"; // default si no viene
     _state.nombreCompleto = [data.nombre, data.apellido].filter(Boolean).join(" ").trim() || null;
+    _state.token = data.token || null;
 
     _lastActivityTouch = Date.now();
     persistSession();
@@ -220,12 +222,37 @@
     return { ok:true };
   }
 
+  // ===== Registro de accesos =====
+  // Anota en el backend (pestaña "Accesos") a qué sección entra la persona
+  // logueada. No espera respuesta ni avisa si falla: nunca traba la página.
+  // La misma sección no se anota dos veces seguidas en menos de 1 minuto.
+  let _ultimoRegistro = { seccion: null, t: 0 };
+  function registrarSeccion(seccion, evento){
+    const url = (window.APP_CONFIG || {}).AUTH_API_URL;
+    if (!url || !_state.logged || !_state.token) return;
+    if (evento !== "logout"){
+      if (_ultimoRegistro.seccion === seccion && Date.now() - _ultimoRegistro.t < 60 * 1000) return;
+      _ultimoRegistro = { seccion: seccion, t: Date.now() };
+    }
+    const q = "?op=log&token=" + encodeURIComponent(_state.token)
+      + "&seccion=" + encodeURIComponent(seccion || "")
+      + (evento ? "&evento=" + encodeURIComponent(evento) : "");
+    try { fetch(url + q, { method:"GET", cache:"no-store", keepalive:true }).catch(() => {}); } catch(_){}
+  }
+
   async function restore(){
     loadSessionFromStorage();
     applyAuthHeaderUI();
     applyRoleUI();
     if (_state.logged){
       _lastActivityTouch = Date.now();
+      // Página abierta suelta (no adentro del portal, p. ej. "Abrir en
+      // pestaña nueva" o un link directo): también se anota. Las que se abren
+      // adentro del portal las anota el portal (index.html), no acá.
+      const esPortal = !!document.getElementById("sidebar-nav"); // index.html (el portal)
+      if (window.top === window && !esPortal){
+        registrarSeccion((document.title || location.pathname).split("·")[0].trim() + " (directo)");
+      }
     }
     // Siempre (logueado o no): también sirve para enterarse de un login
     // hecho en otra parte del portal (ver startExpiryWatcher).
@@ -234,7 +261,8 @@
   }
 
   function logout(byTimeout){
-    _state = { logged:false, username:null, role:null, nombreCompleto:null };
+    if (!byTimeout) registrarSeccion("", "logout");
+    _state = { logged:false, username:null, role:null, nombreCompleto:null, token:null };
     persistSession();
     applyAuthHeaderUI();
     applyRoleUI();
@@ -261,6 +289,8 @@
     getUsername,
     getRole,
     getDisplayName,
+    getToken: () => _state.token,
+    registrarSeccion,
     onChange
   };
 })();

@@ -485,6 +485,7 @@ backdropEl.addEventListener('click', () => {
 
 // ===== Definición de accesos, agrupados =====
 // roles: null => visible para cualquier usuario logueado. Array => solo esos roles.
+// usuarios: (opcional) solo aparece en el menú para esos usuarios puntuales.
 // Los href son locales (mismo origen) para poder embeberlos en la misma página.
 const ACCESOS = [
   {
@@ -540,6 +541,13 @@ const ACCESOS = [
     desc: 'Coordinación y registro de transporte.',
     href: './traslado.html',
     roles: null
+  },
+  {
+    group: 'Otros', icon: '🕵️', title: 'Registro de accesos',
+    desc: 'Quién inició sesión, a qué hora y a qué secciones entró.',
+    href: './accesos.html',
+    roles: null,
+    usuarios: ['sinchausti'] // el backend también lo exige (op=accesos)
   }
 ];
 
@@ -552,6 +560,7 @@ function initialsFrom(name){
 let currentSection = null; // href de la sección embebida actualmente abierta (null = inicio)
 
 function openSection(a){
+  if (window.AuthApp && AuthApp.registrarSeccion) AuthApp.registrarSeccion(a.title);
   currentSection = a.href;
   document.getElementById('home').style.display = 'none';
   document.getElementById('embed-icon').textContent = a.icon;
@@ -618,7 +627,9 @@ function renderSidebarNav(role){
     titleEl.textContent = g.name;
     groupEl.appendChild(titleEl);
 
+    const usuarioActual = String((window.AuthApp && AuthApp.getUsername && AuthApp.getUsername()) || '').trim().toLowerCase();
     g.items.forEach(a => {
+      if (a.usuarios && !a.usuarios.includes(usuarioActual)) return; // ni siquiera se muestra
       const allowed = !a.roles || a.roles.includes(role);
       const el = document.createElement('a');
       el.href = allowed ? a.href : '#';

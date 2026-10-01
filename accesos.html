@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="es">
+<head>
+<link rel="preconnect" href="https://script.google.com" crossorigin><link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Registro de accesos · Portal Salinas</title>
+<!--
+  Quién inició sesión en el portal, a qué hora y a qué secciones entró.
+  Los datos los anota el Apps Script de login (AUTH_API_URL, pestaña
+  "Accesos" de la planilla de Usuarios) y SOLO se los devuelve al usuario
+  sinchausti (op=accesos con su token de sesión): aunque otra persona abra
+  esta página, el backend no le manda nada.
+-->
+<script src="./app-config.js"></script>
+<script src="./app-auth.js"></script>
+<style>
+  :root{
+    --bg:#0b1220; --card:#111a2e; --card-2:#0f1728; --border:#22304a;
+    --text:#e5e7eb; --muted:#94a3b8; --accent:#3b82f6;
+    --good:#22c55e; --warn:#f59e0b; --crit:#ef4444;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light){
+    :root:not([data-theme="dark"]){
+      --bg:#f6f7f9; --card:#ffffff; --card-2:#f8fafc; --border:#e2e8f0;
+      --text:#0f172a; --muted:#64748b; --accent:#2563eb;
+      --good:#16a34a; --warn:#d97706; --crit:#dc2626;
+      color-scheme: light;
+    }
+  }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--text); font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  .wrap{ max-width:1000px; margin:0 auto; padding:28px 16px 48px; }
+  h1{ font-size:22px; margin:0 0 4px; }
+  .sub{ color:var(--muted); margin:0 0 20px; font-size:14px; }
+
+  .controles{ display:flex; flex-wrap:wrap; gap:10px; align-items:end; margin-bottom:18px; }
+  .controles label{ display:flex; flex-direction:column; gap:4px; font-size:12.5px; color:var(--muted); }
+  select, input[type=date]{ background:var(--card); color:var(--text); border:1px solid var(--border); border-radius:10px; padding:8px 10px; font-family:inherit; font-size:14px; }
+  button{ background:var(--accent); color:#fff; border:0; border-radius:10px; padding:9px 14px; font-family:inherit; font-size:14px; font-weight:600; cursor:pointer; }
+  button.sec{ background:var(--card); color:var(--text); border:1px solid var(--border); }
+
+  .card{ background:var(--card); border:1px solid var(--border); border-radius:14px; padding:18px; margin-bottom:16px; }
+  .card h2{ font-size:17px; margin:0 0 12px; }
+
+  .tabla-wrap{ overflow-x:auto; }
+  table{ width:100%; border-collapse:collapse; font-size:14px; }
+  th, td{ text-align:left; padding:8px 6px; border-bottom:1px solid var(--border); vertical-align:top; }
+  th{ color:var(--muted); font-weight:600; font-size:13px; white-space:nowrap; }
+  td.hora, td.num{ font-variant-numeric:tabular-nums; white-space:nowrap; }
+  td.num{ text-align:right; }
+  .usr{ color:var(--muted); font-size:12.5px; }
+  .rol{ display:inline-block; font-size:12px; border:1px solid var(--border); border-radius:999px; padding:1px 8px; color:var(--muted); }
+  .ev-login{ color:var(--good); font-weight:600; }
+  .ev-logout{ color:var(--muted); }
+  .secciones{ color:var(--muted); font-size:13px; }
+
+  .dia{ font-size:13px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); font-weight:700; margin:18px 0 6px; }
+  .dia:first-child{ margin-top:0; }
+
+  .estado{ color:var(--muted); text-align:center; padding:40px 10px; }
+  .estado.error{ color:var(--crit); }
+  .spinner{ width:26px; height:26px; border:3px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:g .8s linear infinite; margin:0 auto 10px; }
+  @keyframes g{ to{ transform:rotate(360deg); } }
+  .pie{ color:var(--muted); font-size:12.5px; margin-top:18px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Registro de accesos</h1>
+  <p class="sub">Quién inició sesión, a qué hora y a qué secciones entró. Solo lo ve el usuario sinchausti.</p>
+
+  <div id="contenido"><div class="estado"><div class="spinner"></div>Cargando…</div></div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  const USUARIO_HABILITADO = "sinchausti";
+  const cont = document.getElementById("contenido");
+  let accesos = [];
+  let total = 0;
+
+  function esc(s){
+    return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+  }
+  function pad(n){ return String(n).padStart(2, "0"); }
+  function claveDia(d){ return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
+  function hora(d){ return pad(d.getHours()) + ":" + pad(d.getMinutes()); }
+  function fechaLarga(d){
+    const t = d.toLocaleDateString("es-UY", { weekday:"long", day:"numeric", month:"long", year:"numeric" });
+    return t.charAt(0).toUpperCase() + t.slice(1);
+  }
+  function fechaCorta(d){ return pad(d.getDate()) + "/" + pad(d.getMonth() + 1) + " " + hora(d); }
+  function persona(a){ return a.nombre || a.usuario; }
+
+  function mensaje(texto, error){
+    cont.innerHTML = '<div class="estado' + (error ? " error" : "") + '">' + texto + "</div>";
+  }
+
+  async function cargar(){
+    const usuario = String(AuthApp.getUsername() || "").trim().toLowerCase();
+    if (!AuthApp.isLogged()){ mensaje("Iniciá sesión desde el portal para ver esta página."); return; }
+    if (usuario !== USUARIO_HABILITADO){ mensaje("Esta sección es solo para el usuario " + USUARIO_HABILITADO + "."); return; }
+    const token = AuthApp.getToken && AuthApp.getToken();
+    if (!token){ mensaje("Tu sesión se inició antes de activar el registro. Cerrá sesión y volvé a entrar para verlo.", true); return; }
+
+    mensaje('<div class="spinner"></div>Cargando…');
+    let data;
+    try{
+      const url = window.APP_CONFIG.AUTH_API_URL + "?op=accesos&token=" + encodeURIComponent(token);
+      data = await (await fetch(url, { cache:"no-store" })).json();
+    }catch(e){
+      mensaje('No se pudo cargar el registro. <button class="sec" id="reintentar">Reintentar</button>', true);
+      document.getElementById("reintentar").onclick = cargar;
+      return;
+    }
+    if (!data || !data.ok){
+      const err = data && data.error;
+      if (err === "sesion_vencida") mensaje("Tu sesión del registro venció. Cerrá sesión y volvé a entrar.", true);
+      else if (err === "sin_permiso") mensaje("Esta sección es solo para el usuario " + USUARIO_HABILITADO + ".", true);
+      else mensaje("Error: " + esc(err || "respuesta inválida"), true);
+      return;
+    }
+    accesos = (data.accesos || []).map(a => Object.assign({}, a, { d: new Date(a.fecha) })).filter(a => !isNaN(a.d));
+    total = data.total || accesos.length;
+    pintarEsqueleto();
+  }
+
+  function pintarEsqueleto(){
+    const usuarios = {};
+    accesos.forEach(a => { if (!usuarios[a.usuario]) usuarios[a.usuario] = persona(a); });
+    const opciones = Object.keys(usuarios).sort((x, y) => usuarios[x].localeCompare(usuarios[y], "es"))
+      .map(u => '<option value="' + esc(u) + '">' + esc(usuarios[u]) + (usuarios[u] !== u ? " (" + esc(u) + ")" : "") + "</option>").join("");
+
+    cont.innerHTML =
+      '<div class="controles">' +
+        '<label>Persona<select id="f-usuario"><option value="">Todas</option>' + opciones + "</select></label>" +
+        '<label>Día<input type="date" id="f-dia"></label>' +
+        '<button class="sec" id="f-limpiar" type="button">Limpiar filtros</button>' +
+        '<button id="f-actualizar" type="button">Actualizar</button>' +
+      "</div>" +
+      '<div class="card"><h2>Resumen por persona</h2><div class="tabla-wrap" id="resumen"></div></div>' +
+      '<div class="card"><h2>Detalle</h2><div id="detalle"></div></div>' +
+      '<p class="pie" id="pie"></p>';
+
+    document.getElementById("f-usuario").onchange = pintar;
+    document.getElementById("f-dia").onchange = pintar;
+    document.getElementById("f-limpiar").onclick = () => {
+      document.getElementById("f-usuario").value = "";
+      document.getElementById("f-dia").value = "";
+      pintar();
+    };
+    document.getElementById("f-actualizar").onclick = cargar;
+    pintar();
+  }
+
+  function pintar(){
+    const fu = document.getElementById("f-usuario").value;
+    const fd = document.getElementById("f-dia").value;
+    const lista = accesos.filter(a => (!fu || a.usuario === fu) && (!fd || claveDia(a.d) === fd));
+
+    // Resumen: una fila por persona (accesos viene del más nuevo al más viejo).
+    const porUsuario = {};
+    lista.forEach(a => {
+      const r = porUsuario[a.usuario] || (porUsuario[a.usuario] = { a: a, ultimo: a.d, logins: 0, secciones: {} });
+      if (a.evento === "Inició sesión") r.logins++;
+      if (a.seccion) r.secciones[a.seccion] = (r.secciones[a.seccion] || 0) + 1;
+    });
+    const filasRes = Object.keys(porUsuario).map(u => porUsuario[u]).sort((x, y) => y.ultimo - x.ultimo).map(r => {
+      const secs = Object.keys(r.secciones).sort((x, y) => r.secciones[y] - r.secciones[x])
+        .map(s => esc(s) + (r.secciones[s] > 1 ? " ×" + r.secciones[s] : "")).join(" · ");
+      return "<tr><td>" + esc(persona(r.a)) + (r.a.nombre ? '<div class="usr">' + esc(r.a.usuario) + "</div>" : "") + "</td>" +
+        "<td>" + (r.a.rol ? '<span class="rol">' + esc(r.a.rol) + "</span>" : "") + "</td>" +
+        '<td class="hora">' + fechaCorta(r.ultimo) + "</td>" +
+        '<td class="num">' + r.logins + "</td>" +
+        '<td class="secciones">' + (secs || "—") + "</td></tr>";
+    }).join("");
+    document.getElementById("resumen").innerHTML = filasRes
+      ? "<table><thead><tr><th>Persona</th><th>Rol</th><th>Última actividad</th><th>Inicios de sesión</th><th>Secciones</th></tr></thead><tbody>" + filasRes + "</tbody></table>"
+      : '<div class="estado">No hay registros con estos filtros.</div>';
+
+    // Detalle agrupado por día.
+    let html = "", diaActual = null, abierta = false;
+    lista.forEach(a => {
+      const k = claveDia(a.d);
+      if (k !== diaActual){
+        if (abierta) html += "</tbody></table></div>";
+        html += '<div class="dia">' + esc(fechaLarga(a.d)) + '</div><div class="tabla-wrap"><table><thead><tr><th>Hora</th><th>Persona</th><th>Rol</th><th>Qué hizo</th></tr></thead><tbody>';
+        diaActual = k; abierta = true;
+      }
+      let que;
+      if (a.evento === "Inició sesión") que = '<span class="ev-login">Inició sesión</span>';
+      else if (a.evento === "Cerró sesión") que = '<span class="ev-logout">Cerró sesión</span>';
+      else que = "Entró a <b>" + esc(a.seccion) + "</b>";
+      html += '<tr><td class="hora">' + hora(a.d) + "</td><td>" + esc(persona(a)) + "</td><td>" +
+        (a.rol ? '<span class="rol">' + esc(a.rol) + "</span>" : "") + "</td><td>" + que + "</td></tr>";
+    });
+    if (abierta) html += "</tbody></table></div>";
+    document.getElementById("detalle").innerHTML = html || '<div class="estado">No hay registros con estos filtros.</div>';
+
+    document.getElementById("pie").textContent = "Se muestran los últimos " + accesos.length + " de " + total +
+      " registros. Las secciones abiertas desde el portal se anotan al entrar; si alguien abre una página suelta (link directo o pestaña nueva) aparece como \"(directo)\".";
+  }
+
+  document.addEventListener("DOMContentLoaded", async () => {
+    await AuthApp.restore();
+    cargar();
+    // Si la sesión arranca o se cierra con la página abierta (adentro del portal).
+    let antes = AuthApp.isLogged();
+    AuthApp.onChange(() => { const ahora = AuthApp.isLogged(); if (ahora !== antes){ antes = ahora; cargar(); } });
+  });
+})();
+</script>
+</body>
+</html>
