@@ -9,9 +9,11 @@
   Vista PÚBLICA (no pide iniciar sesión) del informe mensual por grupo:
   quiénes ya se registraron y quiénes faltan, más el resumen del grupo.
   Usa el mismo Apps Script que informes-predicacion/index.html
-  (INFORMES_PREDICACION_API_URL, ?action=cache), pero a propósito NO muestra
-  horas, estado de actividad (Activo/Irregular/Inactivo) ni el Estado del
-  padrón (Anciano, Siervo, etc.): eso queda en la página con sesión.
+  (INFORMES_PREDICACION_API_URL, ?action=cache). Al pasar el mouse (o tocar,
+  en el celular) sobre alguien que ya envió, muestra lo que informó ese mes
+  (situación, participó, horas, cursos). A propósito NO muestra el estado de
+  actividad (Activo/Irregular/Inactivo) ni el Estado del padrón (Anciano,
+  Siervo, etc.): eso queda en la página con sesión.
   Link directo a un grupo: grupo.html?grupo=3
 -->
 <script src="../app-config.js"></script>
@@ -78,6 +80,16 @@
   .spinner{ width:26px; height:26px; border:3px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:g .8s linear infinite; margin:0 auto 10px; }
   @keyframes g{ to{ transform:rotate(360deg); } }
   .pie{ color:var(--muted); font-size:12.5px; margin-top:18px; }
+
+  .nombre.ok{ cursor:pointer; text-align:left; font:inherit; font-size:14px; color:inherit; width:100%; }
+  .nombre.ok:hover, .nombre.ok:focus-visible, .nombre.ok.activo{ border-color:var(--accent); outline:none; }
+  .pop{ position:fixed; z-index:50; min-width:220px; max-width:min(300px, calc(100vw - 24px)); background:var(--card); border:1px solid var(--border); border-radius:12px; padding:12px 14px; box-shadow:0 10px 30px rgba(0,0,0,.35); font-size:14px; display:none; }
+  .pop.show{ display:block; }
+  .pop h3{ margin:0 0 2px; font-size:15px; }
+  .pop .pop-mes{ color:var(--muted); font-size:12.5px; margin-bottom:8px; }
+  .pop dl{ display:grid; grid-template-columns:auto 1fr; gap:4px 12px; margin:0; }
+  .pop dt{ color:var(--muted); }
+  .pop dd{ margin:0; font-weight:600; font-variant-numeric:tabular-nums; }
   @media (max-width:520px){ .nombres{ grid-template-columns:1fr; } h1{ font-size:19px; } }
 </style>
 </head>
@@ -94,11 +106,12 @@
   <div id="contenido"><div class="estado"><div class="spinner"></div>Cargando…</div></div>
   <p class="pie" id="pie"></p>
 </div>
+<div class="pop" id="pop" role="dialog" aria-live="polite"></div>
 
 <script>
 (function () {
   var API_URL = (window.APP_CONFIG && window.APP_CONFIG.INFORMES_PREDICACION_API_URL) || '';
-  var CACHE_KEY = 'salinas_informes_grupo_v1';
+  var CACHE_KEY = 'salinas_informes_grupo_v2';
   var MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
   var SITUACIONES = [
     { k: 'Publicador', css: 'var(--publicador)' },
@@ -118,13 +131,16 @@
   }
   function etiquetaMes(pk) { return MESES[pk % 12] + ' ' + Math.floor(pk / 12); }
 
-  // Solo lo necesario para esta vista (sin horas ni estados): así la copia
+  // Solo lo necesario para esta vista (sin estados del padrón): así la copia
   // guardada en el navegador tampoco guarda más de lo que se muestra.
   function reducir(data) {
     return {
       generatedAt: data.generatedAt || null,
       roster: (data.roster || []).map(function (r) { return { grupo: Number(r.grupo), nombre: r.nombre }; }),
-      rows: (data.rows || []).map(function (r) { return { nombre: r.nombre, periodKey: Number(r.periodKey), situacion: r.situacion || '' }; })
+      rows: (data.rows || []).map(function (r) {
+        return { nombre: r.nombre, periodKey: Number(r.periodKey), situacion: r.situacion || '',
+          participo: r.participo, horas: r.horas, cursos: r.cursos };
+      })
     };
   }
 
@@ -218,7 +234,7 @@
       (sits ? '<div class="seccion">Cómo informaron</div><div class="situaciones">' + sits + '</div>' : '') +
       (v.registrados.length
         ? '<details><summary>Ya enviaron (' + v.registrados.length + ')</summary><div class="nombres" style="margin-top:8px">' +
-            v.registrados.map(function (n) { return '<div class="nombre ok">' + esc(n) + '</div>'; }).join('') + '</div></details>'
+            v.registrados.map(function (n) { return '<button type="button" class="nombre ok" data-persona="' + esc(n) + '">' + esc(n) + '</button>'; }).join('') + '</div></details>'
         : '') +
       '</div>';
   }
@@ -237,6 +253,7 @@
   }
 
   function pintar() {
+    cerrarPop();
     var gs = grupos(), ms = meses();
     if (!gs.length || !ms.length) {
       document.getElementById('contenido').innerHTML = '<div class="estado">Todavía no hay datos para mostrar.</div>';
@@ -267,6 +284,71 @@
         d.toLocaleTimeString('es-UY', { hour: '2-digit', minute: '2-digit' }) + ' (se actualizan solos cuando llegan informes nuevos)';
     }
   }
+
+  // ---- Mini modal con lo que informó cada persona ----
+  var pop = document.getElementById('pop');
+  var popDe = null; // botón que lo abrió
+  var ultimoPuntero = 'mouse'; // 'mouse' | 'touch' | 'pen' (del último pointerdown/pointerover)
+
+  function informeDe(nombre) {
+    for (var i = 0; i < datos.rows.length; i++) {
+      var r = datos.rows[i];
+      if (r.nombre === nombre && r.periodKey === mesSel) return r;
+    }
+    return null;
+  }
+  function valor(v) { return v === null || v === undefined || v === '' ? '—' : esc(v); }
+
+  function abrirPop(btn) {
+    var nombre = btn.getAttribute('data-persona');
+    var r = informeDe(nombre);
+    if (!r) return;
+    var participo = r.participo === true ? 'Sí' : (r.participo === false ? 'No' : '—');
+    pop.innerHTML = '<h3>' + esc(nombre) + '</h3><div class="pop-mes">' + esc(etiquetaMes(mesSel)) + '</div>' +
+      '<dl><dt>Situación</dt><dd>' + valor(r.situacion) + '</dd>' +
+      '<dt>Participó</dt><dd>' + participo + '</dd>' +
+      '<dt>Horas</dt><dd>' + valor(r.horas) + '</dd>' +
+      '<dt>Cursos bíblicos</dt><dd>' + valor(r.cursos) + '</dd></dl>';
+    if (popDe) popDe.classList.remove('activo');
+    popDe = btn;
+    btn.classList.add('activo');
+    pop.classList.add('show');
+    // Debajo del nombre (o arriba si no entra), sin salirse de la pantalla.
+    var b = btn.getBoundingClientRect(), p = pop.getBoundingClientRect();
+    var top = b.bottom + 6;
+    if (top + p.height > window.innerHeight - 8) top = Math.max(8, b.top - p.height - 6);
+    var left = Math.min(Math.max(8, b.left), window.innerWidth - p.width - 8);
+    pop.style.top = top + 'px';
+    pop.style.left = left + 'px';
+  }
+  function cerrarPop() {
+    pop.classList.remove('show');
+    if (popDe) popDe.classList.remove('activo');
+    popDe = null;
+  }
+
+  // Con mouse: se abre al pasar por arriba y se cierra al salir.
+  document.addEventListener('pointerover', function (e) {
+    ultimoPuntero = e.pointerType;
+    if (e.pointerType !== 'mouse') return;
+    var btn = e.target.closest('.nombre.ok');
+    if (btn && btn !== popDe) abrirPop(btn);
+  });
+  document.addEventListener('pointerout', function (e) {
+    if (e.pointerType !== 'mouse' || !popDe) return;
+    var btn = e.target.closest('.nombre.ok');
+    if (btn && !btn.contains(e.relatedTarget)) cerrarPop();
+  });
+  document.addEventListener('pointerdown', function (e) { ultimoPuntero = e.pointerType; });
+  // Tocar (celular) o click: abre/cierra. Tocar en otro lado lo cierra.
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest('.nombre.ok');
+    if (btn) { if (popDe === btn && ultimoPuntero !== 'mouse') cerrarPop(); else abrirPop(btn); return; }
+    if (!pop.contains(e.target)) cerrarPop();
+  });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') cerrarPop(); });
+  window.addEventListener('scroll', cerrarPop, { passive: true });
+  window.addEventListener('resize', cerrarPop);
 
   function elegirGrupo(g) {
     grupoSel = g === 'todos' ? 'todos' : Number(g);
