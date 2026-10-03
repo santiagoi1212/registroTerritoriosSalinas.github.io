@@ -402,6 +402,12 @@ function actualizarSegunPersona(){
   }
 
   const listo = !!personaSeleccionada.usoDatos;
+  if (!listo && personaSeleccionada.usoDatosNo){
+    estadoNombre.textContent = 'Figura que no autorizaste el Uso de Datos, así que no se pueden cargar datos personales. Si querés cambiarlo, hablá con tu capitán/admin.';
+    estadoNombre.className = 'estado-msg bloqueado';
+    formDatos.style.display = 'none';
+    return;
+  }
   if (!listo){
     estadoNombre.textContent = 'Todavía no tenés el Uso de Datos aprobado. Pedile a tu capitán/admin que lo confirme primero en la sección de Publicadores, y después volvé a esta página.';
     estadoNombre.className = 'estado-msg bloqueado';

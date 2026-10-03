@@ -478,6 +478,7 @@ function doPostDocumentos_(e) {
       case "importarRespuestas":           result = importarRespuestas(data); break;
       case "eliminarRespuestasDePersona":  result = eliminarRespuestasDePersona(data); break;
       case "cambiarEstado":                result = cambiarEstadoPublicador(data); break;
+      case "cambiarUsoDatos":              result = cambiarUsoDatosPublicador(data); break;
       case "agregarPublicador":            result = agregarPublicador(data); break;
       case "eliminarPublicador":           result = eliminarPublicador(data); break;
       default:                       result = { ok: false, error: "Acción desconocida" };
@@ -841,6 +842,25 @@ function cambiarEstadoPublicador(data) {
   }
 
   sheet.getRange(row, cols["Estado"]).setValue(estados.join(", "));
+  return { ok: true };
+}
+
+// Uso de Datos: "Si" / "" (Pendiente) / "No" (no autoriza). Solo cambia la
+// columna UsoDatos — el documento subido (LinkAutorizacion), si hay, queda.
+function cambiarUsoDatosPublicador(data) {
+  const nombre = data.nombre;
+  const valor = data.valor === "Si" ? "Si" : (data.valor === "No" ? "No" : "");
+  if (!nombre) return { ok: false, error: "Falta el nombre" };
+
+  const sheet = getPublicadoresSheet_();
+  const cols = getHeaderMap_(sheet);
+  if (!cols["Nombre"]) return { ok: false, error: 'La hoja no tiene columna "Nombre"' };
+  if (!cols["UsoDatos"]) return { ok: false, error: 'La hoja no tiene columna "UsoDatos"' };
+
+  const row = findRowByNombre_(sheet, cols["Nombre"], nombre);
+  if (row === -1) return { ok: false, error: 'No se encontró a "' + nombre + '" en la planilla' };
+
+  sheet.getRange(row, cols["UsoDatos"]).setValue(valor);
   return { ok: true };
 }
 

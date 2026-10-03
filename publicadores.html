@@ -216,6 +216,13 @@
   a.badge-ok{ cursor:pointer; }
   a.badge-ok:hover{ background:rgba(22,163,74,.28); }
   .badge-pend{ background:var(--pend-bg); color:var(--muted); border:1px solid var(--border); }
+  .badge-no{ background:rgba(220,38,38,.15); color:#f87171; border:1px solid rgba(248,113,113,.4); }
+  .uso-datos-opciones{ display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  .uso-datos-opciones button{ border:1px solid var(--border); background:transparent; color:var(--text); border-radius:999px; padding:5px 12px; font:inherit; font-size:12px; font-weight:600; cursor:pointer; }
+  .uso-datos-opciones button[aria-pressed="true"].op-si{ background:var(--ok-bg); color:#4ade80; border-color:rgba(74,222,128,.5); }
+  .uso-datos-opciones button[aria-pressed="true"].op-pend{ background:var(--pend-bg); color:var(--text); border-color:var(--muted); }
+  .uso-datos-opciones button[aria-pressed="true"].op-no{ background:rgba(220,38,38,.18); color:#f87171; border-color:rgba(248,113,113,.6); }
+  .uso-datos-opciones button:disabled{ opacity:.6; cursor:wait; }
 
   .leyenda{
     display:flex; flex-direction:column; gap:10px; margin:14px 0 20px;
@@ -315,6 +322,7 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
           <span class="leyenda-titulo">Documentos</span>
           <span class="leyenda-item"><span class="badge badge-ok">✔ Sí</span> al día / firmado</span>
           <span class="leyenda-item"><span class="badge badge-pend">Pendiente</span> falta o sin confirmar</span>
+          <span class="leyenda-item"><span class="badge badge-no">✖ No autoriza</span> no autorizó el Uso de Datos</span>
           <span class="leyenda-item">Un badge verde con enlace abre el archivo en Drive</span>
         </div>
       </div>
@@ -525,6 +533,61 @@ function renderDocSection(tipo, p){
   </div>`;
 }
 
+// Selector Sí / Pendiente / No autoriza del Uso de Datos (solo cambia la
+// columna UsoDatos; el documento subido, si hay, no se toca).
+function usoDatosValor(p){ return p.usoDatos ? 'Si' : (p.usoDatosNo ? 'No' : ''); }
+function renderUsoDatosOpciones(p){
+  const actual = usoDatosValor(p);
+  const op = (valor, cls, texto) => `<button type="button" class="${cls}" data-uso-datos="${valor}" aria-pressed="${actual === valor}">${texto}</button>`;
+  return `<div class="uso-datos-opciones" role="group" aria-label="Uso de Datos">
+    ${op('Si', 'op-si', '✔ Sí')}${op('', 'op-pend', 'Pendiente')}${op('No', 'op-no', '✖ No autoriza')}
+  </div>`;
+}
+
+function wireUsoDatosOpciones(){
+  modalPersonaBody.querySelectorAll('[data-uso-datos]').forEach(btn => {
+    btn.addEventListener('click', () => guardarUsoDatos(btn.getAttribute('data-uso-datos')));
+  });
+}
+
+async function guardarUsoDatos(valor){
+  const persona = personaAbierta;
+  if (!persona || usoDatosValor(persona) === valor) return;
+  const cfg = window.APP_CONFIG || {};
+  if (!cfg.PUBLICADORES_API_URL){
+    window.showToast('Falta configurar PUBLICADORES_API_URL en app-config.js.', 'error');
+    return;
+  }
+  // Optimista, igual que guardarEstado: se ve al instante y si falla se deshace.
+  const antes = { usoDatos: persona.usoDatos, usoDatosNo: persona.usoDatosNo };
+  persona.usoDatos = valor === 'Si';
+  persona.usoDatosNo = valor === 'No';
+  window.PublicadoresApp.actualizarCachePublicadores(personasCache);
+  reRenderTrasCambio();
+  modalPersonaBody.querySelectorAll('[data-uso-datos]').forEach(b => { b.disabled = true; });
+
+  try {
+    const res = await fetch(cfg.PUBLICADORES_API_URL, {
+      method: 'POST',
+      credentials: 'omit',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'cambiarUsoDatos', nombre: persona.nombre, valor })
+    });
+    const data = await res.json();
+    if (!data || !data.ok) throw new Error((data && data.error) || 'Error al guardar el Uso de Datos');
+    window.showToast('Uso de Datos: ' + (valor === 'Si' ? 'Sí' : (valor === 'No' ? 'No autoriza' : 'Pendiente')), 'success');
+  } catch (err){
+    console.error('guardarUsoDatos', err);
+    persona.usoDatos = antes.usoDatos;
+    persona.usoDatosNo = antes.usoDatosNo;
+    window.PublicadoresApp.actualizarCachePublicadores(personasCache);
+    reRenderTrasCambio();
+    window.showToast('No se pudo guardar el Uso de Datos: ' + ((err && err.message) || err), 'error');
+  } finally {
+    modalPersonaBody.querySelectorAll('[data-uso-datos]').forEach(b => { b.disabled = false; });
+  }
+}
+
 function renderEstadoSection(p){
   let opciones = (window.PublicadoresApp && window.PublicadoresApp.ESTADOS_VALIDOS) || [];
   const esFemenino = p.sexo === 'Femenino';
@@ -562,7 +625,7 @@ function abrirModalPersona(p){
     <div class="modal-row"><span class="l">Estado</span>${renderEstadoSection(p)}</div>
     <div class="modal-row"><span class="l">Actividad (Informes de predicación)</span>${actividadTexto(p.actividad)}</div>
     <div class="modal-row"><span class="l">DPA</span>${renderDocSection('dpa', p)}</div>
-    <div class="modal-row"><span class="l">Uso de Datos</span>${renderDocSection('usoDatos', p)}</div>
+    <div class="modal-row"><span class="l">Uso de Datos</span><div>${!p.usoDatos && p.usoDatosNo ? window.PublicadoresApp.badgeUsoDatos(p) : renderDocSection('usoDatos', p)}${renderUsoDatosOpciones(p)}</div></div>
     <div class="modal-row"><span class="l">Datos Personales</span><span class="v">${window.PublicadoresApp.badge(p.datosPersonales, "", "Sí", "Pendiente")}${p.datosPersonalesFecha ? ` <span class="notas">${p.datosPersonalesFecha}</span>` : ''}${!p.datosPersonales ? ` <a class="badge badge-pend" href="./datos-personales.html?nombre=${encodeURIComponent(p.nombre)}" target="_blank" rel="noopener" style="text-decoration:none;">Completar formulario ↗</a>` : ''}</span></div>
     ${p.notas ? `<div class="modal-row"><span class="l">Notas</span><span class="v">${p.notas}</span></div>` : ''}
     ${p.datosPersonales ? `<div id="datos-personales-detalle" class="dp-detalle"></div>` : ''}
@@ -572,6 +635,7 @@ function abrirModalPersona(p){
   `;
   wireDocSections();
   wireEstadoSection();
+  wireUsoDatosOpciones();
   document.getElementById('btn-eliminar-publicador').addEventListener('click', eliminarPublicadorActual);
   if (p.datosPersonales) cargarDatosPersonalesDetalle(p);
   modalPersonaOverlay.classList.add('open');
@@ -1210,7 +1274,7 @@ function renderEstadisticas(){
     if (!p.dpa) razones.push({ nivel: 'roja', texto: 'DPA pendiente' });
     else if (p.alertaDPA && p.alertaDPA.nivel === 'roja') razones.push({ nivel: 'roja', texto: 'DPA vencido' });
     else if (p.alertaDPA && p.alertaDPA.nivel === 'amarilla') razones.push({ nivel: 'amarilla', texto: 'DPA por vencer' });
-    if (!p.usoDatos) razones.push({ nivel: 'roja', texto: 'Uso de Datos pendiente' });
+    if (!p.usoDatos) razones.push({ nivel: 'roja', texto: p.usoDatosNo ? 'No autoriza Uso de Datos' : 'Uso de Datos pendiente' });
     if (!p.datosPersonales) razones.push({ nivel: 'roja', texto: 'Datos Personales pendiente' });
     return razones;
   }

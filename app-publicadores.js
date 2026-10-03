@@ -86,6 +86,12 @@
       .trim();
   }
 
+  // "No" / "No autoriza" en la columna UsoDatos: la persona decidió no
+  // autorizar (distinto de "Pendiente", que es vacío / sin confirmar).
+  function isNoAutoriza(v) {
+    return /^no\b/.test(String(v || "").trim().toLowerCase());
+  }
+
   function isSi(v) {
     return String(v || "").trim().toLowerCase().startsWith("si") ||
            String(v || "").trim().toLowerCase() === "s";
@@ -287,6 +293,7 @@
     return rows.map(r => {
       const dpa       = isSi(r.DPA);
       const usoDatos  = isSi(r.UsoDatos);
+      const usoDatosNo = !usoDatos && isNoAutoriza(r.UsoDatos);
       let datosPersonales = isSi(r.DatosPersonales);
       let datosPersonalesFecha = "";
 
@@ -307,7 +314,7 @@
         estado: parseEstados(r.Estado),
         dpa, linkDpa: r.LinkDPA || "",
         fechaVenceDPA, alertaDPA: calcularAlertaDPA(fechaVenceDPA),
-        usoDatos, linkAutorizacion: r.LinkAutorizacion || "",
+        usoDatos, usoDatosNo, linkAutorizacion: r.LinkAutorizacion || "",
         datosPersonales, datosPersonalesFecha,
         notas: r.Notas || "",
         // Última "Situación" que la persona reportó en su informe mensual
@@ -474,6 +481,12 @@
     return `<span class="badge badge-pend">${labelPend}</span>`;
   }
 
+  // Uso de Datos tiene tres estados: Sí / Pendiente / No autoriza (rojo).
+  function badgeUsoDatos(p) {
+    if (!p.usoDatos && p.usoDatosNo) return `<span class="badge badge-no">✖ No autoriza</span>`;
+    return badge(p.usoDatos, p.linkAutorizacion);
+  }
+
   // Grupos contraídos en la tabla "Ver estado" (por nombre de grupo). Vive
   // en este módulo para persistir mientras dure la carga de la página, ya
   // que renderTabla se llama de nuevo en cada refresco / búsqueda y
@@ -523,7 +536,7 @@
         <tr class="fila-persona" data-idx="${p.__idx}" tabindex="0" role="button" aria-haspopup="dialog">
           <td>${p.nombre}${alertaActividadHtml(p.actividad)}${estadoTxt}${p.notas ? `<div class="notas">${p.notas}</div>` : ""}</td>
           <td>${badge(p.dpa, p.linkDpa)}${alertaDpaHtml(p.alertaDPA)}</td>
-          <td>${badge(p.usoDatos, p.linkAutorizacion)}</td>
+          <td>${badgeUsoDatos(p)}</td>
           <td>${badge(p.datosPersonales, "", "Sí", "Pendiente")}${p.datosPersonalesFecha ? `<div class="notas">${p.datosPersonalesFecha}</div>` : ""}</td>
         </tr>
       `;
@@ -581,6 +594,7 @@
     renderTabla,
     normalizeName,
     badge,
+    badgeUsoDatos,
     formatFecha,
     alertaDpaHtml,
     calcularAlertaDPA,
