@@ -1250,7 +1250,8 @@ function renderEstadisticas(){
   });
 
   const dpaOk = personasCache.filter(p => p.dpa).length;
-  const usoDatosOk = personasCache.filter(p => p.usoDatos).length;
+  // "No autoriza" cuenta como resuelto: ya se notificó la decisión.
+  const usoDatosOk = personasCache.filter(p => p.usoDatos || p.usoDatosNo).length;
   const datosPersonalesOk = personasCache.filter(p => p.datosPersonales).length;
   const dpaAlertaAmarilla = personasCache.filter(p => p.alertaDPA && p.alertaDPA.nivel === 'amarilla').length;
   const dpaAlertaRoja = personasCache.filter(p => p.alertaDPA && p.alertaDPA.nivel === 'roja').length;
@@ -1274,7 +1275,7 @@ function renderEstadisticas(){
     if (!p.dpa) razones.push({ nivel: 'roja', texto: 'DPA pendiente' });
     else if (p.alertaDPA && p.alertaDPA.nivel === 'roja') razones.push({ nivel: 'roja', texto: 'DPA vencido' });
     else if (p.alertaDPA && p.alertaDPA.nivel === 'amarilla') razones.push({ nivel: 'amarilla', texto: 'DPA por vencer' });
-    if (!p.usoDatos) razones.push({ nivel: 'roja', texto: p.usoDatosNo ? 'No autoriza Uso de Datos' : 'Uso de Datos pendiente' });
+    if (!p.usoDatos && !p.usoDatosNo) razones.push({ nivel: 'roja', texto: 'Uso de Datos pendiente' });
     if (!p.datosPersonales) razones.push({ nivel: 'roja', texto: 'Datos Personales pendiente' });
     return razones;
   }

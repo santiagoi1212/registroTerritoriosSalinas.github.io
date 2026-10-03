@@ -497,7 +497,8 @@
     const total = personas.length;
     const c = {
       dpa: personas.filter(p => p.dpa).length,
-      usoDatos: personas.filter(p => p.usoDatos).length,
+      // "No autoriza" cuenta como resuelto: ya se notificó la decisión.
+      usoDatos: personas.filter(p => p.usoDatos || p.usoDatosNo).length,
       datosPersonales: personas.filter(p => p.datosPersonales).length
     };
     el.innerHTML = `
