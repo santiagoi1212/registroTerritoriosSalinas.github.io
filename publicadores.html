@@ -121,6 +121,10 @@
   .alerta-lista-item .nombre{ font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; flex:1 1 auto; }
   .alerta-lista-item .razones{ color:var(--muted); font-size:12px; text-align:right; flex:0 0 auto; }
   .alerta-lista-vacio{ font-size:12.5px; color:var(--muted); }
+  .alerta-lista-resto{ margin-top:6px; }
+  .alerta-lista[hidden]{ display:none; } /* sin esto, display:flex le gana a hidden */
+  .alerta-ver-todos{ margin-top:8px; background:transparent; border:1px solid var(--border); color:var(--accent); border-radius:8px; padding:6px 12px; font:inherit; font-size:12.5px; font-weight:600; cursor:pointer; }
+  .alerta-ver-todos:hover{ border-color:var(--accent); }
   /* En celular, nombre + motivos (que puede ser un texto largo, ej. "DPA
      pendiente · Uso de Datos pendiente · Datos Personales pendiente") no
      entran cómodos en una sola fila — se apilan. */
@@ -1266,47 +1270,50 @@ function renderEstadisticas(){
     actividadCounts[code] = (actividadCounts[code] || 0) + 1;
   });
 
-  // Listado de alertas por persona: rojo = DPA vencido o sin tener, sin Uso
-  // de Datos, o sin Datos Personales; amarillo = DPA por vencer pronto (y
-  // ninguno de los motivos rojos). Cada persona aparece en un solo listado
-  // (el rojo tiene prioridad si tiene motivos de los dos tipos).
-  function razonesAlerta(p){
-    const razones = [];
-    if (!p.dpa) razones.push({ nivel: 'roja', texto: 'DPA pendiente' });
-    else if (p.alertaDPA && p.alertaDPA.nivel === 'roja') razones.push({ nivel: 'roja', texto: 'DPA vencido' });
-    else if (p.alertaDPA && p.alertaDPA.nivel === 'amarilla') razones.push({ nivel: 'amarilla', texto: 'DPA por vencer' });
-    if (!p.usoDatos && !p.usoDatosNo) razones.push({ nivel: 'roja', texto: 'Uso de Datos pendiente' });
-    if (!p.datosPersonales) razones.push({ nivel: 'roja', texto: 'Datos Personales pendiente' });
-    return razones;
+  // Listados de "requieren atención", uno por tema: DPA (sin DPA o
+  // vencido), DPA por vencer, Uso de Datos pendiente y Datos Personales
+  // pendiente. Una persona puede aparecer en más de uno. Cada listado muestra
+  // hasta LIMITE_LISTA nombres; si hay más, el resto queda contraído detrás
+  // de un botón "Ver todos".
+  const LIMITE_LISTA = 5;
+  const porNombre = (a, b) => a.nombre.localeCompare(b.nombre, 'es');
+  const listaDpa = personasCache.filter(p => !p.dpa || (p.alertaDPA && p.alertaDPA.nivel === 'roja')).sort(porNombre);
+  const listaDpaPorVencer = personasCache.filter(p => p.dpa && p.alertaDPA && p.alertaDPA.nivel === 'amarilla').sort(porNombre);
+  // "No autoriza" no cuenta como pendiente: ya se notificó la decisión.
+  const listaUsoDatos = personasCache.filter(p => !p.usoDatos && !p.usoDatosNo).sort(porNombre);
+  const listaDatosPersonales = personasCache.filter(p => !p.datosPersonales).sort(porNombre);
+
+  function renderItemAlerta(p, nivel, razon){
+    return `
+      <div class="alerta-lista-item ${nivel}" data-nombre="${escapeAttr(p.nombre)}" tabindex="0" role="button">
+        <span class="nombre">${p.nombre}${p.grupo ? ` <span class="muted" style="font-weight:400;">· Grupo ${p.grupo}</span>` : ''}</span>
+        <span class="razones">${razon}</span>
+      </div>
+    `;
   }
 
-  const conAlerta = personasCache.map(p => ({ p, razones: razonesAlerta(p) })).filter(x => x.razones.length);
-  const listaRoja = conAlerta.filter(x => x.razones.some(r => r.nivel === 'roja'))
-    .sort((a, b) => a.p.nombre.localeCompare(b.p.nombre, 'es'));
-  const listaAmarilla = conAlerta.filter(x => !x.razones.some(r => r.nivel === 'roja'))
-    .sort((a, b) => a.p.nombre.localeCompare(b.p.nombre, 'es'));
-
-  function renderItemAlerta(x){
-    const nivel = x.razones.some(r => r.nivel === 'roja') ? 'roja' : 'amarilla';
+  function renderListaAlerta(titulo, nivel, lista, razon){
+    const items = lista.map(p => renderItemAlerta(p, nivel, typeof razon === 'function' ? razon(p) : razon));
+    const visibles = items.slice(0, LIMITE_LISTA).join('');
+    const resto = items.slice(LIMITE_LISTA).join('');
     return `
-      <div class="alerta-lista-item ${nivel}" data-nombre="${escapeAttr(x.p.nombre)}" tabindex="0" role="button">
-        <span class="nombre">${x.p.nombre}${x.p.grupo ? ` <span class="muted" style="font-weight:400;">· Grupo ${x.p.grupo}</span>` : ''}</span>
-        <span class="razones">${x.razones.map(r => r.texto).join(' · ')}</span>
-      </div>
+      <div class="alerta-lista-titulo"><span class="alerta-dpa alerta-${nivel}" style="margin-left:0;">⚠</span> ${titulo} (${lista.length})</div>
+      ${lista.length
+        ? `<div class="alerta-lista">${visibles}</div>${resto
+            ? `<div class="alerta-lista alerta-lista-resto" hidden>${resto}</div>
+               <button type="button" class="alerta-ver-todos" aria-expanded="false" data-mas="${lista.length - LIMITE_LISTA}">Ver todos (${lista.length - LIMITE_LISTA} más)</button>`
+            : ''}`
+        : `<p class="alerta-lista-vacio">✅ Nadie en esta situación.</p>`}
     `;
   }
 
   const htmlAlertas = `
     <div class="stats-box">
       <h3>Publicadores que requieren atención</h3>
-      <div class="alerta-lista-titulo"><span class="alerta-dpa alerta-roja" style="margin-left:0;">⚠</span> Sin DPA / DPA vencido, sin Uso de Datos o sin Datos Personales (${listaRoja.length})</div>
-      ${listaRoja.length
-        ? `<div class="alerta-lista">${listaRoja.map(renderItemAlerta).join('')}</div>`
-        : `<p class="alerta-lista-vacio">✅ Nadie en esta situación.</p>`}
-      <div class="alerta-lista-titulo"><span class="alerta-dpa alerta-amarilla" style="margin-left:0;">⚠</span> DPA por vencer pronto (${listaAmarilla.length})</div>
-      ${listaAmarilla.length
-        ? `<div class="alerta-lista">${listaAmarilla.map(renderItemAlerta).join('')}</div>`
-        : `<p class="alerta-lista-vacio">✅ Nadie en esta situación.</p>`}
+      ${renderListaAlerta('Sin DPA / DPA vencido', 'roja', listaDpa, p => p.dpa ? 'DPA vencido' : 'DPA pendiente')}
+      ${renderListaAlerta('DPA por vencer pronto', 'amarilla', listaDpaPorVencer, 'DPA por vencer')}
+      ${renderListaAlerta('Uso de Datos pendiente', 'roja', listaUsoDatos, 'Uso de Datos pendiente')}
+      ${renderListaAlerta('Datos Personales pendiente', 'roja', listaDatosPersonales, 'Datos Personales pendiente')}
     </div>
   `;
 
@@ -1369,6 +1376,16 @@ function renderEstadisticas(){
 
     ${htmlAlertas}
   `;
+
+  cont.querySelectorAll('.alerta-ver-todos').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const resto = btn.previousElementSibling;
+      const abierto = btn.getAttribute('aria-expanded') === 'true';
+      resto.hidden = abierto;
+      btn.setAttribute('aria-expanded', String(!abierto));
+      btn.textContent = abierto ? `Ver todos (${btn.dataset.mas} más)` : 'Mostrar menos';
+    });
+  });
 
   cont.querySelectorAll('.alerta-lista-item').forEach(item => {
     const persona = personasCache.find(p => p.nombre === item.dataset.nombre);

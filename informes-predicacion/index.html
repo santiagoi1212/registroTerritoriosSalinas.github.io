@@ -863,11 +863,27 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
     if (STATE.charts[key]) { STATE.charts[key].destroy(); delete STATE.charts[key]; }
   }
 
+  // "Precursor Especial" solo aparece (en gráficos y leyendas) si alguien
+  // informó como Especial en el mes elegido: si no, es una columna siempre en
+  // cero que ocupa lugar. Lo calcula renderAll() en STATE.mostrarEspecial.
+  var LABEL_SITUACION = { "Precursor Regular": "Regular", "Precursor Especial": "Especial", "Precursor Auxiliar": "Auxiliar", "Publicador": "Publicador" };
+  function situacionesVisibles() {
+    return ["Precursor Regular", "Precursor Especial", "Precursor Auxiliar", "Publicador"].filter(function (k) {
+      return k !== "Precursor Especial" || STATE.mostrarEspecial;
+    });
+  }
+  function hayEspecialEnMes(period) {
+    var m = STATE.rowsByNamePeriod || {};
+    return Object.keys(m).some(function (k) {
+      return m[k] && m[k].situacion === "Precursor Especial" && k.slice(k.lastIndexOf("|") + 1) === String(period);
+    });
+  }
+
   function renderMiniChart(canvasId, counts) {
     destroyChart(canvasId);
     var colors = seriesColors(), ink = inkColors();
-    var labels = ["Regular", "Especial", "Auxiliar", "Publicador"];
-    var keys = ["Precursor Regular", "Precursor Especial", "Precursor Auxiliar", "Publicador"];
+    var keys = situacionesVisibles();
+    var labels = keys.map(function (k) { return LABEL_SITUACION[k]; });
     var data = keys.map(function (k) { return counts[k] || 0; });
     var bg = keys.map(function (k) { return colors[k]; });
     var ctx = document.getElementById(canvasId).getContext("2d");
@@ -1081,8 +1097,8 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
 
   function renderSummaryCharts(views, names) {
     var colors = seriesColors(), ink = inkColors();
-    var keys = ["Precursor Regular", "Precursor Especial", "Precursor Auxiliar", "Publicador"];
-    var labelMap = { "Precursor Regular": "Regular", "Precursor Especial": "Especial", "Precursor Auxiliar": "Auxiliar", "Publicador": "Publicador" };
+    var keys = situacionesVisibles();
+    var labelMap = LABEL_SITUACION;
 
     destroyChart("groups");
     var ctx1 = document.getElementById("pub-chart-groups").getContext("2d");
@@ -1130,6 +1146,7 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
 
   function renderAll() {
     renderBanners();
+    STATE.mostrarEspecial = STATE.selectedPeriod != null && hayEspecialEnMes(STATE.selectedPeriod);
     var grid = document.getElementById("pub-grid");
     var nums = groupNumbers();
 
