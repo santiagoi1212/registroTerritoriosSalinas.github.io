@@ -88,6 +88,7 @@ function apiLogin(username, password) {
 // Quién inicia sesión y a qué secciones del portal entra. Solo lo puede leer
 // este usuario (op=accesos), sin importar el rol de los demás.
 const USUARIO_VE_ACCESOS = 'sinchausti';
+const USUARIO_GESTIONA_CUENTAS = 'sinchausti'; // pestaña "Administradores" (ABM de cuentas)
 const ACCESOS_SHEET_NAME = 'Accesos';
 const TOKEN_SEGUNDOS = 21600; // 6 h (máximo de CacheService); se renueva con cada uso
 
@@ -262,6 +263,10 @@ function verificarSesionAdmin_(data) {
   }
   if (String(user.role || '').trim().toLowerCase() !== 'admin') {
     return { ok: false, error: 'Esta acción es solo para administradores' };
+  }
+  // La gestión de cuentas (pestaña "Administradores") es solo para este usuario.
+  if (String(user.username || '').trim().toLowerCase() !== USUARIO_GESTIONA_CUENTAS) {
+    return { ok: false, error: 'La gestión de cuentas es solo para ' + USUARIO_GESTIONA_CUENTAS };
   }
   return { ok: true, admin: user };
 }

@@ -308,7 +308,7 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
   </div>
 
   <div id="forbidden" style="display:none">
-    <p>Esta sección es solo para administración / capitanes.</p>
+    <p id="forbidden-texto">Esta sección es solo para administración / capitanes.</p>
     <a class="btn-primary" style="text-decoration:none; display:inline-block;" href="./index.html">Volver al portal</a>
   </div>
 
@@ -1548,12 +1548,17 @@ async function refrescarVista(){
 
   document.getElementById('locked').style.display    = logged ? 'none' : 'block';
   // "Administradores" es más sensible que el resto (crea/borra cuentas de
-  // login) — ahí exigimos específicamente el rol admin, no capitan.
+  // login): solo para el usuario sinchausti (el backend de login también lo
+  // exige, ver USUARIO_GESTIONA_CUENTAS en google-apps-script-auth.js).
+  const usuarioActual = String((window.AuthApp && AuthApp.getUsername && AuthApp.getUsername()) || '').trim().toLowerCase();
   const rolAlcanza = vistaActual === 'usuarios'
-    ? String(role || '').toLowerCase() === 'admin'
+    ? usuarioActual === 'sinchausti'
     : ROLES_PERMITIDOS.includes(role);
   const permitido = logged && rolAlcanza;
   document.getElementById('forbidden').style.display = (logged && !permitido) ? 'block' : 'none';
+  document.getElementById('forbidden-texto').textContent = vistaActual === 'usuarios'
+    ? 'La sección Administradores es solo para el usuario sinchausti.'
+    : 'Esta sección es solo para administración / capitanes.';
   document.getElementById('contenido').style.display  = permitido ? 'block' : 'none';
 
   if (permitido) await cargarYRenderizar();
