@@ -241,7 +241,14 @@
     }
     .referencias { display:flex; flex-direction:column; gap:8px; margin:0; }
     .referencia { display:flex; align-items:center; gap:10px; }
-    .color-box { width: 18px; height: 18px; border: 1px solid #000; }
+    .color-box { width: 18px; height: 18px; border: 1px solid #000; flex: 0 0 auto; }
+    .ref-pct { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; padding-left: 6px; }
+    .avance { margin: 0 0 12px; }
+    .avance-titulo { font-size: 14px; margin-bottom: 6px; }
+    .avance-titulo b { color: #4ade80; font-size: 16px; }
+    .avance-barra { display: flex; height: 12px; border-radius: 6px; overflow: hidden; background: #333; border: 1px solid rgba(255,255,255,.25); }
+    .avance-barra > span { display: block; height: 100%; }
+    .avance-detalle { font-size: 11.5px; opacity: .8; margin-top: 4px; }
     .gris { background: #808080; }
     .azul { background: #2563eb; }
     /* Tooltip con la observación de una manzana pendiente (al pasar el mouse) */
@@ -352,12 +359,17 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
 
   <div id="referencias">
     <h3 style="margin:0 0 8px 0">Referencias</h3>
+    <div class="avance" id="avance" hidden>
+      <div class="avance-titulo">Completado: <b id="avance-pct">0%</b></div>
+      <div class="avance-barra" id="avance-barra"></div>
+      <div class="avance-detalle" id="avance-detalle"></div>
+    </div>
     <div class="referencias">
-      <div class="referencia"><div class="color-box gris"></div><span>Sin registros</span></div>
-      <div class="referencia"><div class="color-box azul"></div><span>Pendiente: se empezó pero no se finalizó</span></div>
-      <div class="referencia"><div class="color-box verde"></div><span>Registrado hace menos de 2 meses</span></div>
-      <div class="referencia"><div class="color-box amarillo"></div><span>Registrado entre 2 y 3 meses</span></div>
-      <div class="referencia"><div class="color-box rojo"></div><span>Registrado hace más de 3 meses</span></div>
+      <div class="referencia"><div class="color-box gris"></div><span>Sin registros</span><span class="ref-pct" data-cat="gris"></span></div>
+      <div class="referencia"><div class="color-box azul"></div><span>Pendiente: se empezó pero no se finalizó</span><span class="ref-pct" data-cat="azul"></span></div>
+      <div class="referencia"><div class="color-box verde"></div><span>Registrado hace menos de 2 meses</span><span class="ref-pct" data-cat="verde"></span></div>
+      <div class="referencia"><div class="color-box amarillo"></div><span>Registrado entre 2 y 3 meses</span><span class="ref-pct" data-cat="amarillo"></span></div>
+      <div class="referencia"><div class="color-box rojo"></div><span>Registrado hace más de 3 meses</span><span class="ref-pct" data-cat="rojo"></span></div>
     </div>
   </div>
 
@@ -1063,6 +1075,39 @@ const labelsLayer   = L.featureGroup().addTo(map);
       }
     }
 
+    // Misma clasificación que getFillHexFromDatos, pero como categoría, para
+    // los porcentajes de las referencias.
+    function categoriaManzana(id) {
+      const d = __datosMap.get(idKey(id));
+      if (!d) return 'gris';
+      if (esPendiente(d.finalizado)) return 'azul';
+      return { gray: 'gris', green: 'verde', yellow: 'amarillo', red: 'rojo' }[obtenerColorPorTiempo(d.ultimaFecha)] || 'gris';
+    }
+
+    // Porcentaje de manzanas de cada color (sobre el total de manzanas del
+    // mapa). Verde = completado. Se recalcula cada vez que se repinta.
+    const COLORES_CATEGORIA = { verde: 'green', azul: '#2563eb', amarillo: '#FFD700', rojo: '#ff0000', gris: '#808080' };
+    function actualizarPorcentajes() {
+      const ids = new Set((window.poligonos || []).map(p => idKey(p.id)));
+      const total = ids.size;
+      if (!total) return;
+      const cuenta = { gris: 0, azul: 0, verde: 0, amarillo: 0, rojo: 0 };
+      ids.forEach(id => { cuenta[categoriaManzana(id)]++; });
+      const pct = n => Math.round(n / total * 1000) / 10; // 1 decimal
+      document.querySelectorAll('.ref-pct').forEach(el => {
+        const n = cuenta[el.dataset.cat] || 0;
+        el.textContent = pct(n) + '%';
+        el.title = n + ' de ' + total + ' manzanas';
+      });
+      document.getElementById('avance-pct').textContent = pct(cuenta.verde) + '%';
+      document.getElementById('avance-barra').innerHTML = ['verde', 'azul', 'amarillo', 'rojo', 'gris']
+        .filter(c => cuenta[c])
+        .map(c => '<span style="width:' + (cuenta[c] / total * 100) + '%;background:' + COLORES_CATEGORIA[c] + '" title="' + pct(cuenta[c]) + '%"></span>')
+        .join('');
+      document.getElementById('avance-detalle').textContent = cuenta.verde + ' de ' + total + ' manzanas registradas hace menos de 2 meses';
+      document.getElementById('avance').hidden = false;
+    }
+
     // Color + texto al pasar el mouse: si la manzana está pendiente, muestra
     // la observación de qué se hizo; si no, saca el tooltip.
     function aplicarEstadoManzana(layer) {
@@ -1123,6 +1168,7 @@ function repintarTerritorio(territorio){
       aplicarEstadoManzana(layer);
     }
   });
+  actualizarPorcentajes();
 }
 
 
@@ -1156,6 +1202,7 @@ async function actualizarDatos(){
   setDatos_(datos);
   guardarStats_(datos);
   polygonsLayer.eachLayer(aplicarEstadoManzana);
+  actualizarPorcentajes();
 }
 
 async function init() {
@@ -1196,6 +1243,7 @@ function dibujarMapa() {
   // (si se dibujan antes, el relleno de las manzanas las tapa).
   renderTerritorios();
   renderGrupos();
+  actualizarPorcentajes();
 
   if (bounds && bounds.isValid()) {
     map.fitBounds(bounds, { padding: [10,10], maxZoom: 18 });
