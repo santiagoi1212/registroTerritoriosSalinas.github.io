@@ -17,6 +17,9 @@
   Link directo a un grupo: grupo.html?grupo=3
 -->
 <script src="../app-config.js"></script>
+<!-- Solo para saber si quien mira es admin (botón "Reporte"); la página en
+     sí sigue siendo pública. -->
+<script src="../app-auth.js"></script>
 <style>
   :root{
     --bg:#0b1220; --card:#111a2e; --card-2:#0f1728; --border:#22304a;
@@ -81,6 +84,30 @@
   @keyframes g{ to{ transform:rotate(360deg); } }
   .pie{ color:var(--muted); font-size:12.5px; margin-top:18px; }
 
+  /* ---- Reporte (solo admin) ---- */
+  .btn{ background:var(--accent); color:#fff; border:0; border-radius:10px; padding:8px 14px; font:inherit; font-size:14px; font-weight:600; cursor:pointer; }
+  .btn.sec{ background:var(--card); color:var(--text); border:1px solid var(--border); }
+  #btn-reporte{ margin-left:auto; }
+  .rep-controles{ display:flex; flex-wrap:wrap; gap:10px; align-items:end; margin-bottom:14px; }
+  .rep-controles label{ display:flex; flex-direction:column; gap:4px; font-size:12.5px; color:var(--muted); }
+  .rep-mes{ border-top:2px solid var(--border); padding-top:14px; margin-top:18px; }
+  .rep-mes:first-child{ border-top:0; margin-top:0; padding-top:0; }
+  .rep-mes h3{ margin:0 0 4px; font-size:18px; }
+  .rep-resumen{ color:var(--muted); font-size:13.5px; margin:0 0 10px; }
+  .rep-cat{ font-size:13px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin:14px 0 6px; font-weight:700; }
+  .rep-cat i{ width:9px; height:9px; border-radius:50%; display:inline-block; margin-right:6px; }
+  .rep-vacio{ color:var(--muted); font-size:13.5px; margin:0; }
+  .rep-faltan p{ margin:4px 0; font-size:14px; }
+  .rep-total td{ font-weight:700; }
+  @media print{
+    body{ background:#fff; color:#000; }
+    .wrap > :not(#reporte), #reporte .rep-controles, #reporte h2 .acciones, .pop{ display:none !important; }
+    #reporte{ border:0; padding:0; }
+    .card, table, th, td{ color:#000; border-color:#bbb; background:#fff; }
+    .rep-mes{ break-inside:auto; }
+    .rep-mes + .rep-mes{ break-before:page; }
+  }
+
   .nombre.ok{ cursor:pointer; text-align:left; font:inherit; font-size:14px; color:inherit; width:100%; }
   .nombre.ok:hover, .nombre.ok:focus-visible, .nombre.ok.activo{ border-color:var(--accent); outline:none; }
   .pop{ position:fixed; z-index:50; min-width:220px; max-width:min(300px, calc(100vw - 24px)); background:var(--card); border:1px solid var(--border); border-radius:12px; padding:12px 14px; box-shadow:0 10px 30px rgba(0,0,0,.35); font-size:14px; display:none; }
@@ -101,6 +128,19 @@
   <div class="controles">
     <div class="tabs" id="tabs" role="group" aria-label="Grupo"></div>
     <select id="sel-mes" aria-label="Mes"></select>
+    <button type="button" class="btn" id="btn-reporte" hidden>📄 Reporte</button>
+  </div>
+
+  <div class="card" id="reporte" hidden>
+    <h2>Reporte de informes <span class="acciones"><button type="button" class="btn sec" id="rep-cerrar">Cerrar</button></span></h2>
+    <div class="rep-controles">
+      <label>Desde<select id="rep-desde"></select></label>
+      <label>Hasta<select id="rep-hasta"></select></label>
+      <label>Grupo<select id="rep-grupo"></select></label>
+      <button type="button" class="btn" id="rep-generar">Generar</button>
+      <button type="button" class="btn sec" id="rep-imprimir">Imprimir / PDF</button>
+    </div>
+    <div id="rep-salida"></div>
   </div>
 
   <div id="contenido"><div class="estado"><div class="spinner"></div>Cargando…</div></div>
@@ -111,7 +151,7 @@
 <script>
 (function () {
   var API_URL = (window.APP_CONFIG && window.APP_CONFIG.INFORMES_PREDICACION_API_URL) || '';
-  var CACHE_KEY = 'salinas_informes_grupo_v2';
+  var CACHE_KEY = 'salinas_informes_grupo_v3';
   var MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
   var SITUACIONES = [
     { k: 'Publicador', css: 'var(--publicador)' },
@@ -350,6 +390,156 @@
   window.addEventListener('scroll', cerrarPop, { passive: true });
   window.addEventListener('resize', cerrarPop);
 
+  // ================== Reporte (solo admin logueado) ==================
+  // Por cada mes del rango: quiénes informaron (aunque hayan puesto que no
+  // participaron), separados en precursores regulares, auxiliares,
+  // publicadores (y especiales si hubo), quiénes informaron que no
+  // participaron, y quiénes faltaron por grupo. Al final, promedios por mes.
+  var CATS_REPORTE = [
+    { k: 'Precursor Regular', titulo: 'Precursores regulares', css: 'var(--regular)', horas: true },
+    { k: 'Precursor Especial', titulo: 'Precursores especiales', css: 'var(--especial)', horas: true },
+    { k: 'Precursor Auxiliar', titulo: 'Precursores auxiliares', css: 'var(--auxiliar)', horas: true },
+    { k: 'Publicador', titulo: 'Publicadores', css: 'var(--publicador)', horas: false },
+    { k: 'Otro', titulo: 'Sin situación', css: 'var(--muted)', horas: false }
+  ];
+
+  function esAdmin() {
+    return !!(window.AuthApp && AuthApp.isLogged() && String(AuthApp.getRole() || '').toLowerCase() === 'admin');
+  }
+  function actualizarBotonReporte() {
+    var admin = esAdmin();
+    document.getElementById('btn-reporte').hidden = !admin;
+    if (!admin) document.getElementById('reporte').hidden = true;
+  }
+
+  function enCat(r, c) {
+    var sit = r.situacion || 'Otro';
+    if (['Precursor Regular', 'Precursor Especial', 'Precursor Auxiliar', 'Publicador'].indexOf(sit) === -1) sit = 'Otro';
+    return sit === c.k;
+  }
+  function num(v) { return typeof v === 'number' && !isNaN(v) ? v : null; }
+  function fmt(n) { return (Math.round(n * 10) / 10).toLocaleString('es-UY'); }
+
+  function abrirReporte() {
+    if (!datos) return; // todavía cargando
+    var conDatos = mesesConDatos(); // de más nuevo a más viejo
+    var opciones = conDatos.map(function (pk) { return '<option value="' + pk + '">' + etiquetaMes(pk) + '</option>'; }).join('');
+    var desde = document.getElementById('rep-desde'), hasta = document.getElementById('rep-hasta');
+    desde.innerHTML = opciones; hasta.innerHTML = opciones;
+    // Por defecto: los 6 meses con datos que terminan en el mes elegido arriba.
+    var fin = conDatos.indexOf(mesSel) >= 0 ? mesSel : conDatos[0];
+    hasta.value = fin;
+    desde.value = conDatos[Math.min(conDatos.indexOf(fin) + 5, conDatos.length - 1)];
+    document.getElementById('rep-grupo').innerHTML = '<option value="todos">Todos</option>' +
+      grupos().map(function (g) { return '<option value="' + g + '">Grupo ' + g + '</option>'; }).join('');
+    document.getElementById('rep-grupo').value = String(grupoSel);
+    document.getElementById('reporte').hidden = false;
+    generarReporte();
+    document.getElementById('reporte').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function tablaPersonas(lista, conHoras) {
+    return '<table><thead><tr><th>Nombre</th><th>Grupo</th>' + (conHoras ? '<th class="num">Horas</th>' : '') + '<th class="num">Cursos</th></tr></thead><tbody>' +
+      lista.map(function (x) {
+        return '<tr><td>' + esc(x.nombre) + '</td><td>' + x.grupo + '</td>' +
+          (conHoras ? '<td class="num">' + (num(x.r.horas) == null ? '—' : x.r.horas) + '</td>' : '') +
+          '<td class="num">' + (num(x.r.cursos) == null ? '—' : x.r.cursos) + '</td></tr>';
+      }).join('') + '</tbody></table>';
+  }
+
+  function generarReporte() {
+    var d = Number(document.getElementById('rep-desde').value), h = Number(document.getElementById('rep-hasta').value);
+    if (d > h) { var t = d; d = h; h = t; }
+    var gSel = document.getElementById('rep-grupo').value;
+    var gs = gSel === 'todos' ? grupos() : [Number(gSel)];
+    var meses = mesesConDatos().filter(function (pk) { return pk >= d && pk <= h; }).sort(function (a, b) { return a - b; });
+
+    var acum = { meses: 0, integrantes: 0, informaron: 0, noParticiparon: 0, faltaron: 0, cursos: 0, cat: {} };
+    CATS_REPORTE.forEach(function (c, i) { acum.cat[i] = { personas: 0, horas: 0, conHoras: 0 }; });
+
+    var html = meses.map(function (pk) {
+      var informaron = [], faltan = {}, integrantes = 0;
+      gs.forEach(function (g) {
+        var v = vistaGrupo(g, pk);
+        integrantes += v.integrantes.length;
+        faltan[g] = v.faltan;
+        v.registrados.forEach(function (n) {
+          var r = datos.rows.filter(function (x) { return x.nombre === n && x.periodKey === pk; })[0];
+          if (r) informaron.push({ nombre: n, grupo: g, r: r });
+        });
+      });
+      informaron.sort(function (a, b) { return a.nombre.localeCompare(b.nombre, 'es'); });
+      var noPart = informaron.filter(function (x) { return x.r.participo === false; });
+      var participaron = informaron.filter(function (x) { return x.r.participo !== false; });
+      var totalFaltan = gs.reduce(function (a, g) { return a + faltan[g].length; }, 0);
+      var cursosMes = informaron.reduce(function (a, x) { return a + (num(x.r.cursos) || 0); }, 0);
+
+      acum.meses++; acum.integrantes += integrantes; acum.informaron += informaron.length;
+      acum.noParticiparon += noPart.length; acum.faltaron += totalFaltan; acum.cursos += cursosMes;
+
+      var cats = CATS_REPORTE.map(function (c, i) {
+        var lista = participaron.filter(function (x) { return enCat(x.r, c); });
+        acum.cat[i].personas += lista.length;
+        lista.forEach(function (x) { if (num(x.r.horas) != null) { acum.cat[i].horas += x.r.horas; acum.cat[i].conHoras++; } });
+        // Auxiliares "sin especificar", especiales y "sin situación": solo si hay.
+        if (!lista.length && (c.k === 'Precursor Especial' || c.k === 'Otro')) return '';
+        return '<div class="rep-cat"><i style="background:' + c.css + '"></i>' + esc(c.titulo) + ' (' + lista.length + ')</div>' +
+          (lista.length ? tablaPersonas(lista, c.horas) : '<p class="rep-vacio">Nadie.</p>');
+      }).join('');
+
+      var noPartHtml = '<div class="rep-cat">Informaron que no participaron (' + noPart.length + ')</div>' +
+        (noPart.length
+          ? '<table><thead><tr><th>Nombre</th><th>Grupo</th><th>Situación</th></tr></thead><tbody>' +
+            noPart.map(function (x) { return '<tr><td>' + esc(x.nombre) + '</td><td>' + x.grupo + '</td><td>' + esc(x.r.situacion || '—') + '</td></tr>'; }).join('') +
+            '</tbody></table>'
+          : '<p class="rep-vacio">Nadie.</p>');
+
+      var faltanHtml = '<div class="rep-cat">Faltaron registrar (' + totalFaltan + ')</div><div class="rep-faltan">' +
+        gs.map(function (g) {
+          return '<p><b>Grupo ' + g + ' (' + faltan[g].length + '):</b> ' + (faltan[g].length ? faltan[g].map(esc).join(', ') : '✅ ninguno') + '</p>';
+        }).join('') + '</div>';
+
+      var pct = integrantes ? Math.round(informaron.length / integrantes * 100) : 0;
+      return '<section class="rep-mes"><h3>' + esc(etiquetaMes(pk)) + '</h3>' +
+        '<p class="rep-resumen">Informaron <b>' + informaron.length + '</b> de ' + integrantes + ' (' + pct + '%) · ' +
+        'no participaron ' + noPart.length + ' · faltaron ' + totalFaltan + ' · cursos bíblicos ' + cursosMes + '</p>' +
+        cats + noPartHtml + faltanHtml + '</section>';
+    }).join('');
+
+    if (!meses.length) {
+      document.getElementById('rep-salida').innerHTML = '<p class="rep-vacio">No hay informes en ese rango.</p>';
+      return;
+    }
+
+    // Promedios por mes del período.
+    var m = acum.meses;
+    var filas = [
+      ['Informaron', acum.informaron / m, acum.integrantes ? fmt(acum.informaron / acum.integrantes * 100) + '% de los integrantes' : ''],
+      ['Informaron que no participaron', acum.noParticiparon / m, ''],
+      ['Faltaron registrar', acum.faltaron / m, '']
+    ];
+    CATS_REPORTE.forEach(function (c, i) {
+      var a = acum.cat[i];
+      if (!a.personas && (c.k === 'Precursor Especial' || c.k === 'Otro')) return;
+      filas.push([c.titulo, a.personas / m, c.horas && a.conHoras ? 'promedio ' + fmt(a.horas / a.conHoras) + ' horas por persona' : '']);
+    });
+    filas.push(['Cursos bíblicos', acum.cursos / m, '']);
+    var promedios = '<section class="rep-mes"><h3>Promedios por mes</h3>' +
+      '<p class="rep-resumen">' + esc(etiquetaMes(meses[0])) + (m > 1 ? ' a ' + esc(etiquetaMes(meses[m - 1])) : '') + ' · ' + m + ' mes' + (m > 1 ? 'es' : '') +
+      (gSel === 'todos' ? ' · todos los grupos' : ' · grupo ' + esc(gSel)) + '</p>' +
+      '<table><thead><tr><th></th><th class="num">Promedio por mes</th><th></th></tr></thead><tbody>' +
+      filas.map(function (f) { return '<tr><td>' + esc(f[0]) + '</td><td class="num">' + fmt(f[1]) + '</td><td>' + esc(f[2]) + '</td></tr>'; }).join('') +
+      '</tbody></table>' +
+      '<p class="pie">Quiénes faltaron se calcula con los integrantes actuales de cada grupo.</p></section>';
+
+    document.getElementById('rep-salida').innerHTML = html + promedios;
+  }
+
+  document.getElementById('btn-reporte').addEventListener('click', abrirReporte);
+  document.getElementById('rep-generar').addEventListener('click', generarReporte);
+  document.getElementById('rep-imprimir').addEventListener('click', function () { window.print(); });
+  document.getElementById('rep-cerrar').addEventListener('click', function () { document.getElementById('reporte').hidden = true; });
+
   function elegirGrupo(g) {
     grupoSel = g === 'todos' ? 'todos' : Number(g);
     try { history.replaceState(null, '', grupoSel === 'todos' ? location.pathname : '?grupo=' + grupoSel); } catch (e) {}
@@ -366,6 +556,11 @@
     mesSel = Number(e.target.value);
     pintar();
   });
+
+  if (window.AuthApp) {
+    AuthApp.onChange(actualizarBotonReporte);
+    AuthApp.restore();
+  }
 
   (async function iniciar() {
     var param = new URLSearchParams(location.search).get('grupo');
