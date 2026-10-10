@@ -88,6 +88,11 @@
   .btn{ background:var(--accent); color:#fff; border:0; border-radius:10px; padding:8px 14px; font:inherit; font-size:14px; font-weight:600; cursor:pointer; }
   .btn.sec{ background:var(--card); color:var(--text); border:1px solid var(--border); }
   #btn-reporte{ margin-left:auto; }
+  .btn.cierre{ background:var(--crit); }
+  .btn:disabled{ opacity:.55; cursor:not-allowed; }
+  .nombre.falta.cerrado{ border-left-color:var(--muted); color:var(--muted); }
+  .nombre .etq{ font-size:12px; color:var(--muted); }
+  .aviso-cierre{ background:var(--card-2); border:1px solid var(--border); border-left:3px solid var(--good); border-radius:10px; padding:10px 12px; margin-bottom:14px; font-size:14px; }
   .rep-controles{ display:flex; flex-wrap:wrap; gap:10px; align-items:end; margin-bottom:14px; }
   .rep-controles label{ display:flex; flex-direction:column; gap:4px; font-size:12.5px; color:var(--muted); }
   .rep-mes{ border-top:2px solid var(--border); padding-top:14px; margin-top:18px; }
@@ -129,6 +134,7 @@
     <div class="tabs" id="tabs" role="group" aria-label="Grupo"></div>
     <select id="sel-mes" aria-label="Mes"></select>
     <button type="button" class="btn" id="btn-reporte" hidden>📄 Reporte</button>
+    <button type="button" class="btn cierre" id="btn-cerrar-mes" hidden>🔒 Cerrar mes</button>
   </div>
 
   <div class="card" id="reporte" hidden>
@@ -143,6 +149,7 @@
     <div id="rep-salida"></div>
   </div>
 
+  <div id="aviso-cierre" class="aviso-cierre" hidden></div>
   <div id="contenido"><div class="estado"><div class="spinner"></div>Cargando…</div></div>
   <p class="pie" id="pie"></p>
 </div>
@@ -151,7 +158,7 @@
 <script>
 (function () {
   var API_URL = (window.APP_CONFIG && window.APP_CONFIG.INFORMES_PREDICACION_API_URL) || '';
-  var CACHE_KEY = 'salinas_informes_grupo_v3';
+  var CACHE_KEY = 'salinas_informes_grupo_v4';
   var MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
   var SITUACIONES = [
     { k: 'Publicador', css: 'var(--publicador)' },
@@ -176,7 +183,7 @@
   function reducir(data) {
     return {
       generatedAt: data.generatedAt || null,
-      roster: (data.roster || []).map(function (r) { return { grupo: Number(r.grupo), nombre: r.nombre }; }),
+      roster: (data.roster || []).map(function (r) { return { grupo: Number(r.grupo), nombre: r.nombre, estado: r.estado || '' }; }),
       rows: (data.rows || []).map(function (r) {
         return { nombre: r.nombre, periodKey: Number(r.periodKey), situacion: r.situacion || '',
           participo: r.participo, horas: r.horas, cursos: r.cursos };
@@ -238,18 +245,32 @@
       .sort(function (a, b) { return a.localeCompare(b, 'es'); });
     var informe = {};
     datos.rows.forEach(function (r) { if (r.periodKey === pk) informe[r.nombre] = r; });
-    var registrados = [], faltan = [], porSituacion = {};
+    // faltan: sin ningún registro ese mes (y no son precursores especiales).
+    // noInformo: registrados como "No informó" al cerrar el mes.
+    // especiales: precursores especiales sin registro (no informan por el
+    // sistema, así que no cuentan como faltantes).
+    var registrados = [], faltan = [], noInformo = [], especiales = [], porSituacion = {};
     integrantes.forEach(function (n) {
       var r = informe[n];
-      if (r) {
+      if (r && esCierre(r)) {
+        noInformo.push(n);
+      } else if (r) {
         registrados.push(n);
         porSituacion[r.situacion] = (porSituacion[r.situacion] || 0) + 1;
+      } else if (esEspecial(n)) {
+        especiales.push(n);
       } else {
         faltan.push(n);
       }
     });
-    return { grupo: g, integrantes: integrantes, registrados: registrados, faltan: faltan, porSituacion: porSituacion };
+    return { grupo: g, integrantes: integrantes, registrados: registrados, faltan: faltan, noInformo: noInformo, especiales: especiales, porSituacion: porSituacion };
   }
+
+  // Registro que agrega "Cerrar mes" por quien no informó: situación
+  // "No informó" (queda como "Otro") y Participó = No. Los informes reales
+  // siempre traen una situación (es obligatoria en el formulario).
+  var SITUACION_CIERRE = 'No informó';
+  function esCierre(r) { return r.participo === false && r.situacion === 'Otro'; }
 
   function tarjetaGrupo(v) {
     var total = v.integrantes.length;
@@ -258,7 +279,15 @@
     var sinInformes = v.registrados.length === 0;
     var faltanHtml = v.faltan.length
       ? '<div class="nombres">' + v.faltan.map(function (n) { return '<div class="nombre falta">' + esc(n) + '</div>'; }).join('') + '</div>'
-      : '<p class="todo-ok">✅ Todos los del grupo ya enviaron su informe.</p>';
+      : '<p class="todo-ok">✅ ' + (v.noInformo.length ? 'Mes cerrado: no queda nadie sin registrar.' : 'Todos los del grupo ya enviaron su informe.') + '</p>';
+    var noInformoHtml = v.noInformo.length
+      ? '<div class="seccion">No informaron (mes cerrado)</div><div class="nombres">' +
+          v.noInformo.map(function (n) { return '<div class="nombre falta cerrado" title="Registrado al cerrar el mes">' + esc(n) + '</div>'; }).join('') + '</div>'
+      : '';
+    var especialesHtml = v.especiales.length
+      ? '<div class="seccion">Precursores especiales (no informan por el sistema)</div><div class="nombres">' +
+          v.especiales.map(function (n) { return '<div class="nombre">' + esc(n) + '</div>'; }).join('') + '</div>'
+      : '';
     var sits = SITUACIONES.filter(function (s) { return v.porSituacion[s.k]; })
       .map(function (s) { return '<span class="sit"><i style="background:' + s.css + '"></i>' + esc(s.k) + ': <b>' + v.porSituacion[s.k] + '</b></span>'; }).join('');
     return '<div class="card">' +
@@ -267,10 +296,11 @@
         '<div class="chip"><b>' + total + '</b>integrantes</div>' +
         '<div class="chip good"><b>' + v.registrados.length + '</b>ya enviaron</div>' +
         '<div class="chip ' + clsFaltan + '"><b>' + v.faltan.length + '</b>faltan</div>' +
+        (v.noInformo.length ? '<div class="chip"><b>' + v.noInformo.length + '</b>no informaron</div>' : '') +
       '</div>' +
       '<div class="barra" title="' + pct + '% enviaron"><span style="width:' + pct + '%"></span></div>' +
       (sinInformes ? '<p class="sub" style="margin:0 0 6px">Todavía no llegó ningún informe de este grupo para este mes.</p>' : '') +
-      '<div class="seccion">Faltan registrarse</div>' + faltanHtml +
+      '<div class="seccion">Faltan registrarse</div>' + faltanHtml + noInformoHtml + especialesHtml +
       (sits ? '<div class="seccion">Cómo informaron</div><div class="situaciones">' + sits + '</div>' : '') +
       (v.registrados.length
         ? '<details><summary>Ya enviaron (' + v.registrados.length + ')</summary><div class="nombres" style="margin-top:8px">' +
@@ -283,17 +313,18 @@
     var filas = vistas.map(function (v) {
       var total = v.integrantes.length, pct = total ? Math.round(v.registrados.length / total * 100) : 0;
       return '<tr><td><a href="?grupo=' + v.grupo + '" data-grupo="' + v.grupo + '" style="color:var(--accent)">Grupo ' + v.grupo + '</a></td>' +
-        '<td class="num">' + total + '</td><td class="num">' + v.registrados.length + '</td><td class="num">' + v.faltan.length + '</td><td class="num">' + pct + '%</td></tr>';
+        '<td class="num">' + total + '</td><td class="num">' + v.registrados.length + '</td><td class="num">' + v.noInformo.length + '</td><td class="num">' + v.faltan.length + '</td><td class="num">' + pct + '%</td></tr>';
     }).join('');
-    var tot = vistas.reduce(function (a, v) { a.t += v.integrantes.length; a.r += v.registrados.length; a.f += v.faltan.length; return a; }, { t: 0, r: 0, f: 0 });
+    var tot = vistas.reduce(function (a, v) { a.t += v.integrantes.length; a.r += v.registrados.length; a.n += v.noInformo.length; a.f += v.faltan.length; return a; }, { t: 0, r: 0, n: 0, f: 0 });
     return '<div class="card"><h2>Resumen de todos los grupos <span class="mes">' + esc(etiquetaMes(mesSel)) + '</span></h2>' +
-      '<table><thead><tr><th>Grupo</th><th class="num">Integrantes</th><th class="num">Enviaron</th><th class="num">Faltan</th><th class="num">%</th></tr></thead>' +
-      '<tbody>' + filas + '<tr><td><b>Total</b></td><td class="num"><b>' + tot.t + '</b></td><td class="num"><b>' + tot.r + '</b></td><td class="num"><b>' + tot.f + '</b></td><td class="num"><b>' +
+      '<table><thead><tr><th>Grupo</th><th class="num">Integrantes</th><th class="num">Enviaron</th><th class="num">No informó</th><th class="num">Faltan</th><th class="num">%</th></tr></thead>' +
+      '<tbody>' + filas + '<tr><td><b>Total</b></td><td class="num"><b>' + tot.t + '</b></td><td class="num"><b>' + tot.r + '</b></td><td class="num"><b>' + tot.n + '</b></td><td class="num"><b>' + tot.f + '</b></td><td class="num"><b>' +
       (tot.t ? Math.round(tot.r / tot.t * 100) : 0) + '%</b></td></tr></tbody></table></div>';
   }
 
   function pintar() {
     cerrarPop();
+    setTimeout(actualizarBotonCierre, 0);
     var gs = grupos(), ms = meses();
     if (!gs.length || !ms.length) {
       document.getElementById('contenido').innerHTML = '<div class="estado">Todavía no hay datos para mostrar.</div>';
@@ -410,7 +441,100 @@
     var admin = esAdmin();
     document.getElementById('btn-reporte').hidden = !admin;
     if (!admin) document.getElementById('reporte').hidden = true;
+    actualizarBotonCierre();
   }
+
+  // ================== Cerrar mes (solo admin) ==================
+  // Registra en "Respuestas" (vía la acción importarRespuestas del Apps
+  // Script de Publicadores) a cada integrante que no informó el mes elegido,
+  // como "No informó" / Participó = No. Se saltean los que en el padrón
+  // tienen estado Precursor Especial: ellos no informan por el sistema.
+  // Abarca todos los grupos. Solo meses ya terminados.
+  function esEspecial(nombre) {
+    var p = datos.roster.filter(function (r) { return r.nombre === nombre; })[0];
+    var e = String((p && p.estado) || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    return e.indexOf('especial') !== -1;
+  }
+  function pendientesDeCierre(pk) {
+    var lista = [];
+    grupos().forEach(function (g) {
+      var v = vistaGrupo(g, pk);
+      v.faltan.forEach(function (n) { lista.push({ nombre: n, grupo: g }); });
+    });
+    return lista;
+  }
+  function mesTerminado(pk) {
+    var hoy = new Date();
+    return pk < hoy.getFullYear() * 12 + hoy.getMonth();
+  }
+  function actualizarBotonCierre() {
+    var btn = document.getElementById('btn-cerrar-mes');
+    if (!btn) return;
+    btn.hidden = !esAdmin() || !datos || mesSel == null;
+    if (btn.hidden) return;
+    var pendientes = pendientesDeCierre(mesSel).length;
+    btn.textContent = '🔒 Cerrar ' + etiquetaMes(mesSel);
+    btn.disabled = !mesTerminado(mesSel) || pendientes === 0;
+    btn.title = !mesTerminado(mesSel) ? 'Solo se puede cerrar un mes que ya terminó'
+      : (pendientes === 0 ? 'No queda nadie sin informar en este mes' : 'Registra como "No informó" a ' + pendientes + ' persona(s) que no enviaron el informe');
+  }
+
+  function avisoCierre(texto) {
+    var el = document.getElementById('aviso-cierre');
+    el.textContent = texto;
+    el.hidden = !texto;
+  }
+
+  async function cerrarMes() {
+    var pk = mesSel;
+    if (!esAdmin() || pk == null || !mesTerminado(pk)) return;
+    var pendientes = pendientesDeCierre(pk);
+    if (!pendientes.length) return;
+    var especiales = [];
+    grupos().forEach(function (g) {
+      especiales = especiales.concat(vistaGrupo(g, pk).especiales);
+    });
+    var porGrupo = {};
+    pendientes.forEach(function (p) { porGrupo[p.grupo] = (porGrupo[p.grupo] || 0) + 1; });
+    var resumen = Object.keys(porGrupo).map(function (g) { return 'Grupo ' + g + ': ' + porGrupo[g]; }).join('\n');
+    if (!confirm('¿Cerrar ' + etiquetaMes(pk) + '?\n\nSe van a registrar como "No informó" (Participó: No) ' + pendientes.length +
+      ' persona(s) que no enviaron el informe:\n' + resumen +
+      (especiales.length ? '\n\nNo se incluyen ' + especiales.length + ' precursor(es) especial(es): ' + especiales.join(', ') : '') +
+      '\n\nSi después alguien envía su informe de ese mes, su informe reemplaza este registro.')) return;
+
+    var url = window.APP_CONFIG && window.APP_CONFIG.PUBLICADORES_API_URL;
+    if (!url) { alert('Falta configurar PUBLICADORES_API_URL en app-config.js.'); return; }
+    var hoy = new Date();
+    var fecha = String(hoy.getDate()).padStart(2, '0') + '/' + String(hoy.getMonth() + 1).padStart(2, '0') + '/' + hoy.getFullYear();
+    var filas = pendientes.map(function (p) {
+      return { fecha: fecha, grupo: p.grupo, nombre: p.nombre, mes: MESES[pk % 12], anio: Math.floor(pk / 12),
+        participo: 'No', situacion: SITUACION_CIERRE, cursos: '', horas: '', comentarios: 'Cierre de mes: no informó' };
+    });
+
+    var btn = document.getElementById('btn-cerrar-mes');
+    btn.disabled = true;
+    btn.textContent = 'Cerrando…';
+    try {
+      var res = await fetch(url, {
+        method: 'POST', credentials: 'omit',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'importarRespuestas', filas: filas })
+      });
+      var data = await res.json();
+      if (!data || !data.ok) throw new Error((data && data.error) || 'Error al registrar');
+      // Se muestra ya; el recálculo del servidor lo confirma en 1-2 minutos.
+      pendientes.forEach(function (p) {
+        datos.rows.push({ nombre: p.nombre, periodKey: pk, situacion: 'Otro', participo: false, horas: null, cursos: null });
+      });
+      guardarCache(datos);
+      pintar();
+      avisoCierre('✅ ' + etiquetaMes(pk) + ' cerrado: se registraron ' + data.agregadas + ' persona(s) como "No informó".');
+    } catch (err) {
+      alert('No se pudo cerrar el mes: ' + ((err && err.message) || err));
+      actualizarBotonCierre();
+    }
+  }
+  document.getElementById('btn-cerrar-mes').addEventListener('click', cerrarMes);
 
   function enCat(r, c) {
     var sit = r.situacion || 'Otro';
@@ -462,7 +586,8 @@
       gs.forEach(function (g) {
         var v = vistaGrupo(g, pk);
         integrantes += v.integrantes.length;
-        faltan[g] = v.faltan;
+        faltan[g] = v.faltan.concat(v.noInformo.map(function (n) { return n + ' (no informó)'; }))
+          .sort(function (a, b) { return a.localeCompare(b, 'es'); });
         v.registrados.forEach(function (n) {
           var r = datos.rows.filter(function (x) { return x.nombre === n && x.periodKey === pk; })[0];
           if (r) informaron.push({ nombre: n, grupo: g, r: r });
@@ -554,6 +679,7 @@
   });
   document.getElementById('sel-mes').addEventListener('change', function (e) {
     mesSel = Number(e.target.value);
+    avisoCierre('');
     pintar();
   });
 
