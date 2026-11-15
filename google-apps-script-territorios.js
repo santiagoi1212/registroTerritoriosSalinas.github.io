@@ -29,7 +29,45 @@ function getStatsConCache_() {
 }
 
 function invalidarStats_() {
-  try { CacheService.getScriptCache().remove(CACHE_KEY_STATS); } catch (e) {}
+  try { CacheService.getScriptCache().removeAll([CACHE_KEY_STATS, CACHE_KEY_REGISTROS]); } catch (e) {}
+}
+
+/* ======================= Historial para el S-13 ======================= */
+// read=registros: TODOS los registros de la hoja (no solo el último de cada
+// manzana), para armar las asignaciones del formulario S-13 en mapa.html.
+// Cada fila: [capitán, id, fecha yyyy-MM-dd, finalizado].
+const CACHE_KEY_REGISTROS = 'registros_s13';
+
+function getRegistrosConCache_() {
+  const cache = CacheService.getScriptCache();
+  const guardado = cache.get(CACHE_KEY_REGISTROS);
+  if (guardado) return JSON.parse(guardado);
+  const filas = getRegistrosParaS13_();
+  try { cache.put(CACHE_KEY_REGISTROS, JSON.stringify(filas), CACHE_SEGUNDOS_STATS); } catch (e) { /* >100KB: sin caché */ }
+  return filas;
+}
+
+function getRegistrosParaS13_() {
+  const reg = SpreadsheetApp.openById(SHEET_ID).getSheetByName(SHEET_REGISTRO);
+  if (!reg || reg.getLastRow() < 2) return [];
+  const rango   = reg.getRange(2, 1, reg.getLastRow() - 1, 5);
+  const display = rango.getDisplayValues();
+  const valores = rango.getValues();
+  const out = [];
+  for (let i = 0; i < display.length; i++) {
+    const id = canonId_(display[i][1]);
+    if (!id) continue;
+    const raw = valores[i][2];
+    const f = (raw instanceof Date && !isNaN(raw.getTime())) ? raw : parsearFecha_(raw);
+    if (!f) continue;
+    out.push([
+      String(display[i][0] || '').trim(),
+      id,
+      Utilities.formatDate(f, TZ, 'yyyy-MM-dd'),
+      String(display[i][4] || '').trim()
+    ]);
+  }
+  return out;
 }
 
 /* ======================= ID canónico ======================= */
@@ -203,7 +241,8 @@ function getStatsFromRegistroColB_() {
       ultimo[id] = {
         ultimaFecha: fechaISO,
         finalizado:  String(display[i][4] || '').trim(),
-        comentario:  String(display[i][5] || '').trim()
+        comentario:  String(display[i][5] || '').trim(),
+        capitan:     String(display[i][0] || '').trim()
       };
     }
   }
@@ -213,7 +252,8 @@ function getStatsFromRegistroColB_() {
     cantidad: counts[id],
     ultimaFecha: ultimo[id].ultimaFecha || '',
     finalizado: ultimo[id].finalizado,
-    comentario: ultimo[id].comentario
+    comentario: ultimo[id].comentario,
+    capitan: ultimo[id].capitan
   }));
 }
 
@@ -379,6 +419,12 @@ function doGet(e) {
       const cantidad = countIdInRegistroColB_(d.id);
 
       return jsonOut_({ ok: true, id: d.id, cantidad });
+    }
+
+    // ✅ registros (historial completo, para el formulario S-13)
+    if (p.read === 'registros') {
+      const out = { ok: true, registros: getRegistrosConCache_() };
+      return p.callback ? jsonpOut_(p.callback, out) : jsonOut_(out);
     }
 
     // ✅ stats_rt

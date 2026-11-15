@@ -1437,6 +1437,247 @@ init();
 </script>
 
   <script>
+// ===== Exportar formulario S-13 (último semestre) =====
+// Arma el PDF con el MISMO diseño del formulario oficial S-13-S (carta,
+// 20 territorios por hoja, 4 bloques "Asignado a" por territorio). Lo llama
+// el botón del portal (index.html), que está fuera del mapa, vía
+// window.exportarS13() del iframe.
+//
+// Datos: el historial completo de la hoja Registro (read=registros), que es
+// lo mismo que pinta el mapa pero con todos los registros y no solo el último
+// de cada manzana. Si el backend todavía no tiene read=registros, se usa el
+// último registro de cada manzana (lo que ya está cargado en el mapa).
+(function(){
+  const LIBS = [
+    'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'
+  ];
+  function cargarScript(src){
+    return new Promise((ok, mal) => {
+      const s = document.createElement('script');
+      s.src = src; s.onload = ok; s.onerror = () => mal(new Error('No se pudo cargar ' + src));
+      document.head.appendChild(s);
+    });
+  }
+  async function cargarJsPDF(){
+    if (!(window.jspdf && window.jspdf.jsPDF)) await cargarScript(LIBS[0]);
+    return window.jspdf.jsPDF;
+  }
+
+  const fmt = d => d ? String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + d.getFullYear() : '';
+  // "CarlosPena" -> "Carlos Pena"
+  const nombreLindo = s => String(s || '').trim().replace(/([a-záéíóúñ])([A-ZÁÉÍÓÚÑ])/g, '$1 $2');
+  // Año de servicio: de septiembre a agosto (sept. 2026 = año de servicio 2027)
+  const anioServicio = d => d.getMonth() >= 8 ? d.getFullYear() + 1 : d.getFullYear();
+
+  // Historial completo: [[capitán, id, 'yyyy-MM-dd', finalizado], ...]
+  async function cargarRegistros(){
+    const base = (typeof WEBHOOK_URL === 'string' && WEBHOOK_URL) ? WEBHOOK_URL : '';
+    if (base) {
+      const url = base + (base.includes('?') ? '&' : '?') + 'read=registros';
+      const p = await cargarUnoJSONP(url, 25000);
+      if (p && Array.isArray(p.registros)) return { registros: p.registros, completo: true };
+    }
+    // Fallback: último registro de cada manzana (lo que pinta el mapa)
+    const regs = [];
+    (window.__datosMap || new Map()).forEach(d => {
+      if (d && d.id && d.ultimaFecha) regs.push([d.capitan || '', idKey(d.id), d.ultimaFecha, d.finalizado || '']);
+    });
+    return { registros: regs, completo: false };
+  }
+
+  // Asignaciones de cada territorio: se recorren sus registros por fecha;
+  // una asignación empieza con el primer registro y se completa el día en que
+  // TODAS las manzanas del territorio quedaron registradas como finalizadas
+  // ("¿Finalizó? = No" no cuenta). El registro siguiente abre otra.
+  function armarTerritorios(registros){
+    const manzanas = new Map();   // terr -> Set(ids)
+    const terrDeId = new Map();   // id -> terr
+    for (const p of (window.poligonos || [])) {
+      const t = toNumeroTerritorio(p.territorio);
+      if (!t) continue;
+      const id = idKey(p.id);
+      if (!manzanas.has(t)) manzanas.set(t, new Set());
+      manzanas.get(t).add(id);
+      terrDeId.set(id, t);
+    }
+    const porTerr = new Map();
+    // La hoja tiene lo más nuevo arriba: se invierte para que, a igual fecha,
+    // quede primero lo que se cargó antes.
+    registros.slice().reverse().forEach(r => {
+      const id = idKey(r[1]);
+      const t = terrDeId.get(id);
+      const f = parsearFecha_(r[2]);
+      if (!t || !f) return;
+      if (!porTerr.has(t)) porTerr.set(t, []);
+      porTerr.get(t).push({ cap: nombreLindo(r[0]), id, f, fin: !esPendiente(r[3]) });
+    });
+
+    const out = [];
+    for (const t of [...manzanas.keys()].sort((a,b) => a-b)) {
+      const total = manzanas.get(t).size;
+      const regs = (porTerr.get(t) || []).sort((a,b) => a.f - b.f);
+      const asignaciones = [];
+      let actual = null;
+      for (const r of regs) {
+        if (!actual) actual = { inicio: r.f, fin: null, caps: [], hechas: new Set() };
+        if (r.cap && !actual.caps.includes(r.cap)) actual.caps.push(r.cap);
+        if (r.fin) actual.hechas.add(r.id);
+        if (actual.hechas.size >= total) { actual.fin = r.f; asignaciones.push(actual); actual = null; }
+      }
+      if (actual) asignaciones.push(actual);
+      out.push({ terr: t, asignaciones });
+    }
+    return out;
+  }
+
+  // ---------- Dibujo del formulario (medidas en mm, hoja carta) ----------
+  const X = { num: 13, ult: 26, blq: 49, fin: 205 };
+  const ANCHO_BLQ = (X.fin - X.blq) / 4;
+  const Y = { head: 40.5, headAsig: 45.6, filas: 53.6, finFilas: 252 };
+  const FILAS_POR_HOJA = 20;
+  const ALTO_FILA = (Y.finFilas - Y.filas) / FILAS_POR_HOJA;
+
+  function textoAjustado(doc, txt, cx, cy, maxW, size, minSize){
+    if (!txt) return;
+    let s = size;
+    doc.setFontSize(s);
+    while (doc.getTextWidth(txt) > maxW && s > minSize) { s -= 0.25; doc.setFontSize(s); }
+    let t = txt;
+    while (doc.getTextWidth(t) > maxW && t.length > 1) t = t.slice(0, -2) + '…';
+    doc.text(t, cx, cy, { align: 'center', baseline: 'middle' });
+  }
+
+  // "Asignado a": en una línea si entra (achicando hasta 6pt); si no, los
+  // nombres se reparten en dos líneas.
+  function dibujarNombre(doc, nombres, cx, cy, maxW){
+    const txt = nombres.join(' / ');
+    if (!txt) return;
+    doc.setFontSize(6);
+    if (nombres.length < 2 || doc.getTextWidth(txt) <= maxW) return textoAjustado(doc, txt, cx, cy, maxW, 7.5, 6);
+    const corte = Math.ceil(nombres.length / 2);
+    textoAjustado(doc, nombres.slice(0, corte).join(' / '), cx, cy - 1.1, maxW, 6, 4.5);
+    textoAjustado(doc, nombres.slice(corte).join(' / '), cx, cy + 1.1, maxW, 6, 4.5);
+  }
+
+  function dibujarHoja(doc, filas, anioTxt, periodoTxt){
+    const W = doc.internal.pageSize.getWidth();
+    doc.setTextColor(0); doc.setDrawColor(0);
+
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(13.5);
+    doc.text('REGISTRO DE ASIGNACIÓN DE TERRITORIO', W/2, 23, { align: 'center' });
+    doc.setFontSize(10.5);
+    doc.text('Año de servicio:', X.num, 34);
+    doc.setLineWidth(0.3); doc.line(43, 34.8, 70, 34.8);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
+    doc.text(anioTxt, 56.5, 33.6, { align: 'center' });
+    doc.setFontSize(8); doc.setTextColor(90);
+    doc.text(periodoTxt, X.fin, 34, { align: 'right' });
+    doc.setTextColor(0);
+
+    // Encabezado
+    doc.setFontSize(8.5);
+    doc.text(['Núm.', 'de terr.'], (X.num + X.ult)/2, 44.2, { align: 'center' });
+    doc.text(['Última fecha', 'en que se', 'completó*'], (X.ult + X.blq)/2, 43.2, { align: 'center' });
+    for (let b = 0; b < 4; b++) {
+      const x0 = X.blq + b * ANCHO_BLQ, xm = x0 + ANCHO_BLQ/2;
+      doc.setFontSize(9);
+      doc.text('Asignado a', xm, 44, { align: 'center' });
+      doc.setFontSize(6.6);
+      doc.text(['Fecha en que', 'se asignó'], (x0 + xm)/2, 48.6, { align: 'center' });
+      doc.text(['Fecha en que', 'se completó'], (xm + x0 + ANCHO_BLQ)/2, 48.6, { align: 'center' });
+      doc.setLineWidth(0.15);
+      doc.line(x0, Y.headAsig, x0 + ANCHO_BLQ, Y.headAsig);
+      doc.line(xm, Y.headAsig, xm, Y.filas);
+    }
+
+    // Filas de territorios
+    for (let i = 0; i < FILAS_POR_HOJA; i++) {
+      const y0 = Y.filas + i * ALTO_FILA, ym = y0 + ALTO_FILA/2;
+      doc.setLineWidth(0.15);
+      for (let b = 0; b < 4; b++) {
+        const x0 = X.blq + b * ANCHO_BLQ;
+        doc.line(x0, ym, x0 + ANCHO_BLQ, ym);
+        doc.line(x0 + ANCHO_BLQ/2, ym, x0 + ANCHO_BLQ/2, y0 + ALTO_FILA);
+      }
+      if (i > 0) { doc.setLineWidth(0.35); doc.line(X.num, y0, X.fin, y0); }
+
+      const f = filas[i];
+      if (!f) continue;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10);
+      doc.text(String(f.terr), (X.num + X.ult)/2, y0 + ALTO_FILA/2, { align: 'center', baseline: 'middle' });
+      doc.setFontSize(8.5);
+      doc.text(f.ultima, (X.ult + X.blq)/2, y0 + ALTO_FILA/2, { align: 'center', baseline: 'middle' });
+      f.asignaciones.forEach((a, b) => {
+        const x0 = X.blq + b * ANCHO_BLQ;
+        dibujarNombre(doc, a.nombres, x0 + ANCHO_BLQ/2, y0 + ALTO_FILA/4, ANCHO_BLQ - 2);
+        doc.setFontSize(7.5);
+        doc.text(a.asigno, x0 + ANCHO_BLQ/4, ym + ALTO_FILA/4, { align: 'center', baseline: 'middle' });
+        doc.text(a.completo, x0 + ANCHO_BLQ*3/4, ym + ALTO_FILA/4, { align: 'center', baseline: 'middle' });
+      });
+    }
+
+    // Líneas gruesas: borde, fin del encabezado y separación de bloques
+    doc.setLineWidth(0.15);
+    doc.line(X.ult, Y.head, X.ult, Y.finFilas);
+    doc.setLineWidth(0.8);
+    doc.rect(X.num, Y.head, X.fin - X.num, Y.finFilas - Y.head);
+    doc.line(X.num, Y.filas, X.fin, Y.filas);
+    for (let b = 0; b < 4; b++) doc.line(X.blq + b * ANCHO_BLQ, Y.head, X.blq + b * ANCHO_BLQ, Y.finFilas);
+
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5);
+    doc.text('*Cuando comience una nueva página, anote en esta columna la última fecha en que los territorios se completaron.', X.num, 257.5);
+    doc.setFontSize(8);
+    doc.text('S-13-S  1/22', X.num, 265);
+  }
+
+  window.exportarS13 = async function(){
+    try {
+      showBusy('Armando el formulario S-13…');
+      const [JsPDF, datos] = await Promise.all([cargarJsPDF(), cargarRegistros()]);
+
+      const hasta = new Date(); hasta.setHours(23,59,59,999);
+      const desde = new Date(hasta); desde.setMonth(desde.getMonth() - 6); desde.setHours(0,0,0,0);
+
+      // Por territorio: asignaciones del semestre (las 4 más recientes, de
+      // izquierda a derecha) y la última fecha en que se completó según todos
+      // los registros (incluidas las asignaciones que se ven a la derecha).
+      const filas = armarTerritorios(datos.registros).map(({ terr, asignaciones }) => {
+        const previas = asignaciones.filter(a => a.fin);
+        const delSemestre = asignaciones.filter(a => a.inicio <= hasta && (!a.fin || a.fin >= desde)).slice(-4);
+        return {
+          terr,
+          ultima: previas.length ? fmt(previas[previas.length - 1].fin) : '',
+          asignaciones: delSemestre.map(a => ({ nombres: a.caps, asigno: fmt(a.inicio), completo: fmt(a.fin) }))
+        };
+      });
+
+      const a0 = anioServicio(desde), a1 = anioServicio(hasta);
+      const anioTxt = a0 === a1 ? String(a1) : a0 + ' / ' + a1;
+      const periodoTxt = 'Último semestre: ' + fmt(desde) + ' al ' + fmt(hasta);
+
+      const doc = new JsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
+      for (let i = 0; i < filas.length; i += FILAS_POR_HOJA) {
+        if (i) doc.addPage();
+        dibujarHoja(doc, filas.slice(i, i + FILAS_POR_HOJA), anioTxt, periodoTxt);
+      }
+
+      const iso = d => fmt(d).split('/').reverse().join('-');
+      doc.save('S-13_' + iso(desde) + '_a_' + iso(hasta) + '.pdf');
+      (window.showToast || console.log)(datos.completo
+        ? 'PDF S-13 descargado'
+        : 'PDF S-13 descargado (sin historial: falta actualizar el Apps Script)', 'success');
+    } catch (e) {
+      console.error(e);
+      alert('No se pudo generar el PDF: ' + (e.message || e));
+    } finally {
+      hideBusy();
+    }
+  };
+})();
+  </script>
+
+  <script>
     // Evitar ingresar un Capitán que no esté en la lista
     document.addEventListener("DOMContentLoaded", () => {
       const inputCap = document.getElementById("campoCapitan");
