@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="es">
+<head>
+<link rel="preconnect" href="https://script.google.com" crossorigin><link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inactivos e irregulares · Portal Salinas</title>
+<!--
+  Publicadores INACTIVOS (6 meses seguidos sin participar: ya no se cuentan
+  como publicadores en ningún cálculo) y, al lado, los IRREGULARES (2 o más
+  meses sin participar en los últimos 6: posibles inactivos a futuro).
+  Misma regla y mismos datos que Informes de predicación
+  (INFORMES_PREDICACION_API_URL, ?action=cache) — ver estado-actividad.js.
+  Solo admin / capitán.
+-->
+<script src="../app-config.js"></script>
+<script src="../app-auth.js"></script>
+<script src="./estado-actividad.js"></script>
+<style>
+  :root{
+    --bg:#0b1220; --card:#111a2e; --card-2:#0f1728; --border:#22304a;
+    --text:#e5e7eb; --muted:#94a3b8; --accent:#3b82f6;
+    --good:#22c55e; --warn:#f59e0b; --crit:#ef4444;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light){
+    :root:not([data-theme="dark"]){
+      --bg:#f6f7f9; --card:#ffffff; --card-2:#f8fafc; --border:#e2e8f0;
+      --text:#0f172a; --muted:#64748b; --accent:#2563eb;
+      --good:#16a34a; --warn:#d97706; --crit:#dc2626;
+      color-scheme: light;
+    }
+  }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--text); font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  .wrap{ max-width:1100px; margin:0 auto; padding:28px 16px 48px; }
+  h1{ font-size:22px; margin:0 0 4px; }
+  .sub{ color:var(--muted); margin:0 0 18px; font-size:14px; max-width:760px; }
+
+  .tabs{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom:16px; }
+  .tab{ border:1px solid var(--border); background:var(--card); color:var(--text); border-radius:999px; padding:7px 14px; font:600 14px/1 inherit; font-family:inherit; cursor:pointer; }
+  .tab[aria-pressed="true"]{ background:var(--accent); border-color:var(--accent); color:#fff; }
+
+  .columnas{ display:grid; grid-template-columns:1fr 1fr; gap:16px; align-items:start; }
+  @media (max-width: 760px){ .columnas{ grid-template-columns:1fr; } }
+
+  .card{ background:var(--card); border:1px solid var(--border); border-radius:14px; padding:16px; }
+  .card h2{ font-size:17px; margin:0 0 4px; display:flex; align-items:center; gap:8px; }
+  .card h2 .n{ margin-left:auto; font-size:22px; font-variant-numeric:tabular-nums; }
+  .card.inactivos h2 .n{ color:var(--crit); }
+  .card.irregulares h2 .n{ color:var(--warn); }
+  .card .desc{ color:var(--muted); font-size:13px; margin:0 0 12px; }
+
+  .persona{ background:var(--card-2); border:1px solid var(--border); border-radius:10px; padding:10px 12px; margin-bottom:8px; }
+  .inactivos .persona{ border-left:3px solid var(--crit); }
+  .irregulares .persona{ border-left:3px solid var(--warn); }
+  .persona .fila1{ display:flex; gap:8px; align-items:baseline; flex-wrap:wrap; }
+  .persona .nombre{ font-weight:600; }
+  .persona .grupo, .persona .estado{ color:var(--muted); font-size:12.5px; }
+  .persona .detalle{ color:var(--muted); font-size:12.5px; margin-top:6px; }
+  .persona .detalle b{ color:var(--text); }
+
+  .meses{ display:flex; gap:4px; margin-top:8px; }
+  .mes{ flex:1; min-width:0; text-align:center; font-size:10.5px; color:var(--muted); }
+  .mes i{ display:block; height:8px; border-radius:4px; margin-bottom:3px; background:var(--crit); opacity:.85; }
+  .mes.si i{ background:var(--good); }
+  .mes.no-informo i{ background:transparent; border:1.5px dashed var(--crit); height:8px; }
+
+  .leyenda{ display:flex; flex-wrap:wrap; gap:14px; font-size:12.5px; color:var(--muted); margin:0 0 16px; }
+  .leyenda span{ display:inline-flex; align-items:center; gap:6px; }
+  .leyenda i{ width:18px; height:8px; border-radius:4px; display:inline-block; }
+
+  .vacio{ color:var(--good); font-weight:600; font-size:14px; padding:6px 0; }
+  .estado-carga{ color:var(--muted); padding:30px 0; text-align:center; }
+  .pie{ color:var(--muted); font-size:12.5px; margin-top:18px; }
+  #locked, #forbidden{ display:none; text-align:center; padding:60px 16px; color:var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="locked">Iniciá sesión desde el portal para ver esta pantalla.</div>
+  <div id="forbidden">Esta pantalla es solo para administradores y capitanes.</div>
+
+  <div id="contenido" style="display:none">
+    <h1>Inactivos e irregulares</h1>
+    <p class="sub">
+      Según los informes de predicación de los últimos 6 meses. Los <b>inactivos</b> (6 meses seguidos sin participar)
+      ya no se cuentan como publicadores en ningún total, gráfico ni listado de faltantes. Si vuelven a informar que
+      participaron, se cuentan de nuevo solos.
+    </p>
+    <div class="tabs" id="tabs"></div>
+    <div class="leyenda">
+      <span><i style="background:var(--good)"></i> Participó</span>
+      <span><i style="background:var(--crit);opacity:.85"></i> Informó que no participó</span>
+      <span><i style="border:1.5px dashed var(--crit)"></i> No informó</span>
+    </div>
+    <div id="salida"><div class="estado-carga">Cargando…</div></div>
+    <p class="pie" id="pie"></p>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var API_URL = (window.APP_CONFIG && window.APP_CONFIG.INFORMES_PREDICACION_API_URL) || '';
+  var CACHE_KEY = 'salinas_inactivos_v1';
+  var MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  var MESES_LARGOS = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  var datos = null, grupoSel = 'todos';
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function mesLargo(pk) { return MESES_LARGOS[pk % 12] + ' ' + Math.floor(pk / 12); }
+
+  function reducir(data) {
+    return {
+      generatedAt: data.generatedAt || null,
+      roster: (data.roster || []).map(function (r) { return { grupo: Number(r.grupo), nombre: r.nombre, estado: r.estado || '' }; }),
+      rows: (data.rows || []).map(function (r) {
+        return { nombre: r.nombre, periodKey: Number(r.periodKey), participo: r.participo, horas: r.horas };
+      })
+    };
+  }
+  function leerCache() { try { return JSON.parse(localStorage.getItem(CACHE_KEY) || 'null'); } catch (e) { return null; } }
+  function guardarCache(d) { try { localStorage.setItem(CACHE_KEY, JSON.stringify(d)); } catch (e) {} }
+
+  async function traer() {
+    var ultimoError;
+    for (var i = 0; i < 3; i++) {
+      try {
+        var res = await fetch(API_URL + (API_URL.indexOf('?') >= 0 ? '&' : '?') + 'action=cache&_=' + Date.now(), { cache: 'no-store' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        var json = await res.json();
+        if (json.error) throw new Error(json.error);
+        return reducir(json);
+      } catch (e) {
+        ultimoError = e;
+        await new Promise(function (r) { setTimeout(r, 1200); });
+      }
+    }
+    throw ultimoError;
+  }
+
+  function tiraMeses(e) {
+    // La ventana viene del más nuevo al más viejo: se muestra cronológica.
+    return '<div class="meses">' + e.ventana.slice().reverse().map(function (m) {
+      var cls = m.participo ? 'si' : (m.informo ? '' : 'no-informo');
+      var tit = mesLargo(m.periodKey) + ': ' + (m.participo ? 'participó' : (m.informo ? 'informó que no participó' : 'no informó'));
+      return '<div class="mes ' + cls + '" title="' + esc(tit) + '"><i></i>' + MESES[m.periodKey % 12] + '</div>';
+    }).join('') + '</div>';
+  }
+
+  function tarjetaPersona(p, tipo) {
+    var e = p.actividad;
+    var ultimo = e.ultimoParticipo != null ? 'Último mes que participó: <b>' + esc(mesLargo(e.ultimoParticipo)) + '</b>'
+      : 'No figura ningún mes participando';
+    var extra = tipo === 'irregular'
+      ? '<b>' + e.sinParticipar + '</b> de 6 meses sin participar' + (e.seguidos >= 2 ? ' · <b>' + e.seguidos + '</b> seguidos (los últimos)' : '') + ' · '
+      : '';
+    return '<div class="persona">' +
+      '<div class="fila1"><span class="nombre">' + esc(p.nombre) + '</span>' +
+      '<span class="grupo">Grupo ' + esc(p.grupo) + '</span>' +
+      (p.estado ? '<span class="estado">· ' + esc(p.estado) + '</span>' : '') + '</div>' +
+      tiraMeses(e) +
+      '<div class="detalle">' + extra + ultimo + '</div>' +
+      '</div>';
+  }
+
+  function pintar() {
+    var limpio = window.EstadoActividad.sinInactivos({ roster: datos.roster, rows: datos.rows });
+    var grupos = Array.from(new Set(datos.roster.map(function (r) { return r.grupo; }).filter(function (g) { return !isNaN(g); })))
+      .sort(function (a, b) { return a - b; });
+    if (grupoSel !== 'todos' && grupos.indexOf(grupoSel) === -1) grupoSel = 'todos';
+    var deGrupo = function (p) { return grupoSel === 'todos' || p.grupo === grupoSel; };
+    var porNombre = function (a, b) { return a.grupo - b.grupo || a.nombre.localeCompare(b.nombre, 'es'); };
+
+    var inactivos = limpio.inactivos.filter(deGrupo).sort(porNombre);
+    // Irregulares: primero los más cerca de quedar inactivos.
+    var irregulares = limpio.irregulares.filter(deGrupo).sort(function (a, b) {
+      return (b.actividad.seguidos - a.actividad.seguidos) || (b.actividad.sinParticipar - a.actividad.sinParticipar) || porNombre(a, b);
+    });
+
+    var cuenta = function (lista, g) { return lista.filter(function (p) { return p.grupo === g; }).length; };
+    document.getElementById('tabs').innerHTML =
+      '<button class="tab" data-grupo="todos" aria-pressed="' + (grupoSel === 'todos') + '">Todos</button>' +
+      grupos.map(function (g) {
+        var n = cuenta(limpio.inactivos, g) + cuenta(limpio.irregulares, g);
+        return '<button class="tab" data-grupo="' + g + '" aria-pressed="' + (grupoSel === g) + '">Grupo ' + g + (n ? ' (' + n + ')' : '') + '</button>';
+      }).join('');
+
+    document.getElementById('salida').innerHTML = '<div class="columnas">' +
+      '<section class="card inactivos"><h2>⛔ Inactivos <span class="n">' + inactivos.length + '</span></h2>' +
+        '<p class="desc">6 meses seguidos sin participar. No se cuentan como publicadores.</p>' +
+        (inactivos.length ? inactivos.map(function (p) { return tarjetaPersona(p, 'inactivo'); }).join('') : '<div class="vacio">✅ Nadie inactivo.</div>') +
+      '</section>' +
+      '<section class="card irregulares"><h2>⚠ Irregulares <span class="n">' + irregulares.length + '</span></h2>' +
+        '<p class="desc">2 o más meses sin participar en los últimos 6: posibles inactivos a futuro. Arriba, los más cerca de quedar inactivos.</p>' +
+        (irregulares.length ? irregulares.map(function (p) { return tarjetaPersona(p, 'irregular'); }).join('') : '<div class="vacio">✅ Nadie irregular.</div>') +
+      '</section></div>';
+
+    if (datos.generatedAt) {
+      var d = new Date(datos.generatedAt);
+      document.getElementById('pie').textContent = 'Datos de informes al ' + d.toLocaleDateString('es-UY') + ' ' +
+        d.toLocaleTimeString('es-UY', { hour: '2-digit', minute: '2-digit', hour12: false }) + ' · Quienes tienen menos de 6 meses de informes no aparecen (falta información).';
+    }
+  }
+
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-grupo]');
+    if (!b || !datos) return;
+    var g = b.getAttribute('data-grupo');
+    grupoSel = g === 'todos' ? 'todos' : Number(g);
+    pintar();
+  });
+
+  // ---- Gate: solo admin / capitán ----
+  function puedeVer() {
+    var logged = !!(window.AuthApp && AuthApp.isLogged && AuthApp.isLogged());
+    var role = String((window.AuthApp && AuthApp.getRole && AuthApp.getRole()) || '').toLowerCase();
+    document.getElementById('locked').style.display = logged ? 'none' : 'block';
+    var ok = logged && ['admin', 'capitan'].indexOf(role) !== -1;
+    document.getElementById('forbidden').style.display = (logged && !ok) ? 'block' : 'none';
+    document.getElementById('contenido').style.display = ok ? 'block' : 'none';
+    return ok;
+  }
+
+  document.addEventListener('DOMContentLoaded', async function () {
+    if (window.AuthApp && AuthApp.onChange) AuthApp.onChange(puedeVer);
+    if (window.AuthApp && AuthApp.restore) { try { await AuthApp.restore(); } catch (e) {} }
+    if (!puedeVer()) return;
+    if (!API_URL) {
+      document.getElementById('salida').innerHTML = '<div class="estado-carga">Falta configurar INFORMES_PREDICACION_API_URL en app-config.js.</div>';
+      return;
+    }
+    var guardado = leerCache();
+    if (guardado && guardado.roster) { datos = guardado; pintar(); }
+    try {
+      datos = await traer();
+      guardarCache(datos);
+      pintar();
+    } catch (err) {
+      console.error(err);
+      if (!datos) document.getElementById('salida').innerHTML = '<div class="estado-carga">No se pudieron cargar los datos. Probá de nuevo en un rato.</div>';
+    }
+  });
+})();
+</script>
+</body>
+</html>

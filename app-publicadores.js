@@ -493,7 +493,18 @@
   // reescribe todo el innerHTML.
   const gruposColapsadosTabla = new Set();
 
-  function renderResumen(el, personas) {
+  // Un inactivo en la predicación (6 meses seguidos sin participar) deja de
+  // contarse como publicador: no entra en totales ni porcentajes.
+  function esInactivo(p) {
+    return !!(p && p.actividad && p.actividad.code === "inactivo");
+  }
+  function sinInactivos(personas) {
+    return (personas || []).filter(p => !esInactivo(p));
+  }
+
+  function renderResumen(el, todas) {
+    const personas = sinInactivos(todas);
+    const inactivos = (todas || []).length - personas.length;
     const total = personas.length;
     const c = {
       dpa: personas.filter(p => p.dpa).length,
@@ -506,6 +517,7 @@
       <div class="resumen-item"><span class="n">${c.dpa}/${total}</span><span class="l">DPA</span></div>
       <div class="resumen-item"><span class="n">${c.usoDatos}/${total}</span><span class="l">Uso de Datos</span></div>
       <div class="resumen-item"><span class="n">${c.datosPersonales}/${total}</span><span class="l">Datos Personales</span></div>
+      ${inactivos ? `<div class="resumen-item" title="6 meses seguidos sin participar en la predicación: no se cuentan como publicadores"><span class="n" style="color:#f87171;">${inactivos}</span><span class="l">Inactivos (no cuentan)</span></div>` : ""}
     `;
   }
 
@@ -604,6 +616,8 @@
     parseEstados,
     cargarEstadoActividad,
     alertaActividadHtml,
+    esInactivo,
+    sinInactivos,
     cargarDatosPublicadores,
     actualizarCachePublicadores,
     leerCachePublicadores,

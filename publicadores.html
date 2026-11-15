@@ -1206,7 +1206,11 @@ function renderEstadisticas(){
     return;
   }
 
-  const total = personasCache.length;
+  // Los inactivos en la predicación dejan de contarse como publicadores: se
+  // excluyen de todos los totales, gráficos y listados (solo se muestran en
+  // "Actividad en la predicación").
+  const personasStats = window.PublicadoresApp.sinInactivos(personasCache);
+  const total = personasStats.length;
   const pct = (n) => total ? Math.round((n / total) * 100) : 0;
 
   // Anciano / Siervo Ministerial son un nombramiento en paralelo, no una
@@ -1214,7 +1218,7 @@ function renderEstadisticas(){
   // viniendo del campo "Estado" que carga el admin a mano en el modal.
   const ROLES_PARALELOS = ['Anciano', 'Siervo Ministerial'];
   const countsRol = {};
-  ROLES_PARALELOS.forEach(r => { countsRol[r] = personasCache.filter(p => p.estado && p.estado.includes(r)).length; });
+  ROLES_PARALELOS.forEach(r => { countsRol[r] = personasStats.filter(p => p.estado && p.estado.includes(r)).length; });
 
   // La categoría de publicador sale del campo "Estado" de la pestaña
   // "publicadores" (lo que carga el admin a mano) — volvió acá porque la
@@ -1237,13 +1241,13 @@ function renderEstadisticas(){
   const countsCategoria = {};
   CATEGORIAS.forEach(c => { countsCategoria[c] = 0; });
   let sinCategoria = 0;
-  personasCache.forEach(p => {
+  personasStats.forEach(p => {
     const cat = categoriaDePersona(p);
     if (cat && countsCategoria.hasOwnProperty(cat)) countsCategoria[cat]++; else sinCategoria++;
   });
 
   const countsGrupo = new Map();
-  personasCache.forEach(p => {
+  personasStats.forEach(p => {
     const g = p.grupo || 'Sin grupo';
     countsGrupo.set(g, (countsGrupo.get(g) || 0) + 1);
   });
@@ -1253,12 +1257,12 @@ function renderEstadisticas(){
     return String(a).localeCompare(String(b), 'es');
   });
 
-  const dpaOk = personasCache.filter(p => p.dpa).length;
+  const dpaOk = personasStats.filter(p => p.dpa).length;
   // "No autoriza" cuenta como resuelto: ya se notificó la decisión.
-  const usoDatosOk = personasCache.filter(p => p.usoDatos || p.usoDatosNo).length;
-  const datosPersonalesOk = personasCache.filter(p => p.datosPersonales).length;
-  const dpaAlertaAmarilla = personasCache.filter(p => p.alertaDPA && p.alertaDPA.nivel === 'amarilla').length;
-  const dpaAlertaRoja = personasCache.filter(p => p.alertaDPA && p.alertaDPA.nivel === 'roja').length;
+  const usoDatosOk = personasStats.filter(p => p.usoDatos || p.usoDatosNo).length;
+  const datosPersonalesOk = personasStats.filter(p => p.datosPersonales).length;
+  const dpaAlertaAmarilla = personasStats.filter(p => p.alertaDPA && p.alertaDPA.nivel === 'amarilla').length;
+  const dpaAlertaRoja = personasStats.filter(p => p.alertaDPA && p.alertaDPA.nivel === 'roja').length;
 
   // Activo/Irregular/Inactivo: ya se calcula por persona (p.actividad, ver
   // cargarEstadoActividad en app-publicadores.js, con datos de Informes de
@@ -1277,11 +1281,11 @@ function renderEstadisticas(){
   // de un botón "Ver todos".
   const LIMITE_LISTA = 5;
   const porNombre = (a, b) => a.nombre.localeCompare(b.nombre, 'es');
-  const listaDpa = personasCache.filter(p => !p.dpa || (p.alertaDPA && p.alertaDPA.nivel === 'roja')).sort(porNombre);
-  const listaDpaPorVencer = personasCache.filter(p => p.dpa && p.alertaDPA && p.alertaDPA.nivel === 'amarilla').sort(porNombre);
+  const listaDpa = personasStats.filter(p => !p.dpa || (p.alertaDPA && p.alertaDPA.nivel === 'roja')).sort(porNombre);
+  const listaDpaPorVencer = personasStats.filter(p => p.dpa && p.alertaDPA && p.alertaDPA.nivel === 'amarilla').sort(porNombre);
   // "No autoriza" no cuenta como pendiente: ya se notificó la decisión.
-  const listaUsoDatos = personasCache.filter(p => !p.usoDatos && !p.usoDatosNo).sort(porNombre);
-  const listaDatosPersonales = personasCache.filter(p => !p.datosPersonales).sort(porNombre);
+  const listaUsoDatos = personasStats.filter(p => !p.usoDatos && !p.usoDatosNo).sort(porNombre);
+  const listaDatosPersonales = personasStats.filter(p => !p.datosPersonales).sort(porNombre);
 
   function renderItemAlerta(p, nivel, razon){
     return `
@@ -1368,7 +1372,7 @@ function renderEstadisticas(){
       <div class="stats-cards">
         <div class="stats-card"><span class="n" style="color:#4ade80;">${actividadCounts.activo}</span><span class="l">Activo</span></div>
         <div class="stats-card"><span class="n" style="color:#facc15;">${actividadCounts.irregular}</span><span class="l">Irregular</span></div>
-        <div class="stats-card"><span class="n" style="color:#f87171;">${actividadCounts.inactivo}</span><span class="l">Inactivo</span></div>
+        <div class="stats-card"><span class="n" style="color:#f87171;">${actividadCounts.inactivo}</span><span class="l">Inactivo (no cuentan como publicadores)</span></div>
         <div class="stats-card"><span class="n">${actividadCounts['sin-info']}</span><span class="l">Falta información</span></div>
       </div>
       <p class="stats-alerta" style="margin-top:8px; padding-top:0; border-top:none;">Según Informes de predicación.</p>

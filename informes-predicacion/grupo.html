@@ -20,6 +20,7 @@
 <!-- Solo para saber si quien mira es admin (botón "Reporte"); la página en
      sí sigue siendo pública. -->
 <script src="../app-auth.js"></script>
+<script src="./estado-actividad.js"></script>
 <style>
   :root{
     --bg:#0b1220; --card:#111a2e; --card-2:#0f1728; --border:#22304a;
@@ -319,10 +320,26 @@
     return '<div class="card"><h2>Resumen de todos los grupos <span class="mes">' + esc(etiquetaMes(mesSel)) + '</span></h2>' +
       '<table><thead><tr><th>Grupo</th><th class="num">Integrantes</th><th class="num">Enviaron</th><th class="num">No informó</th><th class="num">Faltan</th><th class="num">%</th></tr></thead>' +
       '<tbody>' + filas + '<tr><td><b>Total</b></td><td class="num"><b>' + tot.t + '</b></td><td class="num"><b>' + tot.r + '</b></td><td class="num"><b>' + tot.n + '</b></td><td class="num"><b>' + tot.f + '</b></td><td class="num"><b>' +
-      (tot.t ? Math.round(tot.r / tot.t * 100) : 0) + '%</b></td></tr></tbody></table></div>';
+      (tot.t ? Math.round(tot.r / tot.t * 100) : 0) + '%</b></td></tr></tbody></table>' +
+      // Página pública: el dato de inactivos solo lo ve un admin.
+      (datos.inactivos && datos.inactivos.length && esAdmin()
+        ? '<p style="margin:8px 0 0;font-size:12.5px;opacity:.75">No se cuentan ' + datos.inactivos.length + ' publicador(es) inactivo(s) (6 meses seguidos sin participar).</p>'
+        : '') + '</div>';
+  }
+
+  // Los inactivos (6 meses seguidos sin participar) dejan de contarse como
+  // publicadores: se sacan del padrón antes de cualquier cálculo (integrantes,
+  // faltan, cerrar mes, reporte mensual). Se recalcula en cada pintada porque
+  // "Cerrar mes" agrega registros y puede cambiar el estado de alguien.
+  function aplicarInactivos() {
+    if (!datos.rosterCompleto) datos.rosterCompleto = datos.roster;
+    var l = window.EstadoActividad.sinInactivos({ roster: datos.rosterCompleto, rows: datos.rows });
+    datos.roster = l.roster;
+    datos.inactivos = l.inactivos.map(function (p) { return { grupo: p.grupo, nombre: p.nombre }; });
   }
 
   function pintar() {
+    aplicarInactivos();
     cerrarPop();
     setTimeout(actualizarBotonCierre, 0);
     var gs = grupos(), ms = meses();
@@ -655,7 +672,7 @@
       '<table><thead><tr><th></th><th class="num">Promedio por mes</th><th></th></tr></thead><tbody>' +
       filas.map(function (f) { return '<tr><td>' + esc(f[0]) + '</td><td class="num">' + fmt(f[1]) + '</td><td>' + esc(f[2]) + '</td></tr>'; }).join('') +
       '</tbody></table>' +
-      '<p class="pie">Quiénes faltaron se calcula con los integrantes actuales de cada grupo.</p></section>';
+      '<p class="pie">Quiénes faltaron se calcula con los integrantes actuales de cada grupo, sin contar a los inactivos.</p></section>';
 
     document.getElementById('rep-salida').innerHTML = html + promedios;
   }

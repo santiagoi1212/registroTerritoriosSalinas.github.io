@@ -123,7 +123,11 @@
   .embed-title{ display:flex; align-items:center; gap:9px; font-weight:600; font-size:14.5px; overflow:hidden; }
   .embed-title .nav-icon{ width:auto; font-size:17px; }
   .embed-title span:last-child{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .embed-actions{ display:flex; gap:6px; flex-shrink:0; }
+  .embed-actions{ display:flex; gap:6px; flex-shrink:0; align-items:center; }
+  .btn-s13{ border:1px solid var(--border); background:var(--card); color:inherit; font-family:inherit; font-size:13px; font-weight:600; padding:7px 12px; border-radius:8px; cursor:pointer; white-space:nowrap; }
+  .btn-s13:hover{ filter:brightness(1.1); }
+  .btn-s13:disabled{ opacity:.6; cursor:default; }
+  @media (max-width: 640px){ .btn-s13 .s13-largo{ display:none; } }
   .embed-frame-wrap{ position:relative; flex:1; min-height:0; }
   .embed-frame{ position:absolute; inset:0; width:100%; height:100%; border:none; background:#fff; }
   .embed-loading{
@@ -314,6 +318,7 @@
           <span id="embed-title-text"></span>
         </div>
         <div class="embed-actions">
+          <button id="embed-s13" class="btn-s13" type="button" style="display:none" title="Descargar el PDF del formulario S-13 con los datos del mapa (últimos 6 meses)">📄 <span class="s13-largo">Exportar formulario </span>S-13<span class="s13-largo"> último semestre</span></button>
           <a id="embed-open-new" class="btn-icon" href="#" target="_blank" rel="noopener" title="Abrir en pestaña nueva">↗</a>
           <button id="embed-close" class="btn-icon" type="button" title="Volver al inicio">✕</button>
         </div>
@@ -533,6 +538,12 @@ const ACCESOS = [
     roles: null
   },
   {
+    group: 'Predicación', icon: '⛔', title: 'Inactivos e irregulares',
+    desc: 'Inactivos (6 meses sin participar, ya no cuentan como publicadores) y los irregulares que podrían quedar inactivos.',
+    href: './informes-predicacion/inactivos.html',
+    roles: ['admin','capitan']
+  },
+  {
     group: 'Predicación', icon: '📋', title: 'Informe de predicación',
     desc: 'Registro de horas y actividad de predicación.',
     href: './informes/index.html',
@@ -576,11 +587,26 @@ function openSection(a){
     frame.src = a.href;
     frame.dataset.src = a.href;
   }
+  // Botón S-13: solo en el Mapa de Territorios y para admin/capitán.
+  const rolS13 = String((window.AuthApp && AuthApp.getRole && AuthApp.getRole()) || '').toLowerCase();
+  document.getElementById('embed-s13').style.display =
+    (a.href === './mapa.html' && ['admin','capitan'].includes(rolS13)) ? '' : 'none';
   document.getElementById('embed-view').style.display = 'flex';
   markActiveNav();
   sidebarEl.classList.remove('open');
   backdropEl.classList.remove('show');
 }
+
+document.getElementById('embed-s13').addEventListener('click', async (ev) => {
+  const btn = ev.currentTarget;
+  const win = document.getElementById('embed-frame').contentWindow;
+  if (!win || typeof win.exportarS13 !== 'function'){
+    alert('Esperá a que termine de cargar el mapa y probá de nuevo.');
+    return;
+  }
+  btn.disabled = true;
+  try { await win.exportarS13(); } finally { btn.disabled = false; }
+});
 
 document.getElementById('embed-frame').addEventListener('load', () => {
   document.getElementById('embed-loading').classList.remove('show');

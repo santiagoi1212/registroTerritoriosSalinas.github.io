@@ -12,6 +12,7 @@
      para abajo, es el widget original sin cambios de comportamiento. -->
 <script src="../app-config.js"></script>
 <script src="../app-auth.js"></script>
+<script src="./estado-actividad.js"></script>
 <style>
   /* Tema del portal (mismos tokens que publicadores.html) aplicado tanto al
      marco de la página (fuera de #pub-app: auth-bar, locked/forbidden) como
@@ -830,6 +831,10 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
         ' planillas de formulario no cargaron en el último recálculo — los datos pueden estar incompletos. Detalle: ' +
         failedSheets.map(function (s) { return escapeHtml(s.error || "error"); }).join(" · ") + '</div>');
     }
+    if (STATE.inactivos && STATE.inactivos.length) {
+      parts.push('<div class="pub-banner">⛔ ' + STATE.inactivos.length + ' publicador(es) inactivo(s) (6 meses seguidos sin participar) ' +
+        'no se cuentan en los totales, en "Faltan registrarse" ni en los gráficos. Están en la pantalla <b>Inactivos e irregulares</b>.</div>');
+    }
     if (STATE.unmatched.length) {
       parts.push('<div class="pub-banner warn"><details><summary>⚠ ' + STATE.unmatched.length +
         ' nombre(s) de las planillas no coincidieron con nadie del padrón en el último recálculo (revisar typos o agregarlos al padrón)</summary>' +
@@ -1216,7 +1221,11 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
       setStatus("Cargando datos…");
       try {
         var data = await fetchCache();
-        STATE.roster = data.roster || [];
+        // Los inactivos dejan de contarse como publicadores: se sacan del
+        // padrón para que no entren en ningún cálculo (ver estado-actividad.js).
+        var limpio = window.EstadoActividad.sinInactivos({ roster: data.roster || [], rows: data.rows || [] });
+        STATE.roster = limpio.roster;
+        STATE.inactivos = limpio.inactivos;
         STATE.rosterStatus = data.rosterStatus || { ok: false, error: "Respuesta vacía" };
         STATE.rows = data.rows || [];
         STATE.sheetStatus = data.sheetStatus || [];
@@ -1224,6 +1233,7 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
         STATE.generatedAt = data.generatedAt || null;
       } catch (e) {
         STATE.roster = [];
+        STATE.inactivos = [];
         STATE.rosterStatus = { ok: false, error: e.message || "No se pudo cargar" };
         STATE.rows = [];
         STATE.sheetStatus = [];
