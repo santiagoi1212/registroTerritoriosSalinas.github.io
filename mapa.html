@@ -270,6 +270,7 @@
       position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
       background: #fff; color:#111; border-radius: 12px; width: 92%; max-width: 520px;
       box-shadow: 0 10px 30px rgba(0,0,0,.25); display: none; z-index: 2001;
+      max-height: 94vh; max-height: 94dvh; overflow-y: auto;
       font-family: system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial;
     }
     .modal header { padding:14px 16px; border-bottom:1px solid #efefef; font-weight:600; }
@@ -322,6 +323,24 @@
     margin-right: auto;
   }
   #modal footer .btn.danger:hover { background: #b91c1c; }
+
+  /* Fecha de la última vez que se completó cada territorio (debajo del número) */
+  .numero-cartel-territorio .ult-vez { display:block; font-size:9px; font-weight:600; color:#475569; text-align:center; line-height:1.1; }
+  .numero-cartel-territorio.personal { border-color:#9333ea; color:#6b21a8; }
+  .numero-cartel-territorio.personal .ult-vez { color:#7e22ce; }
+  .violeta { background:#9333ea; }
+
+  /* Modal: resumen del territorio, "todo hecho" y territorio personal */
+  .info-territorio { background:#f1f5f9; border-radius:8px; padding:8px 10px; font-size:13px; line-height:1.45; color:#334155; }
+  .info-territorio b { color:#0f172a; }
+  .info-territorio .personal-tag { display:inline-block; margin-top:2px; background:#f3e8ff; color:#6b21a8; border:1px solid #d8b4fe; border-radius:6px; padding:1px 6px; font-weight:600; }
+  .row-check { display:flex !important; align-items:flex-start; gap:8px; background:#ecfdf5; border:1px solid #a7f3d0; border-radius:8px; padding:8px 10px; font-size:13.5px; cursor:pointer; }
+  .modal .row-check input { width:auto !important; margin-top:2px; flex:0 0 auto; }
+  .seccion-personal { border:1px dashed #c4b5fd; border-radius:8px; padding:8px 10px; display:grid; gap:6px; }
+  .seccion-personal .titulo { font-size:13px; font-weight:600; color:#6b21a8; }
+  .seccion-personal .acciones { display:flex; gap:8px; flex-wrap:wrap; }
+  .btn.violeta-btn { background:#9333ea; }
+  .btn.link-btn { background:transparent; color:#6b21a8; border:1px solid #d8b4fe; }
 </style>
 
 </head>
@@ -370,7 +389,9 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
       <div class="referencia"><div class="color-box verde"></div><span>Registrado hace menos de 2 meses</span><span class="ref-pct" data-cat="verde"></span></div>
       <div class="referencia"><div class="color-box amarillo"></div><span>Registrado entre 2 y 3 meses</span><span class="ref-pct" data-cat="amarillo"></span></div>
       <div class="referencia"><div class="color-box rojo"></div><span>Registrado hace más de 3 meses</span><span class="ref-pct" data-cat="rojo"></span></div>
+      <div class="referencia" id="ref-personal" hidden><div class="color-box violeta"></div><span>Territorio personal</span><span class="ref-pct" id="ref-personal-cant"></span></div>
     </div>
+    <div style="font-size:11px;opacity:.75;margin-top:8px">La fecha bajo cada número de territorio es la última vez que se completó entero.</div>
   </div>
 
   <!-- Modal de registro -->
@@ -386,6 +407,11 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
         <label for="campoPoligono">Manzana</label>
         <input id="campoPoligono" type="text" readonly />
       </div>
+      <div class="info-territorio" id="infoTerritorio"></div>
+      <label class="row-check" for="campoTodoTerritorio">
+        <input id="campoTodoTerritorio" type="checkbox" />
+        <span id="textoTodoTerritorio">Marcar todas las manzanas del territorio como hechas</span>
+      </label>
       <div class="row">
         <label for="campoCapitan">Capitán</label>
         <input id="campoCapitan" type="text" readonly />
@@ -405,6 +431,16 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
       <div class="row">
         <label for="campoNotas">Comentario</label>
         <textarea id="campoNotas" rows="3" placeholder="Observaciones opcionales"></textarea>
+      </div>
+      <!-- Solo admin: asignar el territorio como personal (se pinta de violeta) -->
+      <div class="seccion-personal" id="seccionPersonal" style="display:none">
+        <div class="titulo">Territorio personal</div>
+        <input id="campoPersonal" type="text" list="listaPersonas" placeholder="¿A quién se le asigna? (nombre)" autocomplete="off" />
+        <datalist id="listaPersonas"></datalist>
+        <div class="acciones">
+          <button class="btn violeta-btn" id="btnAsignarPersonal" type="button">Asignar como personal</button>
+          <button class="btn link-btn" id="btnQuitarPersonal" type="button">Quitar personal</button>
+        </div>
       </div>
     </div>
     <footer>
@@ -540,11 +576,45 @@ async function cargarDatosDesdeBackend() {
     const r = await fetch(url, { cache: 'no-store', headers: { 'Accept': 'application/json' } });
     if (r.ok) {
       const data = await r.json();
+      guardarInfoBackend_(data);
       return Array.isArray(data.items) ? data.items : [];
     }
   }catch(_){}
 
   return [];
+}
+
+// Lo que viene junto con stats_rt además de las manzanas: la versión del
+// Apps Script (>= 2 tiene registrar_varios y territorios personales) y la
+// lista de territorios personales.
+window.__apiVersion = 0;
+window.__personales = new Map(); // territorio (número) -> { territorio, persona, desde, asignadoPor }
+const CACHE_PERSONALES_KEY = 'salinas_mapa_personales_v1';
+function setPersonales_(lista){
+  window.__personales = new Map((lista || [])
+    .map(p => [toNumeroTerritorio(p.territorio), p])
+    .filter(([t]) => t != null));
+}
+function guardarInfoBackend_(payload){
+  if (!payload || !Array.isArray(payload.items)) return;
+  window.__apiVersion = Number(payload.version || 0);
+  if (Array.isArray(payload.personales)) {
+    setPersonales_(payload.personales);
+    try { localStorage.setItem(CACHE_PERSONALES_KEY, JSON.stringify(payload.personales)); } catch(_){}
+  }
+}
+try { setPersonales_(JSON.parse(localStorage.getItem(CACHE_PERSONALES_KEY) || '[]')); } catch(_){}
+
+// POST de una operación (op) al Apps Script; devuelve el JSON de respuesta.
+async function postOp(obj){
+  const r = await fetch(WEBHOOK_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8' },
+    body: new URLSearchParams({ payload: JSON.stringify(obj) })
+  });
+  const data = await r.json();
+  if (!data || !data.ok) throw new Error((data && data.error) || 'Error del servidor');
+  return data;
 }
 
 function cargarDatosJSONP(urlBase, timeoutMs = 8000) {
@@ -572,6 +642,7 @@ function cargarDatosJSONP(urlBase, timeoutMs = 8000) {
       cleanup();
       try{
         const items = (payload && Array.isArray(payload.items)) ? payload.items : [];
+        guardarInfoBackend_(payload);
         resolve(items);
       }catch(_){
         resolve([]);
@@ -672,7 +743,10 @@ async function refrescarUnoYRepintar(id, territorio) {
       $campoFecha.value      = new Date().toISOString().slice(0,10);
       $campoEstado.value     = 'Si';
       $campoNotas.value      = '';
+      $campoTodo.checked     = false;
+      actualizarModoTodoTerritorio();
       actualizarObligatoriedadComentario();
+      mostrarInfoTerritorio(terr);
 
       // Admin: puede elegir el Capitán de la lista. Resto de usuarios: queda fijo en su propio usuario.
       if (isAdmin()) {
@@ -764,6 +838,87 @@ async function refrescarUnoYRepintar(id, territorio) {
         : 'Observaciones opcionales';
       if (!obligatorio || $campoNotas.value.trim()) $campoNotas.classList.remove('campo-invalido');
     }
+    // ===== Resumen del territorio en el modal =====
+    const $infoTerritorio = document.getElementById('infoTerritorio');
+    const $campoTodo = document.getElementById('campoTodoTerritorio');
+    const $textoTodo = document.getElementById('textoTodoTerritorio');
+    const $seccionPersonal = document.getElementById('seccionPersonal');
+    const $campoPersonal = document.getElementById('campoPersonal');
+    const $btnAsignarPersonal = document.getElementById('btnAsignarPersonal');
+    const $btnQuitarPersonal = document.getElementById('btnQuitarPersonal');
+
+    function mostrarInfoTerritorio(terr){
+      const t = toNumeroTerritorio(terr);
+      const info = window.__ultimaVez.get(t);
+      const total = manzanasDeTerritorio(t).length;
+      const personal = personalDe(t);
+      $infoTerritorio.textContent = '';
+      const linea = (etiqueta, valor) => {
+        const div = document.createElement('div');
+        div.appendChild(document.createTextNode(etiqueta));
+        const b = document.createElement('b'); b.textContent = valor; div.appendChild(b);
+        $infoTerritorio.appendChild(div);
+      };
+      linea('Última vez completado: ', info && info.fecha ? fmtLarga(info.fecha) + ' (' + haceCuanto(info.fecha) + ')' : 'sin registro de que se haya completado');
+      if (info && info.enCurso) linea('En curso: ', info.hechas + ' de ' + (info.total || total) + ' manzanas hechas');
+      if (personal) {
+        const tag = document.createElement('div');
+        tag.className = 'personal-tag';
+        tag.textContent = 'Personal de ' + nombreLindo(personal.persona) + (personal.desde ? ' desde ' + fmtLarga(parsearFecha_(personal.desde)) : '');
+        $infoTerritorio.appendChild(tag);
+      }
+
+      $textoTodo.textContent = 'Marcar las ' + total + ' manzanas del territorio ' + t + ' como hechas';
+
+      // Territorio personal: solo admin
+      if (isAdmin()) {
+        const dl = document.getElementById('listaPersonas');
+        if (!dl.dataset.cargado) {
+          CAPITANES.forEach(n => { const o = document.createElement('option'); o.value = nombreLindo(n); dl.appendChild(o); });
+          dl.dataset.cargado = '1';
+        }
+        $campoPersonal.value = personal ? personal.persona : '';
+        $btnQuitarPersonal.style.display = personal ? '' : 'none';
+        $btnAsignarPersonal.textContent = personal ? 'Cambiar persona' : 'Asignar como personal';
+        $seccionPersonal.style.display = '';
+      } else {
+        $seccionPersonal.style.display = 'none';
+      }
+    }
+
+    // "Todo el territorio hecho": queda finalizado (Si) sí o sí.
+    function actualizarModoTodoTerritorio(){
+      if ($campoTodo.checked) $campoEstado.value = 'Si';
+      $campoEstado.disabled = $campoTodo.checked;
+      $campoPoligono.style.opacity = $campoTodo.checked ? '.5' : '';
+      $btnGuardar.textContent = $campoTodo.checked ? 'Guardar todo el territorio' : 'Guardar registro';
+      actualizarObligatoriedadComentario();
+    }
+    $campoTodo.addEventListener('change', actualizarModoTodoTerritorio);
+
+    async function cambiarPersonal(op){
+      const terr = toNumeroTerritorio($campoTerritorio.value);
+      const persona = $campoPersonal.value.trim();
+      if (window.__apiVersion < 2) { alert('Falta actualizar el Apps Script de territorios para usar territorios personales.'); return; }
+      if (op === 'personal_asignar' && !persona) { $campoPersonal.focus(); (window.showToast || alert)('Escribí a quién se le asigna.'); return; }
+      if (op === 'personal_quitar' && !confirm('¿Quitar el territorio ' + terr + ' como personal?')) return;
+      try {
+        showBusy(op === 'personal_quitar' ? 'Quitando…' : 'Asignando…');
+        const data = await postOp({ op, territorio: String(terr), persona, user: AuthApp.getUsername(), role: AuthApp.getRole() });
+        setPersonales_(data.personales);
+        try { localStorage.setItem(CACHE_PERSONALES_KEY, JSON.stringify(data.personales || [])); } catch(_){}
+        repintarTerritorio($campoTerritorio.value);
+        mostrarInfoTerritorio(terr);
+        (window.showToast || console.log)(op === 'personal_quitar' ? 'Ya no es territorio personal' : 'Territorio ' + terr + ' asignado a ' + persona, 'success');
+      } catch (e) {
+        alert('No se pudo guardar: ' + (e.message || e));
+      } finally {
+        hideBusy();
+      }
+    }
+    $btnAsignarPersonal.addEventListener('click', () => cambiarPersonal('personal_asignar'));
+    $btnQuitarPersonal.addEventListener('click', () => cambiarPersonal('personal_quitar'));
+
     $campoEstado.addEventListener('change', actualizarObligatoriedadComentario);
     $campoNotas.addEventListener('input', actualizarObligatoriedadComentario);
 
@@ -890,6 +1045,11 @@ async function enviarAlSheet(rec) {
     return;
   }
 
+  if ($campoTodo.checked) {
+    await guardarTodoElTerritorio({ territorio, capitan, fecha, comentario });
+    return;
+  }
+
   // IMPORTANTE: id = territorio (para conteo por territorio)
   // El comentario va limpio a la columna Observación (la manzana ya queda en la columna B).
   const rec = { id: poligonoId, territorio, poligonoId, fecha, finalizado, capitan, comentario, sincronizado };
@@ -902,7 +1062,8 @@ async function enviarAlSheet(rec) {
     if (r.ok) {
       const key = String(r.id || poligonoId).trim();
       // La fecha recién guardada pasa a ser la "última fecha" de ese id
-      __datosMap.set(key, { id: key, cantidad: Number(r.cantidad || 0), ultimaFecha: fecha, finalizado, comentario });
+      __datosMap.set(key, { id: key, cantidad: Number(r.cantidad || 0), ultimaFecha: fecha, finalizado, comentario, capitan });
+      agregarAlHistorial(capitan, [poligonoId], fecha, finalizado);
     }
 
     // ✅ Actualizar conteo local y repintar SOLO ese territorio (sin recargar todo el mapa)
@@ -928,6 +1089,49 @@ async function enviarAlSheet(rec) {
     $btnGuardar.disabled = false;
   }
 });
+
+// Registra TODAS las manzanas del territorio como finalizadas en la misma
+// fecha. Con el Apps Script nuevo (versión 2) va en una sola llamada; con el
+// viejo se manda una por una (más lento, pero funciona igual).
+async function guardarTodoElTerritorio({ territorio, capitan, fecha, comentario }){
+  const ids = manzanasDeTerritorio(territorio);
+  if (!ids.length) { alert('No se encontraron manzanas para el territorio ' + territorio); return; }
+  if (!confirm('¿Registrar las ' + ids.length + ' manzanas del territorio ' + territorio + ' como hechas el ' + fmtLarga(parsearFecha_(fecha)) + '?')) return;
+  const base = { capitan, fecha, finalizado: 'Si', comentario, territorio };
+  const guardadas = [];
+  try {
+    $btnGuardar.disabled = true;
+    showBusy('Guardando ' + ids.length + ' manzanas…');
+    if (window.__apiVersion >= 2) {
+      await postOp(Object.assign({ op: 'registrar_varios', ids }, base));
+      guardadas.push(...ids);
+    } else {
+      for (let i = 0; i < ids.length; i++) {
+        showBusy('Guardando manzana ' + (i + 1) + ' de ' + ids.length + '…');
+        const r = await enviarAlSheet(Object.assign({ id: ids[i], poligonoId: ids[i], sincronizado: '' }, base));
+        if (!r || !r.ok) throw new Error('Se cortó en la manzana ' + ids[i] + ' (' + guardadas.length + ' guardadas)');
+        guardadas.push(ids[i]);
+      }
+    }
+    cerrarModal();
+    (window.showToast || console.log)('Territorio ' + territorio + ' registrado completo (' + guardadas.length + ' manzanas)', 'success');
+  } catch (e) {
+    console.error(e);
+    alert('No se pudo guardar todo el territorio: ' + (e.message || e));
+  } finally {
+    guardadas.forEach(id => {
+      const prev = __datosMap.get(id);
+      __datosMap.set(id, { id, cantidad: Number(prev && prev.cantidad || 0) + 1, ultimaFecha: fecha, finalizado: 'Si', comentario, capitan });
+    });
+    if (guardadas.length) {
+      agregarAlHistorial(capitan, guardadas, fecha, 'Si');
+      guardarStats_([...__datosMap.values()]);
+      repintarTerritorio(territorio);
+    }
+    hideBusy();
+    $btnGuardar.disabled = false;
+  }
+}
 
     // ===== Mapa =====
     const vista = getVistaFromURL();
@@ -1003,6 +1207,7 @@ const labelsLayer   = L.featureGroup().addTo(map);
     // el mismo número de territorio en un solo límite, con su cartel numerado.
     function renderTerritorios() {
       territorioLayer.clearLayers();
+      window.__cartelesTerr = new Map();
       const g = window.gruposSalinas;
       if (!g || !g.territorioBoundaries) return;
 
@@ -1010,8 +1215,10 @@ const labelsLayer   = L.featureGroup().addTo(map);
         const geom = g.territorioBoundaries[terrNum];
         const latlngs = geoJsonAlatLngs(geom);
         if (!latlngs.length) continue;
+        const reg = { marker: null, poly: null };
+        window.__cartelesTerr.set(Number(terrNum), reg);
 
-        L.polygon(latlngs, {
+        reg.poly = L.polygon(latlngs, {
           color: COLOR_TERRITORIO,
           weight: 2.5,
           opacity: 0.9,
@@ -1027,9 +1234,10 @@ const labelsLayer   = L.featureGroup().addTo(map);
             iconSize: null,
             iconAnchor: [0, 0]
           });
-          L.marker(labelLatLng, { icon, interactive: false, zIndexOffset: 1500 }).addTo(territorioLayer);
+          reg.marker = L.marker(labelLatLng, { icon, interactive: false, zIndexOffset: 1500 }).addTo(territorioLayer);
         }
       }
+      actualizarUltimaVez();
     }
 
     function indexarPorTerritorio(arr) {
@@ -1111,10 +1319,24 @@ const labelsLayer   = L.featureGroup().addTo(map);
     // Color + texto al pasar el mouse: si la manzana está pendiente, muestra
     // la observación de qué se hizo; si no, saca el tooltip.
     function aplicarEstadoManzana(layer) {
-      layer.setStyle({ fillColor: getFillHexFromDatos(layer.__polyId) });
+      // Territorio personal: todas sus manzanas en violeta (el registro de
+      // cada manzana se sigue guardando igual).
+      const personal = personalDe(layer.__terr);
+      layer.setStyle({ fillColor: personal ? COLOR_PERSONAL : getFillHexFromDatos(layer.__polyId) });
       const d = __datosMap.get(idKey(layer.__polyId));
       layer.unbindTooltip();
-      if (d && esPendiente(d.finalizado)) {
+      if (personal) {
+        const cont = document.createElement('div');
+        cont.appendChild(document.createTextNode('Territorio personal de ' + (nombreLindo(personal.persona) || '—')));
+        const desde = parsearFecha_(personal.desde);
+        if (desde) {
+          cont.appendChild(document.createElement('br'));
+          const s = document.createElement('small');
+          s.textContent = 'Desde el ' + fmtLarga(desde);
+          cont.appendChild(s);
+        }
+        layer.bindTooltip(cont, { sticky: true, direction: 'top', className: 'tooltip-pendiente' });
+      } else if (d && esPendiente(d.finalizado)) {
         const obs = limpiarComentario(d.comentario);
         const cont = document.createElement('div');
         cont.appendChild(document.createTextNode(obs || '(sin observación)'));
@@ -1169,6 +1391,184 @@ function repintarTerritorio(territorio){
     }
   });
   actualizarPorcentajes();
+  actualizarUltimaVez();
+}
+
+// ===== Manzanas de cada territorio =====
+let __manzanasPorTerr = null; // terr (número) -> [ids]
+function manzanasDeTerritorio(terr){
+  if (!__manzanasPorTerr) {
+    __manzanasPorTerr = new Map();
+    for (const p of (window.poligonos || [])) {
+      const t = toNumeroTerritorio(p.territorio);
+      if (!t) continue;
+      if (!__manzanasPorTerr.has(t)) __manzanasPorTerr.set(t, []);
+      const id = idKey(p.id);
+      if (!__manzanasPorTerr.get(t).includes(id)) __manzanasPorTerr.get(t).push(id);
+    }
+  }
+  return __manzanasPorTerr.get(toNumeroTerritorio(terr)) || [];
+}
+
+// "CarlosPena" -> "Carlos Pena"
+const nombreLindo = s => String(s || '').trim().replace(/([a-záéíóúñ])([A-ZÁÉÍÓÚÑ])/g, '$1 $2');
+
+// Asignaciones de cada territorio: se recorren sus registros por fecha;
+// una asignación empieza con el primer registro y se completa el día en que
+// TODAS las manzanas del territorio quedaron registradas como finalizadas
+// ("¿Finalizó? = No" no cuenta). El registro siguiente abre otra.
+// Lo usan el formulario S-13 y la "última vez completado" del mapa.
+function armarTerritorios(registros){
+  const manzanas = new Map();   // terr -> Set(ids)
+  const terrDeId = new Map();   // id -> terr
+  for (const p of (window.poligonos || [])) {
+    const t = toNumeroTerritorio(p.territorio);
+    if (!t) continue;
+    const id = idKey(p.id);
+    if (!manzanas.has(t)) manzanas.set(t, new Set());
+    manzanas.get(t).add(id);
+    terrDeId.set(id, t);
+  }
+  const porTerr = new Map();
+  // La hoja tiene lo más nuevo arriba: se invierte para que, a igual fecha,
+  // quede primero lo que se cargó antes.
+  registros.slice().reverse().forEach(r => {
+    const id = idKey(r[1]);
+    const t = terrDeId.get(id);
+    const f = parsearFecha_(r[2]);
+    if (!t || !f) return;
+    if (!porTerr.has(t)) porTerr.set(t, []);
+    porTerr.get(t).push({ cap: nombreLindo(r[0]), id, f, fin: !esPendiente(r[3]) });
+  });
+
+  const out = [];
+  for (const t of [...manzanas.keys()].sort((a,b) => a-b)) {
+    const total = manzanas.get(t).size;
+    const regs = (porTerr.get(t) || []).sort((a,b) => a.f - b.f);
+    const asignaciones = [];
+    let actual = null;
+    for (const r of regs) {
+      if (!actual) actual = { inicio: r.f, fin: null, caps: [], hechas: new Set() };
+      if (r.cap && !actual.caps.includes(r.cap)) actual.caps.push(r.cap);
+      if (r.fin) actual.hechas.add(r.id);
+      if (actual.hechas.size >= total) { actual.fin = r.f; asignaciones.push(actual); actual = null; }
+    }
+    if (actual) asignaciones.push(actual);
+    out.push({ terr: t, total, asignaciones });
+  }
+  return out;
+}
+
+// ===== Historial completo (read=registros), para la "última vez completado" =====
+// Lo más nuevo primero, igual que la hoja: [[capitán, id, 'yyyy-MM-dd', finalizado], ...]
+const CACHE_REGISTROS_KEY = 'salinas_mapa_registros_v1';
+window.__registros = null;
+try {
+  const r = JSON.parse(localStorage.getItem(CACHE_REGISTROS_KEY) || 'null');
+  if (Array.isArray(r)) window.__registros = r;
+} catch(_){}
+
+async function cargarHistorialTerritorios(){
+  const base = (typeof WEBHOOK_URL === 'string' && WEBHOOK_URL) ? WEBHOOK_URL : '';
+  if (!base) return null;
+  const url = base + (base.includes('?') ? '&' : '?') + 'read=registros';
+  const p = await cargarUnoJSONP(url, 25000);
+  if (!p || !Array.isArray(p.registros)) return null;
+  window.__registros = p.registros;
+  try { localStorage.setItem(CACHE_REGISTROS_KEY, JSON.stringify(p.registros)); } catch(_){}
+  actualizarUltimaVez();
+  return p.registros;
+}
+
+// Agrega registros recién guardados al historial local (sin volver a pedirlo).
+function agregarAlHistorial(capitan, ids, fecha, finalizado){
+  if (!Array.isArray(window.__registros)) return;
+  const nuevos = ids.map(id => [capitan || '', idKey(id), fecha, finalizado]);
+  window.__registros = nuevos.concat(window.__registros);
+  try { localStorage.setItem(CACHE_REGISTROS_KEY, JSON.stringify(window.__registros)); } catch(_){}
+}
+
+// ===== Última vez que se completó cada territorio =====
+// terr -> { fecha: Date|null (última vez completado entero), hechas, total, enCurso }
+// Con el historial se usa el mismo criterio que el S-13. Sin historial (todavía
+// no llegó), se mira el último registro de cada manzana: si todas están
+// finalizadas, el territorio se completó el día de la más reciente.
+window.__ultimaVez = new Map();
+function actualizarUltimaVez(){
+  const res = new Map();
+  if (Array.isArray(window.__registros)) {
+    for (const { terr, total, asignaciones } of armarTerritorios(window.__registros)) {
+      const completas = asignaciones.filter(a => a.fin);
+      const abierta = asignaciones.find(a => !a.fin);
+      res.set(terr, {
+        fecha: completas.length ? completas[completas.length - 1].fin : null,
+        hechas: abierta ? abierta.hechas.size : 0,
+        total,
+        enCurso: !!abierta
+      });
+    }
+  } else {
+    const terrs = new Set((window.poligonos || []).map(p => toNumeroTerritorio(p.territorio)).filter(Boolean));
+    terrs.forEach(t => {
+      const ids = manzanasDeTerritorio(t);
+      let hechas = 0, max = null;
+      ids.forEach(id => {
+        const d = window.__datosMap && window.__datosMap.get(id);
+        const f = d && parsearFecha_(d.ultimaFecha);
+        if (f && !esPendiente(d.finalizado)) { hechas++; if (!max || f > max) max = f; }
+      });
+      const todas = ids.length && hechas === ids.length;
+      res.set(t, { fecha: todas ? max : null, hechas: todas ? 0 : hechas, total: ids.length, enCurso: !todas && hechas > 0 });
+    });
+  }
+  window.__ultimaVez = res;
+  actualizarCartelesTerritorio();
+}
+
+const fmtCorta = d => d ? String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + String(d.getFullYear()).slice(-2) : '';
+const fmtLarga = d => d ? String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + d.getFullYear() : '';
+function haceCuanto(d){
+  if (!d) return '';
+  const dias = Math.floor((new Date() - d) / 86400000);
+  if (dias <= 0) return 'hoy';
+  if (dias === 1) return 'ayer';
+  if (dias < 60) return 'hace ' + dias + ' días';
+  return 'hace ' + Math.round(dias / 30) + ' meses';
+}
+
+// ===== Territorios personales (violeta) =====
+const COLOR_PERSONAL = '#9333ea';
+function personalDe(terr){
+  return window.__personales ? window.__personales.get(toNumeroTerritorio(terr)) : null;
+}
+
+// Cartel de cada territorio: número + fecha de la última vez completado;
+// contorno violeta si es personal.
+window.__cartelesTerr = new Map(); // terr -> { marker, poly }
+function actualizarCartelesTerritorio(){
+  window.__cartelesTerr.forEach(({ marker, poly }, terr) => {
+    const info = window.__ultimaVez.get(terr);
+    const personal = personalDe(terr);
+    const fecha = info && info.fecha ? '✓ ' + fmtCorta(info.fecha) : '';
+    if (marker) {
+      marker.setIcon(L.divIcon({
+        className: 'numero-cartel-territorio' + (personal ? ' personal' : ''),
+        html: String(terr) + (fecha ? '<span class="ult-vez">' + fecha + '</span>' : ''),
+        iconSize: null,
+        iconAnchor: [0, 0]
+      }));
+    }
+    if (poly) poly.setStyle(personal
+      ? { color: COLOR_PERSONAL, weight: 4, opacity: 0.95 }
+      : { color: COLOR_TERRITORIO, weight: 2.5, opacity: 0.9 });
+  });
+  const ref = document.getElementById('ref-personal');
+  if (ref) {
+    const n = window.__personales ? window.__personales.size : 0;
+    ref.hidden = !n;
+    const cant = document.getElementById('ref-personal-cant');
+    if (cant) { cant.textContent = n ? n + (n === 1 ? ' terr.' : ' terrs.') : ''; cant.title = [...window.__personales.values()].map(p => 'T' + p.territorio + ': ' + p.persona).join('\n'); }
+  }
 }
 
 
@@ -1203,6 +1603,10 @@ async function actualizarDatos(){
   guardarStats_(datos);
   polygonsLayer.eachLayer(aplicarEstadoManzana);
   actualizarPorcentajes();
+  actualizarUltimaVez();
+  // El historial completo (para la "última vez completado") llega después,
+  // sin frenar el pintado del mapa.
+  cargarHistorialTerritorios().catch(e => console.warn('historial', e));
 }
 
 async function init() {
@@ -1464,13 +1868,15 @@ init();
   }
 
   const fmt = d => d ? String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + d.getFullYear() : '';
-  // "CarlosPena" -> "Carlos Pena"
-  const nombreLindo = s => String(s || '').trim().replace(/([a-záéíóúñ])([A-ZÁÉÍÓÚÑ])/g, '$1 $2');
   // Año de servicio: de septiembre a agosto (sept. 2026 = año de servicio 2027)
   const anioServicio = d => d.getMonth() >= 8 ? d.getFullYear() + 1 : d.getFullYear();
 
   // Historial completo: [[capitán, id, 'yyyy-MM-dd', finalizado], ...]
   async function cargarRegistros(){
+    if (typeof cargarHistorialTerritorios === 'function') {
+      const regs = await cargarHistorialTerritorios();
+      if (regs) return { registros: regs, completo: true };
+    }
     const base = (typeof WEBHOOK_URL === 'string' && WEBHOOK_URL) ? WEBHOOK_URL : '';
     if (base) {
       const url = base + (base.includes('?') ? '&' : '?') + 'read=registros';
@@ -1485,51 +1891,8 @@ init();
     return { registros: regs, completo: false };
   }
 
-  // Asignaciones de cada territorio: se recorren sus registros por fecha;
-  // una asignación empieza con el primer registro y se completa el día en que
-  // TODAS las manzanas del territorio quedaron registradas como finalizadas
-  // ("¿Finalizó? = No" no cuenta). El registro siguiente abre otra.
-  function armarTerritorios(registros){
-    const manzanas = new Map();   // terr -> Set(ids)
-    const terrDeId = new Map();   // id -> terr
-    for (const p of (window.poligonos || [])) {
-      const t = toNumeroTerritorio(p.territorio);
-      if (!t) continue;
-      const id = idKey(p.id);
-      if (!manzanas.has(t)) manzanas.set(t, new Set());
-      manzanas.get(t).add(id);
-      terrDeId.set(id, t);
-    }
-    const porTerr = new Map();
-    // La hoja tiene lo más nuevo arriba: se invierte para que, a igual fecha,
-    // quede primero lo que se cargó antes.
-    registros.slice().reverse().forEach(r => {
-      const id = idKey(r[1]);
-      const t = terrDeId.get(id);
-      const f = parsearFecha_(r[2]);
-      if (!t || !f) return;
-      if (!porTerr.has(t)) porTerr.set(t, []);
-      porTerr.get(t).push({ cap: nombreLindo(r[0]), id, f, fin: !esPendiente(r[3]) });
-    });
-
-    const out = [];
-    for (const t of [...manzanas.keys()].sort((a,b) => a-b)) {
-      const total = manzanas.get(t).size;
-      const regs = (porTerr.get(t) || []).sort((a,b) => a.f - b.f);
-      const asignaciones = [];
-      let actual = null;
-      for (const r of regs) {
-        if (!actual) actual = { inicio: r.f, fin: null, caps: [], hechas: new Set() };
-        if (r.cap && !actual.caps.includes(r.cap)) actual.caps.push(r.cap);
-        if (r.fin) actual.hechas.add(r.id);
-        if (actual.hechas.size >= total) { actual.fin = r.f; asignaciones.push(actual); actual = null; }
-      }
-      if (actual) asignaciones.push(actual);
-      out.push({ terr: t, asignaciones });
-    }
-    return out;
-  }
-
+  // (armarTerritorios está en el script principal: también lo usa el mapa
+  // para la fecha de "última vez completado" de cada territorio)
   // ---------- Dibujo del formulario (medidas en mm, hoja carta) ----------
   const X = { num: 13, ult: 26, blq: 49, fin: 205 };
   const ANCHO_BLQ = (X.fin - X.blq) / 4;
