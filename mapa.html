@@ -461,8 +461,8 @@ if (window.self !== window.top){ document.body.classList.add('embedded-portal');
       "SantiagoInchausti","SebastianFernandez"];
   </script>
 
-  <script src="poligonos_salinas.js"></script>
-  <script src="grupos_salinas.js?v=6"></script>
+  <script src="poligonos_salinas.js?v=2"></script>
+  <script src="grupos_salinas.js?v=7"></script>
 
   <script>
     // ===== Helpers de ID =====
@@ -1841,7 +1841,7 @@ init();
 </script>
 
   <script>
-// ===== Exportar formulario S-13 (último semestre) =====
+// ===== Exportar formulario S-13 (último semestre o último año) =====
 // Arma el PDF con el MISMO diseño del formulario oficial S-13-S (carta,
 // 20 territorios por hoja, 4 bloques "Asignado a" por territorio). Lo llama
 // el botón del portal (index.html), que está fuera del mapa, vía
@@ -1994,30 +1994,39 @@ init();
     doc.text('S-13-S  1/22', X.num, 265);
   }
 
-  window.exportarS13 = async function(){
+  // periodo: 'semestre' (últimos 6 meses, por defecto) o 'anio' (últimos 12 meses)
+  window.exportarS13 = async function(periodo){
+    const esAnio = periodo === 'anio';
     try {
       showBusy('Armando el formulario S-13…');
       const [JsPDF, datos] = await Promise.all([cargarJsPDF(), cargarRegistros()]);
 
       const hasta = new Date(); hasta.setHours(23,59,59,999);
-      const desde = new Date(hasta); desde.setMonth(desde.getMonth() - 6); desde.setHours(0,0,0,0);
+      const desde = new Date(hasta); desde.setMonth(desde.getMonth() - (esAnio ? 12 : 6)); desde.setHours(0,0,0,0);
 
-      // Por territorio: asignaciones del semestre (las 4 más recientes, de
-      // izquierda a derecha) y la última fecha en que se completó según todos
-      // los registros (incluidas las asignaciones que se ven a la derecha).
-      const filas = armarTerritorios(datos.registros).map(({ terr, asignaciones }) => {
+      // Por territorio: asignaciones del período (de izquierda a derecha) y la
+      // última fecha en que se completó según todos los registros (incluidas
+      // las asignaciones que se ven a la derecha).
+      // Semestre: las 4 más recientes. Año: si tiene más de 4, el territorio
+      // sigue en una fila más (como en el formulario en papel) para no perder
+      // ninguna asignación.
+      const filas = [];
+      armarTerritorios(datos.registros).forEach(({ terr, asignaciones }) => {
         const previas = asignaciones.filter(a => a.fin);
-        const delSemestre = asignaciones.filter(a => a.inicio <= hasta && (!a.fin || a.fin >= desde)).slice(-4);
-        return {
-          terr,
-          ultima: previas.length ? fmt(previas[previas.length - 1].fin) : '',
-          asignaciones: delSemestre.map(a => ({ nombres: a.caps, asigno: fmt(a.inicio), completo: fmt(a.fin) }))
-        };
+        const ultima = previas.length ? fmt(previas[previas.length - 1].fin) : '';
+        let delPeriodo = asignaciones
+          .filter(a => a.inicio <= hasta && (!a.fin || a.fin >= desde))
+          .map(a => ({ nombres: a.caps, asigno: fmt(a.inicio), completo: fmt(a.fin) }));
+        if (!esAnio) delPeriodo = delPeriodo.slice(-4);
+        if (!delPeriodo.length) { filas.push({ terr, ultima, asignaciones: [] }); return; }
+        for (let i = 0; i < delPeriodo.length; i += 4) {
+          filas.push({ terr, ultima: i ? '' : ultima, asignaciones: delPeriodo.slice(i, i + 4) });
+        }
       });
 
       const a0 = anioServicio(desde), a1 = anioServicio(hasta);
       const anioTxt = a0 === a1 ? String(a1) : a0 + ' / ' + a1;
-      const periodoTxt = 'Último semestre: ' + fmt(desde) + ' al ' + fmt(hasta);
+      const periodoTxt = (esAnio ? 'Último año: ' : 'Último semestre: ') + fmt(desde) + ' al ' + fmt(hasta);
 
       const doc = new JsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
       for (let i = 0; i < filas.length; i += FILAS_POR_HOJA) {

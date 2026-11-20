@@ -128,6 +128,12 @@
   .btn-s13:hover{ filter:brightness(1.1); }
   .btn-s13:disabled{ opacity:.6; cursor:default; }
   @media (max-width: 640px){ .btn-s13 .s13-largo{ display:none; } }
+  .s13-wrap{ position:relative; display:inline-flex; }
+  .s13-menu{ position:absolute; top:calc(100% + 4px); right:0; z-index:50; min-width:190px; background:var(--card); border:1px solid var(--border); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.25); padding:4px; display:flex; flex-direction:column; }
+  .s13-menu[hidden]{ display:none; }
+  .s13-menu button{ border:none; background:none; color:inherit; font-family:inherit; font-size:13px; font-weight:600; text-align:left; padding:8px 10px; border-radius:6px; cursor:pointer; white-space:nowrap; }
+  .s13-menu button:hover, .s13-menu button:focus-visible{ background:var(--border); outline:none; }
+  .s13-menu small{ font-weight:400; opacity:.7; }
   .embed-frame-wrap{ position:relative; flex:1; min-height:0; }
   .embed-frame{ position:absolute; inset:0; width:100%; height:100%; border:none; background:#fff; }
   .embed-loading{
@@ -318,7 +324,13 @@
           <span id="embed-title-text"></span>
         </div>
         <div class="embed-actions">
-          <button id="embed-s13" class="btn-s13" type="button" style="display:none" title="Descargar el PDF del formulario S-13 con los datos del mapa (últimos 6 meses)">📄 <span class="s13-largo">Exportar formulario </span>S-13<span class="s13-largo"> último semestre</span></button>
+          <span class="s13-wrap">
+            <button id="embed-s13" class="btn-s13" type="button" style="display:none" aria-haspopup="menu" aria-expanded="false" title="Descargar el PDF del formulario S-13 con los datos del mapa">📄 <span class="s13-largo">Exportar formulario </span>S-13 ▾</button>
+            <div id="s13-menu" class="s13-menu" role="menu" hidden>
+              <button type="button" role="menuitem" data-periodo="semestre">Último semestre <small>(6 meses)</small></button>
+              <button type="button" role="menuitem" data-periodo="anio">Último año <small>(12 meses)</small></button>
+            </div>
+          </span>
           <a id="embed-open-new" class="btn-icon" href="#" target="_blank" rel="noopener" title="Abrir en pestaña nueva">↗</a>
           <button id="embed-close" class="btn-icon" type="button" title="Volver al inicio">✕</button>
         </div>
@@ -597,16 +609,27 @@ function openSection(a){
   backdropEl.classList.remove('show');
 }
 
-document.getElementById('embed-s13').addEventListener('click', async (ev) => {
-  const btn = ev.currentTarget;
-  const win = document.getElementById('embed-frame').contentWindow;
-  if (!win || typeof win.exportarS13 !== 'function'){
-    alert('Esperá a que termine de cargar el mapa y probá de nuevo.');
-    return;
-  }
-  btn.disabled = true;
-  try { await win.exportarS13(); } finally { btn.disabled = false; }
-});
+// Botón S-13: abre un menú para elegir el período (último semestre o último año)
+(function(){
+  const btn = document.getElementById('embed-s13');
+  const menu = document.getElementById('s13-menu');
+  const abrir = (si) => { menu.hidden = !si; btn.setAttribute('aria-expanded', si ? 'true' : 'false'); };
+  btn.addEventListener('click', (ev) => { ev.stopPropagation(); abrir(menu.hidden); });
+  document.addEventListener('click', (ev) => { if (!menu.hidden && !menu.contains(ev.target)) abrir(false); });
+  document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && !menu.hidden) { abrir(false); btn.focus(); } });
+  menu.addEventListener('click', async (ev) => {
+    const opt = ev.target.closest('[data-periodo]');
+    if (!opt) return;
+    abrir(false);
+    const win = document.getElementById('embed-frame').contentWindow;
+    if (!win || typeof win.exportarS13 !== 'function'){
+      alert('Esperá a que termine de cargar el mapa y probá de nuevo.');
+      return;
+    }
+    btn.disabled = true;
+    try { await win.exportarS13(opt.dataset.periodo); } finally { btn.disabled = false; }
+  });
+})();
 
 document.getElementById('embed-frame').addEventListener('load', () => {
   document.getElementById('embed-loading').classList.remove('show');
