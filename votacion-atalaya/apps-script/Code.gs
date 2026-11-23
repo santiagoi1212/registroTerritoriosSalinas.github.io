@@ -26,8 +26,19 @@ const HOJA_VOTOS = 'Votos';
 const TZ = 'America/Montevideo';
 const ENCABEZADOS = ['Registrado', 'Nombre', '1º', '2º', '3º', '4º'];
 
+// Caché corta: la página consulta cada 30 s. Además se borra sola al editar
+// la planilla a mano (onEdit) y se puede borrar con limpiarCache().
 const CACHE_KEY = 'votacion_atalaya';
-const CACHE_SEGUNDOS = 300;
+const CACHE_SEGUNDOS = 15;
+
+function limpiarCache() {
+  CacheService.getScriptCache().remove(CACHE_KEY);
+}
+
+// Se ejecuta sola cuando alguien edita la planilla (ej. borrar un voto de prueba).
+function onEdit() {
+  limpiarCache();
+}
 
 function hoja_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
