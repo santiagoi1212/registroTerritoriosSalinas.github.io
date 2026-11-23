@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="es">
+<head>
+<link rel="preconnect" href="https://script.google.com" crossorigin><link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Discursante Conmemoración 2027 · Portal Salinas</title>
+<!--
+  Página PÚBLICA (no pide iniciar sesión). Cada uno pone su nombre y apellido
+  y elige UN solo hermano. Gana el que tiene más votos.
+  Backend: votacion-atalaya/apps-script/Code.gs (mismo script que la Atalaya, ?v=conmemoracion)
+  (VOTACION_CONMEMORACION_API_URL en app-config.js).
+-->
+<script src="../app-config.js"></script>
+<style>
+  :root{
+    --bg:#0b1220; --card:#111a2e; --card-2:#0f1728; --border:#22304a;
+    --text:#e5e7eb; --muted:#94a3b8; --accent:#3b82f6; --accent-soft:rgba(59,130,246,.15);
+    --good:#22c55e; --crit:#ef4444; --gold:#f59e0b;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light){
+    :root:not([data-theme="dark"]){
+      --bg:#f6f7f9; --card:#ffffff; --card-2:#f8fafc; --border:#e2e8f0;
+      --text:#0f172a; --muted:#64748b; --accent:#2563eb; --accent-soft:rgba(37,99,235,.10);
+      --good:#16a34a; --crit:#dc2626; --gold:#d97706;
+      color-scheme: light;
+    }
+  }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--text); font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Arial; }
+  .wrap{ max-width:620px; margin:0 auto; padding:20px 16px 48px; }
+  .top{ display:flex; align-items:center; gap:10px; margin-bottom:18px; }
+  .top a{ color:var(--muted); text-decoration:none; font-size:13px; }
+  .top a:hover{ color:var(--text); }
+  h1{ font-size:22px; margin:0 0 4px; }
+  .sub{ color:var(--muted); margin:0 0 20px; font-size:14px; }
+  .card{ background:var(--card); border:1px solid var(--border); border-radius:14px; padding:18px; margin-bottom:16px; }
+  .card h2{ font-size:15px; margin:0 0 12px; }
+  label.lbl{ display:block; font-size:13px; font-weight:600; margin-bottom:6px; }
+  input.inp{ width:100%; padding:11px 12px; border-radius:10px; border:1px solid var(--border); background:var(--card-2); color:var(--text); font:inherit; }
+  input.inp:focus{ outline:2px solid var(--accent); outline-offset:1px; }
+  .hint{ font-size:12.5px; color:var(--muted); margin:14px 0 8px; }
+  .cands{ display:flex; flex-direction:column; gap:8px; }
+  .cand{ display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:12px; border-radius:10px;
+         border:1px solid var(--border); background:var(--card-2); color:var(--text); font:inherit; cursor:pointer; }
+  .cand:hover{ border-color:var(--accent); }
+  .cand.sel{ border-color:var(--accent); background:var(--accent-soft); }
+  .pos{ width:32px; height:32px; border-radius:50%; flex-shrink:0; display:flex; align-items:center; justify-content:center;
+        border:1.5px dashed var(--border); color:var(--muted); font-weight:700; font-size:14px; }
+  .cand.sel .pos{ border:none; background:var(--accent); color:#fff; }
+  .acciones{ display:flex; gap:10px; margin-top:16px; flex-wrap:wrap; }
+  .btn{ padding:11px 18px; border-radius:10px; border:1px solid var(--border); background:transparent; color:var(--text); font:inherit; font-weight:600; cursor:pointer; }
+  .btn-primary{ background:var(--accent); border-color:var(--accent); color:#fff; flex:1; }
+  .btn:disabled{ opacity:.5; cursor:not-allowed; }
+  .msg{ margin-top:12px; font-size:13.5px; padding:10px 12px; border-radius:10px; display:none; }
+  .msg.err{ display:block; background:rgba(239,68,68,.12); color:var(--crit); }
+  .msg.ok{ display:block; background:rgba(34,197,94,.12); color:var(--good); }
+  .rank{ display:flex; flex-direction:column; gap:10px; }
+  .rk{ display:grid; grid-template-columns:34px 1fr auto; gap:4px 12px; align-items:center; }
+  .rk .n{ font-weight:800; font-size:18px; text-align:center; color:var(--muted); }
+  .rk:first-child .n{ color:var(--gold); }
+  .rk .nm{ font-weight:600; }
+  .rk .pt{ font-variant-numeric:tabular-nums; color:var(--muted); font-size:13px; }
+  .rk .bar{ grid-column:2 / 4; height:6px; border-radius:3px; background:var(--card-2); overflow:hidden; }
+  .rk .bar span{ display:block; height:100%; background:var(--accent); border-radius:3px; }
+  .rk .det{ grid-column:2 / 4; font-size:11.5px; color:var(--muted); }
+  .votantes{ list-style:none; margin:0; padding:0; columns:2; column-gap:20px; }
+  .votantes li{ padding:5px 0; border-bottom:1px solid var(--border); font-size:14px; break-inside:avoid; }
+  @media (max-width:420px){ .votantes{ columns:1; } }
+  .vacio{ color:var(--muted); font-size:13.5px; margin:0; }
+  .count{ font-weight:400; color:var(--muted); font-size:13px; }
+  .reglas{ font-size:12px; color:var(--muted); margin:10px 0 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><a href="../index.html">← Volver al portal</a></div>
+  <h1>🗳️ Votación para Discursante de la Conmemoración 2027</h1>
+  <p class="sub">Elegí a un hermano para que dé el discurso de la Conmemoración 2027.</p>
+
+  <div class="card" id="form-card">
+    <label class="lbl" for="nombre">Nombre y apellido</label>
+    <input id="nombre" class="inp" autocomplete="name" placeholder="Ej.: Juan Pérez" maxlength="80">
+    <p class="hint">Tocá al hermano que elegís (solo uno). Tocá a otro para cambiarlo.</p>
+    <div class="cands" id="cands"></div>
+    <div class="acciones">
+      <button class="btn" id="btnLimpiar" type="button">Limpiar</button>
+      <button class="btn btn-primary" id="btnVotar" type="button" disabled>Enviar voto</button>
+    </div>
+    <div class="msg" id="msg"></div>
+  </div>
+
+  <div class="card">
+    <h2>Resultados <span class="count" id="total"></span></h2>
+    <div class="rank" id="rank"><p class="vacio">Cargando…</p></div>
+    <p class="reglas">Cada persona vota a un solo hermano. Se ordena por cantidad de votos.</p>
+  </div>
+
+  <div class="card">
+    <h2>Ya votaron <span class="count" id="total-v"></span></h2>
+    <ul class="votantes" id="votantes"></ul>
+    <p class="vacio" id="votantes-vacio">Cargando…</p>
+  </div>
+</div>
+
+<script>
+const API = (window.APP_CONFIG && window.APP_CONFIG.VOTACION_CONMEMORACION_API_URL) || '';
+const CANDIDATOS = [
+  'Gonzalo Valle', 'Lucas Avilés', 'Carlos Carminati', 'Javier Martínez',
+  'Gastón Gerschuni', 'Camilo Urdiozola', 'Julio Fernández', 'Julio Galarza',
+  'Juan Carlos Haristoy', 'Luis López', 'Xavier Xaubet'
+];
+let elegido = '';
+let enviando = false;
+let abierta = true;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function render(){
+  $('cands').innerHTML = CANDIDATOS.map(c => {
+    const sel = c === elegido;
+    return `<button type="button" class="cand${sel ? ' sel' : ''}" data-c="${esc(c)}" aria-pressed="${sel}">
+      <span class="pos">${sel ? '✓' : ''}</span><span>${esc(c)}</span></button>`;
+  }).join('');
+  const nombre = $('nombre').value.trim();
+  $('btnVotar').disabled = enviando || !abierta || !API || !elegido || nombre.split(/\s+/).length < 2;
+}
+
+$('cands').addEventListener('click', e => {
+  const b = e.target.closest('.cand'); if (!b) return;
+  elegido = b.dataset.c === elegido ? '' : b.dataset.c;
+  render();
+});
+$('nombre').addEventListener('input', render);
+$('btnLimpiar').addEventListener('click', () => { elegido = ''; mensaje(''); render(); });
+
+function mensaje(txt, tipo){
+  const m = $('msg'); m.textContent = txt; m.className = 'msg' + (txt ? ' ' + tipo : '');
+}
+
+function pintarEstado(d){
+  abierta = d.abierta !== false;
+  const max = Math.max(1, ...d.ranking.map(r => r.votos));
+  const total = Math.max(1, d.totalVotos);
+  $('total').textContent = '· ' + d.totalVotos + (d.totalVotos === 1 ? ' voto' : ' votos');
+  $('rank').innerHTML = d.totalVotos === 0 ? '<p class="vacio">Todavía no hay votos.</p>' :
+    d.ranking.map((r, i) => `<div class="rk">
+      <span class="n">${i + 1}º</span><span class="nm">${esc(r.nombre)}</span>
+      <span class="pt">${r.votos} ${r.votos === 1 ? 'voto' : 'votos'} · ${Math.round(r.votos / total * 100)}%</span>
+      <span class="bar"><span style="width:${(r.votos / max * 100).toFixed(1)}%"></span></span>
+    </div>`).join('');
+  $('total-v').textContent = '· ' + d.votantes.length;
+  $('votantes').innerHTML = d.votantes.map(v => `<li>${esc(v.nombre)}</li>`).join('');
+  $('votantes-vacio').style.display = d.votantes.length ? 'none' : 'block';
+  $('votantes-vacio').textContent = 'Nadie votó todavía.';
+  if (!abierta) mensaje('La votación está cerrada.', 'err');
+  render();
+}
+
+function noHabilitada(){
+  abierta = false;
+  $('rank').innerHTML = '<p class="vacio">La votación todavía no está habilitada.</p>';
+  $('votantes-vacio').textContent = '—';
+  render();
+}
+
+async function cargar(intentos = 3){
+  if (!API){ noHabilitada(); return; }
+  for (let i = 0; i < intentos; i++){
+    try {
+      const r = await fetch(API + '?v=conmemoracion&t=' + Date.now());
+      const d = await r.json();
+      // Si responde la Atalaya, el script todavía no tiene esta votación.
+      if (d && d.ok && d.votacion !== 'conmemoracion') { noHabilitada(); return; }
+      if (d && d.ok) { pintarEstado(d); return; }
+    } catch (e) {}
+    await new Promise(res => setTimeout(res, 1500 * (i + 1)));
+  }
+  // Si falla, se mantiene lo que ya se mostraba.
+  if ($('rank').textContent.includes('Cargando')) $('rank').innerHTML = '<p class="vacio">No se pudieron cargar los resultados. Probá recargar la página.</p>';
+}
+
+$('btnVotar').addEventListener('click', async () => {
+  const nombre = $('nombre').value.replace(/\s+/g, ' ').trim();
+  if (!elegido || nombre.split(' ').length < 2) return;
+  enviando = true; render(); mensaje('');
+  $('btnVotar').textContent = 'Enviando…';
+  try {
+    const r = await fetch(API, { method:'POST', headers:{ 'Content-Type':'text/plain;charset=utf-8' },
+      body: JSON.stringify({ votacion: 'conmemoracion', nombre, voto: elegido }) });
+    const d = await r.json();
+    if (d && d.ok && d.votacion === 'conmemoracion'){
+      mensaje('¡Gracias, ' + nombre.split(' ')[0] + '! Tu voto quedó registrado.', 'ok');
+      elegido = ''; $('nombre').value = '';
+      pintarEstado(d);
+    } else {
+      mensaje((d && d.error) || 'No se pudo registrar el voto.', 'err');
+    }
+  } catch (e) {
+    mensaje('No se pudo conectar. Revisá la conexión y probá de nuevo.', 'err');
+  } finally {
+    enviando = false; $('btnVotar').textContent = 'Enviar voto'; render();
+  }
+});
+
+render();
+cargar();
+setInterval(() => { if (!document.hidden && !enviando) cargar(1); }, 30000);
+</script>
+</body>
+</html>

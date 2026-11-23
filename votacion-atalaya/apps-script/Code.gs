@@ -1,38 +1,54 @@
-// Google Apps Script de la Votación Atalaya (VOTACION_ATALAYA_API_URL en
-// app-config.js; lo usa votacion-atalaya/index.html, página pública).
+// Google Apps Script de las VOTACIONES (una sola planilla, una pestaña por votación).
+// Lo usan dos páginas públicas:
+//   votacion-atalaya/index.html        -> VOTACION_ATALAYA_API_URL       (pestaña "Votos")
+//   votacion-conmemoracion/index.html  -> VOTACION_CONMEMORACION_API_URL (pestaña "Conmemoración 2027")
+// Las dos variables de app-config.js apuntan a la MISMA URL /exec; la página
+// de la Conmemoración agrega ?v=conmemoracion (y "votacion" en el POST). Sin
+// parámetro, responde la Votación Atalaya (así sigue andando como antes).
 //
-// Cada persona pone su nombre y apellido y ordena los 4 candidatos del 1º al
-// 4º. El resultado se calcula por puntos (conteo Borda):
-//   1º lugar = 4 puntos · 2º = 3 · 3º = 2 · 4º = 1
-// Gana el que suma más puntos; si empatan, desempata quien tiene más votos en
-// 1º lugar, después más en 2º, y así.
+// - Atalaya: cada uno ordena a los 4 hermanos del 1º al 4º. Puntos (Borda):
+//   1º = 4 · 2º = 3 · 3º = 2 · 4º = 1. Empate: más votos en 1º, después en 2º…
+// - Conmemoración: cada uno elige UN solo hermano. Gana el que tiene más votos.
+// En las dos: un voto por nombre (sin importar mayúsculas ni tildes).
 //
-// Un voto por nombre: si el mismo nombre (sin importar mayúsculas ni tildes)
-// vuelve a votar, se rechaza.
+// INSTALACIÓN / ACTUALIZACIÓN
+// 1. En la planilla "Votación Atalaya" > Extensiones > Apps Script.
+// 2. Reemplazar todo Código.gs por este archivo y guardar.
+// 3. Implementar > Gestionar implementaciones > ✏️ > Versión: Nueva versión > Implementar
+//    (Ejecutar como: Yo · Quién tiene acceso: Cualquier persona). La URL no cambia.
+// La pestaña "Conmemoración 2027" se crea sola con el primer voto o consulta.
 //
-// INSTALACIÓN
-// 1. Crear una planilla nueva (ej. "Votación Atalaya") > Extensiones > Apps Script.
-// 2. Pegar este archivo entero en Código.gs y guardar.
-// 3. Implementar > Nueva implementación > Aplicación web
-//      Ejecutar como: Yo   ·   Quién tiene acceso: Cualquier persona
-//    y copiar la URL /exec en VOTACION_ATALAYA_API_URL de app-config.js.
-//
-// Para cerrar la votación: poner VOTACION_ABIERTA = false y desplegar
+// Para cerrar una votación: poner abierta: false en VOTACIONES y desplegar
 // "Nueva versión" (los resultados y la lista se siguen viendo).
 
-const CANDIDATOS = ['Gastón Gerschuni', 'Lucas Avilés', 'Juan Carlos Haristoy', 'Camilo Urdiozola'];
-const VOTACION_ABIERTA = true;
-const HOJA_VOTOS = 'Votos';
-const TZ = 'America/Montevideo';
-const ENCABEZADOS = ['Registrado', 'Nombre', '1º', '2º', '3º', '4º'];
+const VOTACIONES = {
+  atalaya: {
+    tipo: 'orden',
+    hoja: 'Votos',
+    abierta: true,
+    candidatos: ['Gastón Gerschuni', 'Lucas Avilés', 'Juan Carlos Haristoy', 'Camilo Urdiozola'],
+    encabezados: ['Registrado', 'Nombre', '1º', '2º', '3º', '4º'],
+  },
+  conmemoracion: {
+    tipo: 'unico',
+    hoja: 'Conmemoración 2027',
+    abierta: true,
+    candidatos: [
+      'Gonzalo Valle', 'Lucas Avilés', 'Carlos Carminati', 'Javier Martínez',
+      'Gastón Gerschuni', 'Camilo Urdiozola', 'Julio Fernández', 'Julio Galarza',
+      'Juan Carlos Haristoy', 'Luis López', 'Xavier Xaubet'
+    ],
+    encabezados: ['Registrado', 'Nombre', 'Voto'],
+  },
+};
 
-// Caché corta: la página consulta cada 30 s. Además se borra sola al editar
+// Caché corta: las páginas consultan cada 30 s. Además se borra sola al editar
 // la planilla a mano (onEdit) y se puede borrar con limpiarCache().
-const CACHE_KEY = 'votacion_atalaya';
 const CACHE_SEGUNDOS = 15;
+const cacheKey_ = id => 'votacion_' + id;
 
 function limpiarCache() {
-  CacheService.getScriptCache().remove(CACHE_KEY);
+  CacheService.getScriptCache().removeAll(Object.keys(VOTACIONES).map(cacheKey_));
 }
 
 // Se ejecuta sola cuando alguien edita la planilla (ej. borrar un voto de prueba).
@@ -40,23 +56,28 @@ function onEdit() {
   limpiarCache();
 }
 
-function hoja_() {
+function votacion_(id) {
+  const key = VOTACIONES[id] ? id : 'atalaya';
+  return Object.assign({ id: key }, VOTACIONES[key]);
+}
+
+function hoja_(v) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let h = ss.getSheetByName(HOJA_VOTOS);
-  if (!h) h = ss.insertSheet(HOJA_VOTOS);
+  let h = ss.getSheetByName(v.hoja);
+  if (!h) h = ss.insertSheet(v.hoja);
   if (h.getLastRow() === 0) {
-    h.appendRow(ENCABEZADOS);
-    h.getRange(1, 1, 1, ENCABEZADOS.length).setFontWeight('bold');
+    h.appendRow(v.encabezados);
+    h.getRange(1, 1, 1, v.encabezados.length).setFontWeight('bold');
     h.setFrozenRows(1);
   }
   return h;
 }
 
-function filas_() {
-  const h = hoja_();
+function filas_(v) {
+  const h = hoja_(v);
   const last = h.getLastRow();
   if (last < 2) return [];
-  return h.getRange(2, 1, last - 1, ENCABEZADOS.length).getValues().filter(f => f[1]);
+  return h.getRange(2, 1, last - 1, v.encabezados.length).getValues().filter(f => f[1]);
 }
 
 function normalizar_(s) {
@@ -64,39 +85,50 @@ function normalizar_(s) {
     .toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
-function armarEstado_() {
-  const filas = filas_();
-  const puntos = {}, posiciones = {};
-  CANDIDATOS.forEach(c => { puntos[c] = 0; posiciones[c] = [0, 0, 0, 0]; });
+function armarEstado_(v) {
+  const filas = filas_(v);
+  const cands = v.candidatos;
+  let ranking;
 
-  const votantes = filas.map(f => {
-    for (let i = 0; i < 4; i++) {
-      const c = String(f[2 + i]);
-      if (puntos[c] === undefined) continue;
-      puntos[c] += 4 - i;
-      posiciones[c][i]++;
-    }
-    const fecha = f[0] instanceof Date ? f[0].toISOString() : String(f[0] || '');
-    return { nombre: String(f[1]), fecha: fecha };
-  });
-
-  const ranking = CANDIDATOS.map(c => ({ nombre: c, puntos: puntos[c], posiciones: posiciones[c] }))
-    .sort((a, b) => {
-      if (b.puntos !== a.puntos) return b.puntos - a.puntos;
-      for (let i = 0; i < 4; i++) if (b.posiciones[i] !== a.posiciones[i]) return b.posiciones[i] - a.posiciones[i];
-      return a.nombre.localeCompare(b.nombre, 'es');
+  if (v.tipo === 'orden') {
+    const puntos = {}, posiciones = {};
+    cands.forEach(c => { puntos[c] = 0; posiciones[c] = cands.map(() => 0); });
+    filas.forEach(f => {
+      for (let i = 0; i < cands.length; i++) {
+        const c = String(f[2 + i]);
+        if (puntos[c] === undefined) continue;
+        puntos[c] += cands.length - i;
+        posiciones[c][i]++;
+      }
     });
+    ranking = cands.map(c => ({ nombre: c, puntos: puntos[c], posiciones: posiciones[c] }))
+      .sort((a, b) => {
+        if (b.puntos !== a.puntos) return b.puntos - a.puntos;
+        for (let i = 0; i < cands.length; i++) if (b.posiciones[i] !== a.posiciones[i]) return b.posiciones[i] - a.posiciones[i];
+        return a.nombre.localeCompare(b.nombre, 'es');
+      });
+  } else {
+    const votos = {};
+    cands.forEach(c => { votos[c] = 0; });
+    filas.forEach(f => { const c = String(f[2]); if (votos[c] !== undefined) votos[c]++; });
+    ranking = cands.map(c => ({ nombre: c, votos: votos[c] }))
+      .sort((a, b) => (b.votos - a.votos) || a.nombre.localeCompare(b.nombre, 'es'));
+  }
 
-  votantes.sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
-  return { ok: true, abierta: VOTACION_ABIERTA, candidatos: CANDIDATOS, totalVotos: filas.length, ranking: ranking, votantes: votantes };
+  const votantes = filas.map(f => ({
+    nombre: String(f[1]),
+    fecha: f[0] instanceof Date ? f[0].toISOString() : String(f[0] || ''),
+  })).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+
+  return { ok: true, votacion: v.id, abierta: v.abierta, candidatos: cands, totalVotos: filas.length, ranking: ranking, votantes: votantes };
 }
 
-function estado_() {
+function estado_(v) {
   const cache = CacheService.getScriptCache();
-  const guardado = cache.get(CACHE_KEY);
+  const guardado = cache.get(cacheKey_(v.id));
   if (guardado) return JSON.parse(guardado);
-  const est = armarEstado_();
-  try { cache.put(CACHE_KEY, JSON.stringify(est), CACHE_SEGUNDOS); } catch (e) {}
+  const est = armarEstado_(v);
+  try { cache.put(cacheKey_(v.id), JSON.stringify(est), CACHE_SEGUNDOS); } catch (e) {}
   return est;
 }
 
@@ -104,8 +136,8 @@ function json_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
 
-function doGet() {
-  return json_(estado_());
+function doGet(e) {
+  return json_(estado_(votacion_(e && e.parameter && e.parameter.v)));
 }
 
 function doPost(e) {
@@ -113,24 +145,33 @@ function doPost(e) {
   try {
     lock.waitLock(20000);
     const data = JSON.parse((e && e.postData && e.postData.contents) || '{}');
-    if (!VOTACION_ABIERTA) return json_({ ok: false, error: 'La votación está cerrada.' });
+    const v = votacion_(data.votacion || (e && e.parameter && e.parameter.v));
+    if (!v.abierta) return json_({ ok: false, error: 'La votación está cerrada.' });
 
     const nombre = String(data.nombre || '').replace(/\s+/g, ' ').trim();
     if (nombre.length < 3 || nombre.indexOf(' ') < 0) return json_({ ok: false, error: 'Poné tu nombre y apellido.' });
     if (nombre.length > 80) return json_({ ok: false, error: 'El nombre es demasiado largo.' });
 
-    const orden = Array.isArray(data.orden) ? data.orden.map(String) : [];
-    const valido = orden.length === 4 && CANDIDATOS.every(c => orden.indexOf(c) >= 0);
-    if (!valido) return json_({ ok: false, error: 'Ordená a los 4 hermanos del 1º al 4º.' });
+    let fila;
+    if (v.tipo === 'orden') {
+      const orden = Array.isArray(data.orden) ? data.orden.map(String) : [];
+      const valido = orden.length === v.candidatos.length && v.candidatos.every(c => orden.indexOf(c) >= 0);
+      if (!valido) return json_({ ok: false, error: 'Ordená a los ' + v.candidatos.length + ' hermanos del 1º al ' + v.candidatos.length + 'º.' });
+      fila = orden;
+    } else {
+      const voto = String(data.voto || '');
+      if (v.candidatos.indexOf(voto) < 0) return json_({ ok: false, error: 'Elegí a un hermano.' });
+      fila = [voto];
+    }
 
     const clave = normalizar_(nombre);
-    if (filas_().some(f => normalizar_(f[1]) === clave)) {
+    if (filas_(v).some(f => normalizar_(f[1]) === clave)) {
       return json_({ ok: false, error: 'Ya hay un voto registrado con ese nombre.' });
     }
 
-    hoja_().appendRow([new Date(), nombre].concat(orden));
-    CacheService.getScriptCache().remove(CACHE_KEY);
-    return json_(Object.assign(armarEstado_(), { votoRegistrado: true }));
+    hoja_(v).appendRow([new Date(), nombre].concat(fila));
+    CacheService.getScriptCache().remove(cacheKey_(v.id));
+    return json_(Object.assign(armarEstado_(v), { votoRegistrado: true }));
   } catch (err) {
     return json_({ ok: false, error: String(err && err.message || err) });
   } finally {

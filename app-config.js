@@ -34,6 +34,10 @@ window.APP_CONFIG = {
       // Vacío = la página muestra "todavía no está habilitada".
       VOTACION_ATALAYA_API_URL: 'https://script.google.com/macros/s/AKfycbzROOpG7dHJ63DAESnLLMbKbBxT2ZBPtXcnfi-xRFsWclmKOqCt0o61h-c8t9OJpcsz/exec',
 
+      // Apps Script de la Votación para Discursante de la Conmemoración 2027
+      // Es el MISMO script que la Atalaya (votacion-atalaya/apps-script/Code.gs).
+      VOTACION_CONMEMORACION_API_URL: 'https://script.google.com/macros/s/AKfycbzROOpG7dHJ63DAESnLLMbKbBxT2ZBPtXcnfi-xRFsWclmKOqCt0o61h-c8t9OJpcsz/exec',
+
       // Ya NO hace falta: el backend (google-apps-script-publicadores.js,
       // guardarDatosPersonales) marca sola la columna "DatosPersonales" (y
       // "DatosPersonalesFecha" si existe) en la hoja Publicadores cuando
